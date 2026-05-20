@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大模型评测指标与计算原理详解</title>
+<style>
+  :root { --primary:#1a1a2e; --accent:#0f3460; --highlight-bg:#f0f4ff; --highlight-border:#4a7dff; --text:#222; --text-light:#555; --border:#e0e0e0; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif; color:var(--text); line-height:1.8; background:#fafafa; }
+  .container { max-width:920px; margin:0 auto; padding:20px; }
+  .cover { text-align:center; padding:70px 20px 50px; background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%); color:white; border-radius:12px; margin-bottom:40px; }
+  .cover h1 { font-size:2.1em; margin-bottom:12px; font-weight:700; letter-spacing:1px; }
+  .cover .subtitle { font-size:1.05em; color:#aab; margin-bottom:24px; }
+  .cover .tags { display:flex; justify-content:center; gap:12px; flex-wrap:wrap; }
+  .cover .tag { background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.2); border-radius:20px; padding:6px 18px; font-size:0.9em; color:#dde; }
+  .section { background:white; border-radius:10px; padding:36px 40px; margin-bottom:24px; box-shadow:0 1px 4px rgba(0,0,0,0.06); border:1px solid var(--border); }
+  h2 { font-size:1.5em; color:var(--primary); margin-bottom:6px; padding-bottom:10px; border-bottom:2px solid var(--highlight-border); }
+  h3 { font-size:1.15em; color:var(--accent); margin:22px 0 10px; }
+  h4 { font-size:1.0em; color:#333; margin:14px 0 6px; }
+  p { margin:12px 0; text-align:justify; }
+  .highlight { background:var(--highlight-bg); border-left:4px solid var(--highlight-border); padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .highlight strong { color:var(--accent); }
+  .warning { background:#fff8f0; border-left:4px solid #f0a500; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .success { background:#f0fff4; border-left:4px solid #2a9d8f; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  ul,ol { padding-left:24px; margin:10px 0; }
+  li { margin:6px 0; }
+  .formula { text-align:center; padding:18px 20px; margin:18px 0; background:#f8f9ff; border-radius:8px; border:1px solid #e8eaf0; font-size:1.12em; font-family:"Times New Roman","STIX",serif; letter-spacing:0.5px; overflow-x:auto; }
+  .figure { text-align:center; margin:24px 0; padding:16px; background:#fafafa; border-radius:8px; border:1px solid #eee; }
+  .figure img { max-width:100%; height:auto; border-radius:4px; }
+  .figure .caption { font-size:0.88em; color:#666; margin-top:10px; font-style:italic; }
+  table { width:100%; border-collapse:collapse; margin:16px 0; font-size:0.92em; }
+  th,td { padding:10px 14px; text-align:left; border-bottom:1px solid #eee; }
+  th { background:var(--primary); color:white; font-weight:600; }
+  tr:hover { background:#f8f9ff; }
+  td code { background:#f0f0f5; padding:2px 6px; border-radius:3px; font-size:0.9em; }
+  .card-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0; }
+  .card { background:linear-gradient(135deg,#f8f9ff,#f0f4ff); border:1px solid #d8e0f0; border-radius:10px; padding:20px 24px; }
+  .card .num { display:inline-block; background:var(--highlight-border); color:white; width:28px; height:28px; border-radius:50%; text-align:center; line-height:28px; font-size:0.85em; font-weight:700; margin-right:8px; }
+  .card h4 { display:inline; color:var(--accent); font-size:1.05em; }
+  .card p { margin-top:8px; font-size:0.93em; }
+  .pros-cons { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0; }
+  .pros,.cons { padding:16px; border-radius:8px; }
+  .pros { background:#f0fff4; border:1px solid #c8e6c9; }
+  .cons { background:#fff8f0; border:1px solid #ffe0b2; }
+  .pros h4 { color:#2e7d32; margin-bottom:8px; }
+  .cons h4 { color:#e65100; margin-bottom:8px; }
+  .pros li,.cons li { font-size:0.93em; }
+  .step-flow { display:flex; align-items:center; justify-content:center; gap:8px; margin:20px 0; flex-wrap:wrap; }
+  .step-box { background:var(--highlight-bg); border:1px solid var(--highlight-border); border-radius:8px; padding:10px 16px; font-size:0.92em; font-weight:600; color:var(--accent); text-align:center; min-width:100px; }
+  .step-arrow { font-size:1.4em; color:#aaa; }
+  .footer { text-align:center; color:#999; font-size:0.85em; padding:30px 0; border-top:1px solid #eee; margin-top:20px; }
+  @media(max-width:640px) { .section{padding:24px 20px;} .cover h1{font-size:1.6em;} .pros-cons,.card-grid{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ===== 封面 ===== -->
+<div class="cover">
+  <h1>大模型评测指标与计算原理详解</h1>
+  <div class="subtitle">从 Perplexity 到 pass@k —— 多模态大模型的全维度度量体系</div>
+  <div class="tags">
+    <span class="tag">文本生成</span>
+    <span class="tag">知识推理</span>
+    <span class="tag">代码生成</span>
+    <span class="tag">数学推理</span>
+    <span class="tag">多模态理解</span>
+    <span class="tag">安全对齐</span>
+  </div>
+</div>
+
+<!-- ===== 引言 ===== -->
+<div class="section">
+  <h2>引言：为什么需要系统的评测体系</h2>
+  <p>
+    大语言模型（LLM）的能力日益多元——文本理解与生成、代码编写、数学推理、图像理解、语音交互……
+    单一指标早已无法全面衡量一个模型的实力。构建系统的评测体系，需要理解每个指标
+    <strong>度量什么能力</strong>、<strong>如何计算</strong>、以及<strong>有哪些局限</strong>。
+  </p>
+  <div class="highlight">
+    <strong>评测的两大范式：</strong>
+    (1) <strong>自动指标（Automatic Metrics）</strong>——可复现、可大规模运行，如 Perplexity、BLEU、pass@k；
+    (2) <strong>人类评估 / 竞技场（Human Eval / Arena）</strong>——更接近真实用户感受，如 Chatbot Arena ELO 评分。
+    二者互补，缺一不可。
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 300" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar0" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="25" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">大模型评测维度全景图</text>
+      <!-- 中心 -->
+      <circle cx="410" cy="165" r="48" fill="#1a1a2e"/>
+      <text x="410" y="160" text-anchor="middle" fill="white" font-size="12" font-weight="700">LLM</text>
+      <text x="410" y="176" text-anchor="middle" fill="#aab" font-size="10">评测体系</text>
+      <!-- 文本生成 -->
+      <line x1="370" y1="128" x2="250" y2="68" stroke="#4a7dff" stroke-width="1.8" marker-end="url(#ar0)"/>
+      <rect x="130" y="45" width="120" height="48" rx="8" fill="#667eea" opacity="0.85"/>
+      <text x="190" y="66" text-anchor="middle" fill="white" font-size="11" font-weight="600">文本生成</text>
+      <text x="190" y="82" text-anchor="middle" fill="white" font-size="8">PPL / BLEU / ROUGE</text>
+      <!-- 知识推理 -->
+      <line x1="450" y1="128" x2="570" y2="68" stroke="#4a7dff" stroke-width="1.8" marker-end="url(#ar0)"/>
+      <rect x="510" y="45" width="120" height="48" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="570" y="66" text-anchor="middle" fill="white" font-size="11" font-weight="600">知识推理</text>
+      <text x="570" y="82" text-anchor="middle" fill="white" font-size="8">MMLU / ARC / HellaSwag</text>
+      <!-- 代码 -->
+      <line x1="362" y1="165" x2="200" y2="165" stroke="#4a7dff" stroke-width="1.8" marker-end="url(#ar0)"/>
+      <rect x="70" y="141" width="130" height="48" rx="8" fill="#e74c3c" opacity="0.8"/>
+      <text x="135" y="162" text-anchor="middle" fill="white" font-size="11" font-weight="600">代码生成</text>
+      <text x="135" y="178" text-anchor="middle" fill="white" font-size="8">HumanEval / pass@k</text>
+      <!-- 数学 -->
+      <line x1="458" y1="165" x2="620" y2="165" stroke="#4a7dff" stroke-width="1.8" marker-end="url(#ar0)"/>
+      <rect x="620" y="141" width="130" height="48" rx="8" fill="#f0a500" opacity="0.85"/>
+      <text x="685" y="162" text-anchor="middle" fill="white" font-size="11" font-weight="600">数学推理</text>
+      <text x="685" y="178" text-anchor="middle" fill="white" font-size="8">GSM8K / MATH / Acc</text>
+      <!-- 多模态 -->
+      <line x1="370" y1="202" x2="250" y2="262" stroke="#4a7dff" stroke-width="1.8" marker-end="url(#ar0)"/>
+      <rect x="120" y="240" width="130" height="48" rx="8" fill="#9b59b6" opacity="0.85"/>
+      <text x="185" y="261" text-anchor="middle" fill="white" font-size="11" font-weight="600">多模态理解</text>
+      <text x="185" y="277" text-anchor="middle" fill="white" font-size="8">MMBench / MMMU / VQA</text>
+      <!-- 安全对齐 -->
+      <line x1="450" y1="202" x2="570" y2="262" stroke="#4a7dff" stroke-width="1.8" marker-end="url(#ar0)"/>
+      <rect x="510" y="240" width="130" height="48" rx="8" fill="#16a085" opacity="0.85"/>
+      <text x="575" y="261" text-anchor="middle" fill="white" font-size="11" font-weight="600">安全与对齐</text>
+      <text x="575" y="277" text-anchor="middle" fill="white" font-size="8">TruthfulQA / Arena ELO</text>
+    </svg>
+    <div class="caption">图 1：大模型评测的六大维度。每个维度有其专属的指标族和 Benchmark 数据集。</div>
+  </div>
+</div>
+
+<!-- ===== 一、文本生成指标 ===== -->
+<div class="section">
+  <h2>一、文本生成指标</h2>
+
+  <h3>1.1 困惑度 Perplexity（PPL）</h3>
+  <p>
+    困惑度是衡量语言模型"建模质量"最基础的指标。直觉上，PPL 越低，模型对文本的预测越精准——
+    它对下一个 token 越"不困惑"。
+  </p>
+  <div class="formula">
+    PPL = exp( − (1/N) &sum;<sub>i=1</sub><sup>N</sup> log P(x<sub>i</sub> | x<sub>&lt;i</sub>) )
+  </div>
+  <p>其中 N 是 token 总数，P(x<sub>i</sub> | x<sub>&lt;i</sub>) 是模型在给定前文条件下预测第 i 个 token 的概率。</p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 200" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">Perplexity 的直觉理解</text>
+      <!-- 好模型 -->
+      <rect x="40" y="45" width="350" height="130" rx="10" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="215" y="72" text-anchor="middle" font-size="12" font-weight="700" fill="#1a6b61">好模型（PPL ≈ 5）</text>
+      <text x="60" y="98" font-size="11" fill="#555">输入: "今天天气真"</text>
+      <text x="60" y="120" font-size="11" fill="#555">预测:</text>
+      <rect x="110" y="108" width="50" height="24" rx="4" fill="#2a9d8f" opacity="0.85"/><text x="135" y="125" text-anchor="middle" fill="white" font-size="10">"好" 82%</text>
+      <rect x="168" y="108" width="55" height="24" rx="4" fill="#2a9d8f" opacity="0.4"/><text x="195" y="125" text-anchor="middle" fill="white" font-size="10">"不错" 9%</text>
+      <rect x="231" y="108" width="45" height="24" rx="4" fill="#2a9d8f" opacity="0.25"/><text x="253" y="125" text-anchor="middle" fill="white" font-size="10">"热" 5%</text>
+      <text x="60" y="155" font-size="10" fill="#888">概率集中在少数合理选项 → 低困惑度</text>
+      <!-- 差模型 -->
+      <rect x="430" y="45" width="350" height="130" rx="10" fill="#fff0f0" stroke="#e74c3c" stroke-width="1.5"/>
+      <text x="605" y="72" text-anchor="middle" font-size="12" font-weight="700" fill="#c0392b">差模型（PPL ≈ 200）</text>
+      <text x="450" y="98" font-size="11" fill="#555">输入: "今天天气真"</text>
+      <text x="450" y="120" font-size="11" fill="#555">预测:</text>
+      <rect x="500" y="108" width="45" height="24" rx="4" fill="#e74c3c" opacity="0.4"/><text x="522" y="125" text-anchor="middle" fill="white" font-size="10">"好" 3%</text>
+      <rect x="553" y="108" width="50" height="24" rx="4" fill="#e74c3c" opacity="0.35"/><text x="578" y="125" text-anchor="middle" fill="white" font-size="10">"猫" 2.5%</text>
+      <rect x="611" y="108" width="50" height="24" rx="4" fill="#e74c3c" opacity="0.3"/><text x="636" y="125" text-anchor="middle" fill="white" font-size="10">"桌" 2%</text>
+      <text x="680" y="125" font-size="10" fill="#888">…</text>
+      <text x="450" y="155" font-size="10" fill="#888">概率近似均匀分布 → 高困惑度</text>
+    </svg>
+    <div class="caption">图 2：Perplexity 的直觉。好模型对下一个 token 高度"自信"（概率集中），差模型则"困惑"于大量候选。</div>
+  </div>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>PPL 优势</h4>
+      <ul>
+        <li>无需人工标注，纯自监督计算</li>
+        <li>直接反映模型的语言建模能力</li>
+        <li>可跨数据集横向对比</li>
+        <li>训练过程中天然可监控</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>PPL 局限</h4>
+      <ul>
+        <li>不直接衡量生成质量或有用性</li>
+        <li>不同 tokenizer 的 PPL 不可直接比较</li>
+        <li>对 repetition / hallucination 不敏感</li>
+        <li>PPL 低不代表回答正确或安全</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>1.2 BLEU（Bilingual Evaluation Understudy）</h3>
+  <p>
+    BLEU 最初为机器翻译设计（Papineni et al., 2002），通过度量模型输出与参考答案之间的
+    <strong>n-gram 精确率</strong>来评估文本质量。
+  </p>
+  <div class="formula">
+    BLEU = BP &middot; exp( &sum;<sub>n=1</sub><sup>N</sup> w<sub>n</sub> log p<sub>n</sub> )
+  </div>
+  <p>其中：</p>
+  <ul>
+    <li><strong>p<sub>n</sub></strong> = 修正的 n-gram 精确率（Candidate 中与 Reference 匹配的 n-gram 占比）</li>
+    <li><strong>w<sub>n</sub></strong> = 权重（通常 uniform: w<sub>n</sub> = 1/N）</li>
+    <li><strong>BP</strong> = 短文本惩罚因子 Brevity Penalty</li>
+  </ul>
+  <div class="formula">
+    BP = min(1, &nbsp;exp(1 − r/c))
+    <br><br>
+    <span style="font-size:0.85em;">r = 参考译文长度, &nbsp;c = 候选译文长度; &nbsp;当 c &lt; r 时 BP &lt; 1（惩罚过短的输出）</span>
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 260" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">BLEU 计算示例</text>
+      <!-- Reference -->
+      <text x="40" y="52" font-size="11" fill="#888" font-weight="600">Reference:</text>
+      <rect x="140" y="36" width="40" height="26" rx="4" fill="#667eea" opacity="0.7"/><text x="160" y="54" text-anchor="middle" fill="white" font-size="10">the</text>
+      <rect x="185" y="36" width="40" height="26" rx="4" fill="#667eea" opacity="0.7"/><text x="205" y="54" text-anchor="middle" fill="white" font-size="10">cat</text>
+      <rect x="230" y="36" width="30" height="26" rx="4" fill="#667eea" opacity="0.7"/><text x="245" y="54" text-anchor="middle" fill="white" font-size="10">is</text>
+      <rect x="265" y="36" width="35" height="26" rx="4" fill="#667eea" opacity="0.7"/><text x="282" y="54" text-anchor="middle" fill="white" font-size="10">on</text>
+      <rect x="305" y="36" width="40" height="26" rx="4" fill="#667eea" opacity="0.7"/><text x="325" y="54" text-anchor="middle" fill="white" font-size="10">the</text>
+      <rect x="350" y="36" width="45" height="26" rx="4" fill="#667eea" opacity="0.7"/><text x="372" y="54" text-anchor="middle" fill="white" font-size="10">mat</text>
+      <!-- Candidate -->
+      <text x="40" y="100" font-size="11" fill="#888" font-weight="600">Candidate:</text>
+      <rect x="140" y="84" width="40" height="26" rx="4" fill="#2a9d8f" opacity="0.7"/><text x="160" y="102" text-anchor="middle" fill="white" font-size="10">the</text>
+      <rect x="185" y="84" width="40" height="26" rx="4" fill="#2a9d8f" opacity="0.7"/><text x="205" y="102" text-anchor="middle" fill="white" font-size="10">the</text>
+      <rect x="230" y="84" width="40" height="26" rx="4" fill="#2a9d8f" opacity="0.7"/><text x="250" y="102" text-anchor="middle" fill="white" font-size="10">the</text>
+      <rect x="275" y="84" width="40" height="26" rx="4" fill="#2a9d8f" opacity="0.7"/><text x="295" y="102" text-anchor="middle" fill="white" font-size="10">the</text>
+      <!-- 计算 -->
+      <rect x="40" y="128" width="740" height="110" rx="8" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="60" y="152" font-size="12" font-weight="700" fill="#0f3460">n-gram 精确率计算：</text>
+      <text x="60" y="175" font-size="11" fill="#555"><tspan font-weight="600">未修正 1-gram:</tspan> "the" 出现 4 次, 全在 Reference 中 → 4/4 = 100%  ← 虚高!</text>
+      <text x="60" y="198" font-size="11" fill="#555"><tspan font-weight="600">修正 1-gram:</tspan> "the" 在 Ref 中最多出现 2 次 → clip 后 min(4,2)/4 = 2/4 = 50%</text>
+      <text x="60" y="221" font-size="11" fill="#555"><tspan font-weight="600">2-gram:</tspan> "the the" 在 Ref 中出现 0 次 → 0/3 = 0%  → BLEU-2 ≈ 0</text>
+      <!-- 箭头指向结论 -->
+      <rect x="500" y="138" width="250" height="45" rx="6" fill="#fff8f0" stroke="#f0a500" stroke-width="1"/>
+      <text x="625" y="157" text-anchor="middle" font-size="10" fill="#e65100" font-weight="600">修正 n-gram 精确率（Clipping）</text>
+      <text x="625" y="173" text-anchor="middle" font-size="10" fill="#e65100">防止重复词获得虚高分数</text>
+    </svg>
+    <div class="caption">图 3：BLEU 修正精确率示例。未修正时 "the the the the" 获得 100% unigram 精确率，修正（clipping）后降为 50%。</div>
+  </div>
+
+  <h3>1.3 ROUGE（Recall-Oriented Understudy for Gisting Evaluation）</h3>
+  <p>
+    ROUGE（Lin, 2004）面向文本摘要任务，侧重<strong>召回率</strong>——参考文本中有多少内容被模型输出覆盖。
+  </p>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">N</span><h4>ROUGE-N</h4>
+      <p><strong>n-gram 召回率。</strong>Reference 中有多少 n-gram 出现在了 Candidate 中。ROUGE-1（unigram）和 ROUGE-2（bigram）最常用。</p>
+    </div>
+    <div class="card">
+      <span class="num">L</span><h4>ROUGE-L</h4>
+      <p><strong>最长公共子序列（LCS）。</strong>不要求连续匹配，能捕捉更灵活的结构相似性。F1 值 = 精确率与召回率的调和平均。</p>
+    </div>
+  </div>
+
+  <div class="formula">
+    ROUGE-N<sub>recall</sub> = |匹配的 n-gram 数| / |Reference 中的 n-gram 总数|
+    <br><br>
+    ROUGE-L<sub>F1</sub> = (1+&beta;<sup>2</sup>) &middot; P<sub>lcs</sub> &middot; R<sub>lcs</sub> / (&beta;<sup>2</sup> &middot; P<sub>lcs</sub> + R<sub>lcs</sub>)
+    <br><br>
+    <span style="font-size:0.85em;">其中 R<sub>lcs</sub> = LCS(Ref, Cand) / |Ref|, &nbsp;P<sub>lcs</sub> = LCS(Ref, Cand) / |Cand|</span>
+  </div>
+
+  <h3>1.4 BLEU vs ROUGE 核心区别</h3>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 180" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">BLEU 与 ROUGE 的视角差异</text>
+      <!-- BLEU -->
+      <rect x="40" y="45" width="350" height="115" rx="10" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="215" y="72" text-anchor="middle" font-size="13" font-weight="700" fill="#0f3460">BLEU — 精确率导向</text>
+      <text x="60" y="97" font-size="11" fill="#555">问：Candidate 输出的内容有多少是对的？</text>
+      <text x="60" y="120" font-size="10" fill="#888">视角：模型输出 → 参考答案</text>
+      <text x="60" y="140" font-size="10" fill="#888">场景：机器翻译（输出不该有多余内容）</text>
+      <!-- ROUGE -->
+      <rect x="430" y="45" width="350" height="115" rx="10" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="605" y="72" text-anchor="middle" font-size="13" font-weight="700" fill="#1a6b61">ROUGE — 召回率导向</text>
+      <text x="450" y="97" font-size="11" fill="#555">问：参考答案中有多少被覆盖了？</text>
+      <text x="450" y="120" font-size="10" fill="#888">视角：参考答案 → 模型输出</text>
+      <text x="450" y="140" font-size="10" fill="#888">场景：文本摘要（关键信息不应遗漏）</text>
+    </svg>
+    <div class="caption">图 4：BLEU 关注"输出准不准"（精确率），ROUGE 关注"覆盖全不全"（召回率）。</div>
+  </div>
+
+  <h3>1.5 BERTScore</h3>
+  <p>
+    BERTScore（Zhang et al., 2020）突破了传统 n-gram 匹配的局限，利用预训练语言模型的 <strong>上下文嵌入</strong>
+    计算 token 级别的语义相似度。
+  </p>
+  <div class="formula">
+    R<sub>BERT</sub> = (1/|Ref|) &sum;<sub>x∈Ref</sub> max<sub>y∈Cand</sub> cos(h<sub>x</sub>, h<sub>y</sub>)
+    <br><br>
+    P<sub>BERT</sub> = (1/|Cand|) &sum;<sub>y∈Cand</sub> max<sub>x∈Ref</sub> cos(h<sub>x</sub>, h<sub>y</sub>)
+    <br><br>
+    F<sub>BERT</sub> = 2 &middot; P<sub>BERT</sub> &middot; R<sub>BERT</sub> / (P<sub>BERT</sub> + R<sub>BERT</sub>)
+  </div>
+  <p>
+    其中 h<sub>x</sub>、h<sub>y</sub> 是 BERT 编码的上下文向量。
+    优势：<strong>"happy" 和 "joyful" 能获得高匹配分</strong>，而 n-gram 方法会判为完全不匹配。
+  </p>
+</div>
+
+<!-- ===== 二、知识与推理 ===== -->
+<div class="section">
+  <h2>二、知识与推理评测</h2>
+
+  <h3>2.1 评测范式：选择题准确率</h3>
+  <p>
+    知识与推理领域的 Benchmark 多数采用<strong>多选题</strong>（Multiple Choice）格式，
+    模型从 A/B/C/D 中选择答案，指标为简单的<strong>准确率（Accuracy）</strong>。
+  </p>
+  <div class="formula">
+    Accuracy = 正确回答的题数 / 总题数 &times; 100%
+  </div>
+
+  <div class="warning">
+    <strong>评测实现细节很重要：</strong>选择题评测通常有两种实现方式——
+    (1) <strong>概率法：</strong>比较模型对各选项 token 的 log-probability，选概率最高的；
+    (2) <strong>生成法：</strong>让模型直接生成答案字母。两种方式结果可能不同，对比时需统一。
+  </div>
+
+  <h3>2.2 主流知识推理 Benchmark</h3>
+  <table>
+    <tr>
+      <th>Benchmark</th>
+      <th>能力维度</th>
+      <th>规模</th>
+      <th>评测方式</th>
+      <th>典型分数区间</th>
+    </tr>
+    <tr>
+      <td><strong>MMLU</strong></td>
+      <td>57 个学科的综合知识</td>
+      <td>14,042 题</td>
+      <td>4 选 1 Accuracy</td>
+      <td>70~90%</td>
+    </tr>
+    <tr>
+      <td><strong>MMLU-Pro</strong></td>
+      <td>MMLU 加难版，10 选 1</td>
+      <td>12,032 题</td>
+      <td>10 选 1 Accuracy</td>
+      <td>45~75%</td>
+    </tr>
+    <tr>
+      <td><strong>ARC-Challenge</strong></td>
+      <td>小学科学推理</td>
+      <td>1,172 题</td>
+      <td>4 选 1 Accuracy</td>
+      <td>80~95%</td>
+    </tr>
+    <tr>
+      <td><strong>HellaSwag</strong></td>
+      <td>常识推理（句子续写）</td>
+      <td>10,042 题</td>
+      <td>4 选 1 Accuracy</td>
+      <td>80~96%</td>
+    </tr>
+    <tr>
+      <td><strong>WinoGrande</strong></td>
+      <td>常识推理（指代消解）</td>
+      <td>1,267 题</td>
+      <td>2 选 1 Accuracy</td>
+      <td>75~90%</td>
+    </tr>
+    <tr>
+      <td><strong>TriviaQA</strong></td>
+      <td>开放域问答</td>
+      <td>11,313 题</td>
+      <td>EM / F1</td>
+      <td>70~90%</td>
+    </tr>
+    <tr>
+      <td><strong>GPQA (Diamond)</strong></td>
+      <td>研究生级别专业问答</td>
+      <td>198 题</td>
+      <td>4 选 1 Accuracy</td>
+      <td>40~65%</td>
+    </tr>
+  </table>
+
+  <h3>2.3 MMLU 详解</h3>
+  <p>
+    MMLU（Massive Multitask Language Understanding, Hendrycks et al., 2021）是目前引用最广、
+    最具标杆意义的知识评测。覆盖<strong>人文、社科、STEM、专业</strong>四大领域 57 个子任务。
+  </p>
+  <div class="figure">
+    <svg viewBox="0 0 820 220" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">MMLU 的四大领域与典型科目</text>
+      <rect x="30" y="45" width="180" height="155" rx="8" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="120" y="70" text-anchor="middle" font-size="12" font-weight="700" fill="#0f3460">STEM</text>
+      <text x="50" y="92" font-size="10" fill="#555">· 抽象代数</text>
+      <text x="50" y="110" font-size="10" fill="#555">· 大学物理</text>
+      <text x="50" y="128" font-size="10" fill="#555">· 计算机科学</text>
+      <text x="50" y="146" font-size="10" fill="#555">· 高中数学</text>
+      <text x="50" y="170" font-size="10" fill="#888">~18 个科目</text>
+
+      <rect x="225" y="45" width="180" height="155" rx="8" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="315" y="70" text-anchor="middle" font-size="12" font-weight="700" fill="#1a6b61">人文</text>
+      <text x="245" y="92" font-size="10" fill="#555">· 哲学</text>
+      <text x="245" y="110" font-size="10" fill="#555">· 世界历史</text>
+      <text x="245" y="128" font-size="10" fill="#555">· 法律</text>
+      <text x="245" y="146" font-size="10" fill="#555">· 逻辑谬误</text>
+      <text x="245" y="170" font-size="10" fill="#888">~13 个科目</text>
+
+      <rect x="420" y="45" width="180" height="155" rx="8" fill="#fff8f0" stroke="#f0a500" stroke-width="1.5"/>
+      <text x="510" y="70" text-anchor="middle" font-size="12" font-weight="700" fill="#e65100">社会科学</text>
+      <text x="440" y="92" font-size="10" fill="#555">· 宏观经济学</text>
+      <text x="440" y="110" font-size="10" fill="#555">· 心理学</text>
+      <text x="440" y="128" font-size="10" fill="#555">· 社会学</text>
+      <text x="440" y="146" font-size="10" fill="#555">· 政治学</text>
+      <text x="440" y="170" font-size="10" fill="#888">~12 个科目</text>
+
+      <rect x="615" y="45" width="180" height="155" rx="8" fill="#fff0f0" stroke="#e74c3c" stroke-width="1.5"/>
+      <text x="705" y="70" text-anchor="middle" font-size="12" font-weight="700" fill="#c0392b">专业领域</text>
+      <text x="635" y="92" font-size="10" fill="#555">· 临床医学</text>
+      <text x="635" y="110" font-size="10" fill="#555">· 专业会计</text>
+      <text x="635" y="128" font-size="10" fill="#555">· 专业法律</text>
+      <text x="635" y="146" font-size="10" fill="#555">· 安全工程</text>
+      <text x="635" y="170" font-size="10" fill="#888">~14 个科目</text>
+    </svg>
+    <div class="caption">图 5：MMLU 涵盖 57 个科目，分为 STEM、人文、社科、专业四大领域，是衡量 LLM 知识广度的核心 Benchmark。</div>
+  </div>
+
+  <h3>2.4 Few-shot 与 Chain-of-Thought</h3>
+  <p>
+    知识评测通常在 Prompt 中提供若干示例（Few-shot），引导模型理解任务格式。
+    <strong>0-shot</strong> 不提供示例；<strong>5-shot</strong> 提供 5 个示例。
+    报告分数时必须标注 shot 数。
+  </p>
+  <div class="highlight">
+    <strong>Chain-of-Thought (CoT)：</strong>
+    在 Few-shot 示例中加入推理过程，显著提升数学和推理任务的准确率。
+    GSM8K 上 CoT 可使准确率从 ~20% 飙升到 ~80%+。报告时需标注是否使用 CoT。
+  </div>
+</div>
+
+<!-- ===== 三、代码评测 ===== -->
+<div class="section">
+  <h2>三、代码生成评测</h2>
+
+  <h3>3.1 核心指标：pass@k</h3>
+  <p>
+    代码生成的评测思路：给模型一道编程题，让它生成代码，然后运行测试用例检验正确性。
+    <strong>pass@k</strong> 是最核心的指标——从 n 次生成中随机取 k 个，至少有一个通过所有测试的概率。
+  </p>
+  <div class="formula">
+    pass@k = 1 − C(n−c, k) / C(n, k)
+    <br><br>
+    <span style="font-size:0.85em;">n = 总生成次数（通常 n ≥ k），c = 通过测试的次数，C(·,·) = 组合数</span>
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 280" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">pass@k 计算流程</text>
+      <!-- Step 1 -->
+      <rect x="30" y="50" width="160" height="70" rx="8" fill="#667eea" opacity="0.85"/>
+      <text x="110" y="75" text-anchor="middle" fill="white" font-size="11" font-weight="600">Step 1: 题目输入</text>
+      <text x="110" y="95" text-anchor="middle" fill="white" font-size="9">函数签名 + docstring</text>
+      <text x="110" y="110" text-anchor="middle" fill="white" font-size="9">+ 示例 I/O</text>
+      <line x1="190" y1="85" x2="225" y2="85" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar3)"/>
+      <!-- Step 2 -->
+      <rect x="230" y="50" width="160" height="70" rx="8" fill="#4a7dff" opacity="0.85"/>
+      <text x="310" y="75" text-anchor="middle" fill="white" font-size="11" font-weight="600">Step 2: 多次采样</text>
+      <text x="310" y="95" text-anchor="middle" fill="white" font-size="9">生成 n 个代码解</text>
+      <text x="310" y="110" text-anchor="middle" fill="white" font-size="9">(temperature &gt; 0)</text>
+      <line x1="390" y1="85" x2="425" y2="85" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar3)"/>
+      <!-- Step 3 -->
+      <rect x="430" y="50" width="160" height="70" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="510" y="75" text-anchor="middle" fill="white" font-size="11" font-weight="600">Step 3: 执行测试</text>
+      <text x="510" y="95" text-anchor="middle" fill="white" font-size="9">每个解跑全部测试用例</text>
+      <text x="510" y="110" text-anchor="middle" fill="white" font-size="9">统计通过数 c</text>
+      <line x1="590" y1="85" x2="625" y2="85" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar3)"/>
+      <!-- Step 4 -->
+      <rect x="630" y="50" width="160" height="70" rx="8" fill="#e74c3c" opacity="0.85"/>
+      <text x="710" y="75" text-anchor="middle" fill="white" font-size="11" font-weight="600">Step 4: 计算 pass@k</text>
+      <text x="710" y="95" text-anchor="middle" fill="white" font-size="9">1 − C(n−c,k)/C(n,k)</text>
+      <text x="710" y="110" text-anchor="middle" fill="white" font-size="9">无偏估计</text>
+
+      <!-- 具体例子 -->
+      <rect x="60" y="150" width="700" height="110" rx="8" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="80" y="175" font-size="12" font-weight="700" fill="#0f3460">具体例子：</text>
+      <text x="80" y="198" font-size="11" fill="#555">对一道题生成 n=20 个代码解，其中 c=5 个通过了全部测试用例。</text>
+      <text x="80" y="220" font-size="11" fill="#555"><tspan font-weight="600" fill="#2a9d8f">pass@1</tspan> = 1 − C(15,1)/C(20,1) = 1 − 15/20 = <tspan font-weight="700" fill="#2a9d8f">25.0%</tspan></text>
+      <text x="80" y="242" font-size="11" fill="#555"><tspan font-weight="600" fill="#e74c3c">pass@10</tspan> = 1 − C(15,10)/C(20,10) = 1 − 3003/184756 ≈ <tspan font-weight="700" fill="#e74c3c">98.4%</tspan></text>
+    </svg>
+    <div class="caption">图 6：pass@k 的完整计算流程。pass@1 衡量"一次就对"的能力；pass@k（k&gt;1）衡量"多试几次能否做出"的能力。</div>
+  </div>
+
+  <h3>3.2 主流代码 Benchmark</h3>
+  <table>
+    <tr>
+      <th>Benchmark</th>
+      <th>规模</th>
+      <th>语言</th>
+      <th>难度</th>
+      <th>指标</th>
+    </tr>
+    <tr>
+      <td><strong>HumanEval</strong></td>
+      <td>164 题</td>
+      <td>Python</td>
+      <td>面试级</td>
+      <td>pass@1 / pass@10</td>
+    </tr>
+    <tr>
+      <td><strong>HumanEval+</strong></td>
+      <td>164 题（80× 测试用例）</td>
+      <td>Python</td>
+      <td>面试级</td>
+      <td>pass@1</td>
+    </tr>
+    <tr>
+      <td><strong>MBPP</strong></td>
+      <td>974 题</td>
+      <td>Python</td>
+      <td>入门级</td>
+      <td>pass@1</td>
+    </tr>
+    <tr>
+      <td><strong>MultiPL-E</strong></td>
+      <td>HumanEval 多语言翻译</td>
+      <td>18 种语言</td>
+      <td>面试级</td>
+      <td>pass@1</td>
+    </tr>
+    <tr>
+      <td><strong>LiveCodeBench</strong></td>
+      <td>持续更新</td>
+      <td>Python</td>
+      <td>竞赛级</td>
+      <td>pass@1</td>
+    </tr>
+    <tr>
+      <td><strong>SWE-bench (Verified)</strong></td>
+      <td>500 真实 GitHub issues</td>
+      <td>Python</td>
+      <td>工程级</td>
+      <td>解决率 %</td>
+    </tr>
+  </table>
+
+  <div class="warning">
+    <strong>数据污染问题：</strong>HumanEval 和 MBPP 的题目已被大量模型的训练数据覆盖。
+    HumanEval+ 增加了测试用例严格性；LiveCodeBench 持续收集新题以对抗污染；
+    SWE-bench 使用真实工程任务，是当前最难"刷分"的代码评测。
+  </div>
+</div>
+
+<!-- ===== 四、数学评测 ===== -->
+<div class="section">
+  <h2>四、数学推理评测</h2>
+
+  <h3>4.1 核心指标与评测方式</h3>
+  <p>
+    数学推理评测的核心指标是<strong>准确率（Accuracy）</strong>——模型给出的最终答案是否与标准答案完全一致。
+    评测时通常要求模型在推理链末尾将答案放在特定格式中（如 <code>\boxed{}</code>），
+    由评测脚本自动提取并比对。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 190" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar4" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">数学评测的典型流程</text>
+      <rect x="25" y="50" width="140" height="55" rx="8" fill="#667eea" opacity="0.85"/>
+      <text x="95" y="73" text-anchor="middle" fill="white" font-size="11" font-weight="600">数学问题</text>
+      <text x="95" y="92" text-anchor="middle" fill="white" font-size="8">"求 2x+3=11 的解"</text>
+      <line x1="168" y1="77" x2="198" y2="77" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar4)"/>
+
+      <rect x="200" y="45" width="180" height="65" rx="8" fill="#4a7dff" opacity="0.85"/>
+      <text x="290" y="68" text-anchor="middle" fill="white" font-size="11" font-weight="600">模型生成推理过程</text>
+      <text x="290" y="85" text-anchor="middle" fill="white" font-size="8">2x = 11 − 3 = 8</text>
+      <text x="290" y="100" text-anchor="middle" fill="white" font-size="8">x = 8/2 = 4 → \boxed{4}</text>
+      <line x1="383" y1="77" x2="413" y2="77" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar4)"/>
+
+      <rect x="415" y="50" width="150" height="55" rx="8" fill="#f0a500" opacity="0.85"/>
+      <text x="490" y="73" text-anchor="middle" fill="white" font-size="11" font-weight="600">答案提取</text>
+      <text x="490" y="92" text-anchor="middle" fill="white" font-size="8">正则提取 \boxed{4} → "4"</text>
+      <line x1="568" y1="77" x2="598" y2="77" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar4)"/>
+
+      <rect x="600" y="50" width="190" height="55" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="695" y="73" text-anchor="middle" fill="white" font-size="11" font-weight="600">精确匹配</text>
+      <text x="695" y="92" text-anchor="middle" fill="white" font-size="8">"4" == 标准答案 "4" → ✓ 正确</text>
+
+      <text x="410" y="150" text-anchor="middle" font-size="11" fill="#555">注意：数学评测只看最终答案是否正确（Exact Match），推理过程不计分</text>
+      <text x="410" y="172" text-anchor="middle" font-size="10" fill="#888">部分高级评测（如 MATH-500）支持符号等价判定：如 x²+2x+1 与 (x+1)² 视为相同</text>
+    </svg>
+    <div class="caption">图 7：数学评测流程——模型生成完整推理链，评测脚本提取最终答案并与标准答案精确匹配。</div>
+  </div>
+
+  <h3>4.2 Majority Voting（多数投票）与 Best-of-N</h3>
+  <p>
+    类似代码的 pass@k，数学评测也常采用多次采样策略来提升准确率：
+  </p>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">N</span><h4>Majority Voting (maj@k)</h4>
+      <p>采样 k 次，取出现次数最多的答案作为最终答案。如 k=64 时，即使单次准确率仅 60%，多数投票后可达 90%+。</p>
+    </div>
+    <div class="card">
+      <span class="num">B</span><h4>Best-of-N (bon@k)</h4>
+      <p>使用奖励模型（RM）对 k 个生成结果打分，选分数最高的。上限比 majority voting 更高但依赖 RM 质量。</p>
+    </div>
+  </div>
+  <div class="formula">
+    maj@k: &nbsp; answer = argmax<sub>a</sub> |{i : response<sub>i</sub> 的答案 = a, &nbsp;i = 1..k}|
+  </div>
+
+  <h3>4.3 主流数学 Benchmark</h3>
+  <table>
+    <tr>
+      <th>Benchmark</th>
+      <th>规模</th>
+      <th>难度</th>
+      <th>指标</th>
+      <th>特点</th>
+    </tr>
+    <tr>
+      <td><strong>GSM8K</strong></td>
+      <td>1,319 测试题</td>
+      <td>小学应用题</td>
+      <td>Accuracy</td>
+      <td>CoT 推理的基准测试</td>
+    </tr>
+    <tr>
+      <td><strong>MATH</strong></td>
+      <td>5,000 测试题</td>
+      <td>高中竞赛级（5级难度）</td>
+      <td>Accuracy</td>
+      <td>按难度和科目细分</td>
+    </tr>
+    <tr>
+      <td><strong>MATH-500</strong></td>
+      <td>500 题</td>
+      <td>MATH 精选子集</td>
+      <td>Accuracy</td>
+      <td>快速评估用</td>
+    </tr>
+    <tr>
+      <td><strong>AIME 2024/25</strong></td>
+      <td>30 题</td>
+      <td>竞赛级</td>
+      <td>Accuracy</td>
+      <td>美国数学邀请赛真题</td>
+    </tr>
+    <tr>
+      <td><strong>Minerva MATH</strong></td>
+      <td>MATH 全集</td>
+      <td>高中竞赛级</td>
+      <td>maj@k</td>
+      <td>强调多次采样策略</td>
+    </tr>
+    <tr>
+      <td><strong>OlympiadBench</strong></td>
+      <td>8,476 题</td>
+      <td>国际奥赛级</td>
+      <td>Accuracy</td>
+      <td>数学+物理奥赛</td>
+    </tr>
+  </table>
+
+  <div class="success">
+    <strong>里程碑：</strong>GSM8K 在 2022 年还是"难题"（GPT-3.5 ~57%），到 2024 年几乎所有主流模型都超过 95%，
+    已基本"饱和"。MATH 和 AIME 仍是区分顶尖模型的有效试金石。
+  </div>
+</div>
+
+<!-- ===== 五、多模态评测 ===== -->
+<div class="section">
+  <h2>五、多模态理解评测</h2>
+
+  <h3>5.1 视觉-语言模型（VLM）评测概览</h3>
+  <p>
+    多模态大模型（如 GPT-4o、Gemini、Qwen-VL）能同时处理图像、视频、音频与文本。
+    评测需要度量模型在视觉理解、跨模态推理、文档解析等方面的能力。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 260" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar5" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">多模态评测的任务类型分层</text>
+      <!-- 感知层 -->
+      <rect x="30" y="50" width="240" height="180" rx="10" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="150" y="75" text-anchor="middle" font-size="13" font-weight="700" fill="#0f3460">感知层（Perception）</text>
+      <text x="50" y="100" font-size="10" fill="#555">· 图像分类 / 目标识别</text>
+      <text x="50" y="120" font-size="10" fill="#555">· OCR 文字识别</text>
+      <text x="50" y="140" font-size="10" fill="#555">· 图表/表格解析</text>
+      <text x="50" y="160" font-size="10" fill="#555">· 空间关系理解</text>
+      <text x="50" y="185" font-size="10" fill="#888">指标: Accuracy, F1, CIDEr</text>
+      <text x="50" y="210" font-size="10" fill="#888">Benchmark: OCRBench, ChartQA</text>
+      <!-- 推理层 -->
+      <rect x="290" y="50" width="240" height="180" rx="10" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="410" y="75" text-anchor="middle" font-size="13" font-weight="700" fill="#1a6b61">推理层（Reasoning）</text>
+      <text x="310" y="100" font-size="10" fill="#555">· 视觉问答（VQA）</text>
+      <text x="310" y="120" font-size="10" fill="#555">· 视觉数学推理</text>
+      <text x="310" y="140" font-size="10" fill="#555">· 多图比较推理</text>
+      <text x="310" y="160" font-size="10" fill="#555">· 学科知识 + 视觉联合</text>
+      <text x="310" y="185" font-size="10" fill="#888">指标: Accuracy</text>
+      <text x="310" y="210" font-size="10" fill="#888">Benchmark: MMMU, MathVista</text>
+      <!-- 生成层 -->
+      <rect x="550" y="50" width="240" height="180" rx="10" fill="#fff8f0" stroke="#f0a500" stroke-width="1.5"/>
+      <text x="670" y="75" text-anchor="middle" font-size="13" font-weight="700" fill="#e65100">生成层（Generation）</text>
+      <text x="570" y="100" font-size="10" fill="#555">· 图像描述（Captioning）</text>
+      <text x="570" y="120" font-size="10" fill="#555">· 视觉对话</text>
+      <text x="570" y="140" font-size="10" fill="#555">· 图文创作</text>
+      <text x="570" y="160" font-size="10" fill="#555">· 视频内容总结</text>
+      <text x="570" y="185" font-size="10" fill="#888">指标: CIDEr, BLEU, 人评</text>
+      <text x="570" y="210" font-size="10" fill="#888">Benchmark: NoCaps, COCO Cap</text>
+      <!-- 箭头连接 -->
+      <line x1="270" y1="140" x2="288" y2="140" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar5)"/>
+      <line x1="530" y1="140" x2="548" y2="140" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar5)"/>
+    </svg>
+    <div class="caption">图 8：多模态评测按能力层次分为感知、推理、生成三层，从低层到高层能力递进。</div>
+  </div>
+
+  <h3>5.2 核心多模态 Benchmark</h3>
+  <table>
+    <tr>
+      <th>Benchmark</th>
+      <th>任务类型</th>
+      <th>规模</th>
+      <th>评测方式</th>
+      <th>特点</th>
+    </tr>
+    <tr>
+      <td><strong>MMBench</strong></td>
+      <td>多维度视觉理解</td>
+      <td>~3,000 题</td>
+      <td>选择题 Accuracy</td>
+      <td>20 个细粒度能力维度</td>
+    </tr>
+    <tr>
+      <td><strong>MMMU</strong></td>
+      <td>大学学科 + 视觉</td>
+      <td>11,550 题</td>
+      <td>选择题 Accuracy</td>
+      <td>30 学科，需视觉 + 知识联合推理</td>
+    </tr>
+    <tr>
+      <td><strong>MathVista</strong></td>
+      <td>数学 + 视觉推理</td>
+      <td>6,141 题</td>
+      <td>Accuracy</td>
+      <td>需从图表/几何图形中推理</td>
+    </tr>
+    <tr>
+      <td><strong>VQAv2</strong></td>
+      <td>开放式视觉问答</td>
+      <td>~214K 题</td>
+      <td>VQA Accuracy</td>
+      <td>经典 VQA，近饱和</td>
+    </tr>
+    <tr>
+      <td><strong>OCRBench</strong></td>
+      <td>文字识别 + 理解</td>
+      <td>1,000 题</td>
+      <td>Accuracy / F1</td>
+      <td>中英文 OCR 场景</td>
+    </tr>
+    <tr>
+      <td><strong>RealWorldQA</strong></td>
+      <td>真实场景视觉理解</td>
+      <td>765 题</td>
+      <td>Accuracy</td>
+      <td>驾驶/户外/日常场景</td>
+    </tr>
+    <tr>
+      <td><strong>Video-MME</strong></td>
+      <td>视频理解</td>
+      <td>900 视频</td>
+      <td>选择题 Accuracy</td>
+      <td>短/中/长视频，时序推理</td>
+    </tr>
+  </table>
+
+  <h3>5.3 VQA Accuracy 计算</h3>
+  <p>VQAv2 使用了一种独特的"软准确率"来处理人类标注的分歧：</p>
+  <div class="formula">
+    VQA Accuracy = min(1, &nbsp;|同意该答案的标注人数| / 3)
+  </div>
+  <p>
+    每道题由 10 个标注者作答。对于模型给出的答案，如果有 ≥3 个标注者也给出了同样的答案，
+    则准确率为 1；否则按比例计算。这种设计优雅地处理了主观问题。
+  </p>
+
+  <h3>5.4 CIDEr（图像描述评测）</h3>
+  <p>
+    CIDEr（Consensus-based Image Description Evaluation）专为图像描述任务设计，
+    通过 TF-IDF 加权的 n-gram 匹配来衡量生成描述与参考描述的一致性。
+  </p>
+  <div class="formula">
+    CIDEr<sub>n</sub> = (1/M) &sum;<sub>j</sub> ( g<sup>n</sup>(c) &middot; g<sup>n</sup>(r<sub>j</sub>) ) / ( ‖g<sup>n</sup>(c)‖ &middot; ‖g<sup>n</sup>(r<sub>j</sub>)‖ )
+    <br><br>
+    <span style="font-size:0.85em;">g<sup>n</sup> 为 TF-IDF 加权的 n-gram 向量；c = candidate, r<sub>j</sub> = 第 j 个 reference</span>
+  </div>
+  <div class="highlight">
+    <strong>CIDEr 的设计思想：</strong>TF-IDF 加权使得"通用描述"（如 "a photo of"）权重很低，
+    而"区分性描述"（如 "a red bicycle"）权重很高——鼓励生成具有信息量的描述。
+  </div>
+</div>
+
+<!-- ===== 六、图像生成评测 ===== -->
+<div class="section">
+  <h2>六、图像生成评测</h2>
+
+  <h3>6.1 FID（Fréchet Inception Distance）</h3>
+  <p>
+    FID 是衡量图像生成质量最广泛使用的指标。核心思想：用预训练的 Inception-v3 网络提取真实图像和
+    生成图像的特征分布，然后计算两个分布之间的 <strong>Fréchet 距离</strong>。FID 越低越好。
+  </p>
+  <div class="formula">
+    FID = ‖&mu;<sub>r</sub> − &mu;<sub>g</sub>‖<sup>2</sup> + Tr(&Sigma;<sub>r</sub> + &Sigma;<sub>g</sub> − 2(&Sigma;<sub>r</sub>&Sigma;<sub>g</sub>)<sup>1/2</sup>)
+    <br><br>
+    <span style="font-size:0.85em;">&mu;<sub>r</sub>, &Sigma;<sub>r</sub> = 真实图像特征的均值和协方差；&mu;<sub>g</sub>, &Sigma;<sub>g</sub> = 生成图像特征的均值和协方差</span>
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 210" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar6" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">FID 计算流程</text>
+      <!-- 真实图像 -->
+      <rect x="30" y="50" width="120" height="50" rx="6" fill="#667eea" opacity="0.8"/>
+      <text x="90" y="70" text-anchor="middle" fill="white" font-size="10" font-weight="600">真实图像集</text>
+      <text x="90" y="88" text-anchor="middle" fill="white" font-size="8">(≥10K 张)</text>
+      <!-- 生成图像 -->
+      <rect x="30" y="120" width="120" height="50" rx="6" fill="#e74c3c" opacity="0.8"/>
+      <text x="90" y="140" text-anchor="middle" fill="white" font-size="10" font-weight="600">生成图像集</text>
+      <text x="90" y="158" text-anchor="middle" fill="white" font-size="8">(同等数量)</text>
+      <!-- Inception -->
+      <line x1="152" y1="75" x2="205" y2="100" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar6)"/>
+      <line x1="152" y1="145" x2="205" y2="120" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar6)"/>
+      <rect x="208" y="85" width="130" height="50" rx="6" fill="#f0a500" opacity="0.85"/>
+      <text x="273" y="106" text-anchor="middle" fill="white" font-size="10" font-weight="600">Inception-v3</text>
+      <text x="273" y="124" text-anchor="middle" fill="white" font-size="8">提取 2048-d 特征</text>
+      <!-- 分布 -->
+      <line x1="340" y1="100" x2="380" y2="100" stroke="#4a7dff" stroke-width="1.5"/>
+      <line x1="340" y1="120" x2="380" y2="120" stroke="#4a7dff" stroke-width="1.5"/>
+      <rect x="382" y="60" width="130" height="35" rx="4" fill="#667eea" opacity="0.5"/>
+      <text x="447" y="82" text-anchor="middle" font-size="10" fill="#0f3460">N(μ<tspan font-size="8" dy="2">r</tspan><tspan dy="-2">, Σ</tspan><tspan font-size="8" dy="2">r</tspan><tspan dy="-2">)</tspan></text>
+      <rect x="382" y="105" width="130" height="35" rx="4" fill="#e74c3c" opacity="0.3"/>
+      <text x="447" y="127" text-anchor="middle" font-size="10" fill="#c0392b">N(μ<tspan font-size="8" dy="2">g</tspan><tspan dy="-2">, Σ</tspan><tspan font-size="8" dy="2">g</tspan><tspan dy="-2">)</tspan></text>
+      <!-- Fréchet -->
+      <line x1="515" y1="100" x2="570" y2="100" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar6)"/>
+      <rect x="575" y="72" width="210" height="60" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="680" y="95" text-anchor="middle" fill="white" font-size="10" font-weight="600">Fréchet 距离</text>
+      <text x="680" y="115" text-anchor="middle" fill="white" font-size="9">FID ↓ = 质量更好 + 多样性更高</text>
+      <!-- 注 -->
+      <text x="410" y="195" text-anchor="middle" font-size="10" fill="#888">FID 同时捕捉生成质量（真实感）和多样性（模式覆盖），是一个综合指标</text>
+    </svg>
+    <div class="caption">图 9：FID 计算流程。真实图像和生成图像分别通过 Inception-v3 提取特征，建模为高斯分布后计算 Fréchet 距离。</div>
+  </div>
+
+  <h3>6.2 CLIP Score（图文对齐度）</h3>
+  <p>
+    CLIP Score 衡量生成图像与文本 prompt 之间的<strong>语义对齐程度</strong>——即图像是否"画对了题"。
+    利用 CLIP 模型分别编码图像和文本，计算余弦相似度。
+  </p>
+  <div class="formula">
+    CLIP Score = max(0, &nbsp;cos(E<sub>img</sub>(image), E<sub>txt</sub>(prompt))) &times; 100
+  </div>
+
+  <h3>6.3 其他图像生成指标</h3>
+  <table>
+    <tr>
+      <th>指标</th>
+      <th>度量维度</th>
+      <th>计算原理</th>
+      <th>↑/↓</th>
+    </tr>
+    <tr>
+      <td><strong>IS（Inception Score）</strong></td>
+      <td>质量 + 多样性</td>
+      <td>KL 散度: P(y|x) 应清晰（质量），P(y) 应均匀（多样性）</td>
+      <td>↑</td>
+    </tr>
+    <tr>
+      <td><strong>FID</strong></td>
+      <td>质量 + 多样性</td>
+      <td>特征空间的 Fréchet 距离</td>
+      <td>↓</td>
+    </tr>
+    <tr>
+      <td><strong>CLIP Score</strong></td>
+      <td>图文对齐</td>
+      <td>CLIP 嵌入的余弦相似度</td>
+      <td>↑</td>
+    </tr>
+    <tr>
+      <td><strong>LPIPS</strong></td>
+      <td>感知相似度</td>
+      <td>深度特征空间的 L2 距离</td>
+      <td>↓</td>
+    </tr>
+    <tr>
+      <td><strong>HPSv2（Human Pref Score）</strong></td>
+      <td>人类偏好</td>
+      <td>基于人类偏好数据训练的打分器</td>
+      <td>↑</td>
+    </tr>
+    <tr>
+      <td><strong>GenEval</strong></td>
+      <td>组合生成能力</td>
+      <td>目标检测验证对象/属性/关系/数量</td>
+      <td>↑</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ===== 七、语音评测 ===== -->
+<div class="section">
+  <h2>七、语音模态评测</h2>
+
+  <h3>7.1 语音识别（ASR）</h3>
+  <p>
+    语音识别的核心指标是 <strong>WER（Word Error Rate）</strong>，通过编辑距离衡量识别结果与真实文本的差异。
+  </p>
+  <div class="formula">
+    WER = (S + D + I) / N &times; 100%
+    <br><br>
+    <span style="font-size:0.85em;">S = 替换数, D = 删除数, I = 插入数, N = 参考文本词数</span>
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 160" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">WER 计算示例</text>
+      <!-- Reference -->
+      <text x="40" y="55" font-size="11" fill="#888" font-weight="600">Reference:</text>
+      <rect x="140" y="38" width="65" height="28" rx="4" fill="#667eea" opacity="0.7"/><text x="172" y="57" text-anchor="middle" fill="white" font-size="10">the</text>
+      <rect x="210" y="38" width="65" height="28" rx="4" fill="#667eea" opacity="0.7"/><text x="242" y="57" text-anchor="middle" fill="white" font-size="10">quick</text>
+      <rect x="280" y="38" width="65" height="28" rx="4" fill="#667eea" opacity="0.7"/><text x="312" y="57" text-anchor="middle" fill="white" font-size="10">brown</text>
+      <rect x="350" y="38" width="65" height="28" rx="4" fill="#667eea" opacity="0.7"/><text x="382" y="57" text-anchor="middle" fill="white" font-size="10">fox</text>
+      <!-- Hypothesis -->
+      <text x="40" y="100" font-size="11" fill="#888" font-weight="600">识别结果:</text>
+      <rect x="140" y="83" width="65" height="28" rx="4" fill="#2a9d8f" opacity="0.7"/><text x="172" y="102" text-anchor="middle" fill="white" font-size="10">the</text>
+      <rect x="210" y="83" width="65" height="28" rx="4" fill="#e74c3c" opacity="0.7"/><text x="242" y="102" text-anchor="middle" fill="white" font-size="10">duck</text>
+      <rect x="280" y="83" width="65" height="28" rx="4" fill="#aaa" opacity="0.4"/><text x="312" y="102" text-anchor="middle" fill="white" font-size="10">—</text>
+      <rect x="350" y="83" width="65" height="28" rx="4" fill="#2a9d8f" opacity="0.7"/><text x="382" y="102" text-anchor="middle" fill="white" font-size="10">fox</text>
+      <!-- 标注 -->
+      <text x="172" y="130" text-anchor="middle" font-size="9" fill="#2a9d8f">✓ 正确</text>
+      <text x="242" y="130" text-anchor="middle" font-size="9" fill="#e74c3c">S 替换</text>
+      <text x="312" y="130" text-anchor="middle" font-size="9" fill="#f0a500">D 删除</text>
+      <text x="382" y="130" text-anchor="middle" font-size="9" fill="#2a9d8f">✓ 正确</text>
+      <!-- 计算 -->
+      <text x="550" y="75" font-size="12" font-weight="700" fill="#0f3460">WER = (1+1+0)/4 = 50%</text>
+      <text x="550" y="100" font-size="10" fill="#888">S=1 (quick→duck), D=1 (brown), I=0</text>
+    </svg>
+    <div class="caption">图 10：WER 计算示例。"quick" 被替换为 "duck"（S=1），"brown" 被删除（D=1），WER = 2/4 = 50%。</div>
+  </div>
+
+  <h3>7.2 语音合成（TTS）指标</h3>
+  <table>
+    <tr>
+      <th>指标</th>
+      <th>度量维度</th>
+      <th>计算原理</th>
+    </tr>
+    <tr>
+      <td><strong>MOS（Mean Opinion Score）</strong></td>
+      <td>主观质量</td>
+      <td>人类评分 1~5 分的平均值，是语音质量的"金标准"</td>
+    </tr>
+    <tr>
+      <td><strong>PESQ</strong></td>
+      <td>客观语音质量</td>
+      <td>模拟人耳感知，比较参考与失真语音的差异</td>
+    </tr>
+    <tr>
+      <td><strong>Speaker Similarity</strong></td>
+      <td>说话人相似度</td>
+      <td>说话人验证模型（如 WavLM）提取声纹的余弦相似度</td>
+    </tr>
+    <tr>
+      <td><strong>WER of ASR</strong></td>
+      <td>可懂度</td>
+      <td>用 ASR 系统转写合成语音，WER 越低越清晰</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ===== 八、安全与对齐 ===== -->
+<div class="section">
+  <h2>八、安全、对齐与人类偏好</h2>
+
+  <h3>8.1 TruthfulQA（真实性）</h3>
+  <p>
+    TruthfulQA（Lin et al., 2022）评测模型是否会生成人类常犯的错误或迷信说法。
+    包含 817 个问题，覆盖健康、法律、金融、逻辑等容易产生误导的领域。
+  </p>
+  <div class="formula">
+    TruthfulQA 指标 = (Truthful & Informative 的回答占比) &times; 100%
+    <br><br>
+    <span style="font-size:0.85em;">由微调的 GPT-judge 模型自动判断回答是否 truthful 且 informative</span>
+  </div>
+
+  <h3>8.2 Chatbot Arena ELO</h3>
+  <p>
+    LMSYS Chatbot Arena 是目前最权威的<strong>人类偏好评测平台</strong>。
+    用户向两个匿名模型提问，然后选出更好的回答，通过 <strong>ELO 评分系统</strong> 排名。
+  </p>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>盲评机制</h4>
+      <p>用户不知道正在对比哪两个模型，消除品牌偏见。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>ELO 排名</h4>
+      <p>借鉴国际象棋 ELO 评分系统：胜率高的模型分数上升，败者下降。公式考虑对手强度。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>大规模投票</h4>
+      <p>已积累数百万次人类投票，统计显著性远超传统人类评估。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>实时更新</h4>
+      <p>新模型可快速接入，排行榜持续更新，反映最新模型格局。</p>
+    </div>
+  </div>
+  <div class="formula">
+    ELO 更新: &nbsp;R'<sub>A</sub> = R<sub>A</sub> + K &middot; (S<sub>A</sub> − E<sub>A</sub>)
+    <br><br>
+    E<sub>A</sub> = 1 / (1 + 10<sup>(R<sub>B</sub>−R<sub>A</sub>)/400</sup>)
+    <br><br>
+    <span style="font-size:0.85em;">R = 当前分数, S = 实际结果 (1/0.5/0), E = 预期胜率, K = 更新速率</span>
+  </div>
+
+  <h3>8.3 LLM-as-Judge</h3>
+  <p>
+    用强大的 LLM（如 GPT-4）作为评委来评估其他模型的输出质量。这已成为开放式生成任务的主流评测方式。
+  </p>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>优势</h4>
+      <ul>
+        <li>比人类评估便宜 10~100 倍</li>
+        <li>可大规模、可复现</li>
+        <li>与人类评估相关性高（~80%+）</li>
+        <li>支持细粒度评分维度</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>局限</h4>
+      <ul>
+        <li>位置偏见（倾向选第一个）</li>
+        <li>长度偏见（倾向更长回答）</li>
+        <li>自我偏好（倾向同族模型）</li>
+        <li>无法超越评委模型自身能力</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>8.4 安全评测 Benchmark</h3>
+  <table>
+    <tr>
+      <th>Benchmark</th>
+      <th>维度</th>
+      <th>方法</th>
+    </tr>
+    <tr>
+      <td><strong>TruthfulQA</strong></td>
+      <td>真实性 / 抗幻觉</td>
+      <td>开放式问答 + GPT-judge 评分</td>
+    </tr>
+    <tr>
+      <td><strong>BBQ</strong></td>
+      <td>社会偏见</td>
+      <td>歧义/消歧义场景下的偏见检测</td>
+    </tr>
+    <tr>
+      <td><strong>HarmBench</strong></td>
+      <td>有害内容拒绝</td>
+      <td>攻击成功率 ASR（越低越好）</td>
+    </tr>
+    <tr>
+      <td><strong>IFEval</strong></td>
+      <td>指令遵循</td>
+      <td>严格格式约束下的遵循率</td>
+    </tr>
+    <tr>
+      <td><strong>MT-Bench</strong></td>
+      <td>多轮对话质量</td>
+      <td>GPT-4 评分 1~10 分</td>
+    </tr>
+    <tr>
+      <td><strong>AlpacaEval 2.0</strong></td>
+      <td>指令跟随 + 质量</td>
+      <td>GPT-4 pairwise 比较，Length-Controlled WR%</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ===== 九、综合 Benchmark ===== -->
+<div class="section">
+  <h2>九、综合评测与排行榜</h2>
+
+  <h3>9.1 主流综合排行榜</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">🏆</span><h4>Open LLM Leaderboard</h4>
+      <p>HuggingFace 托管，聚合 MMLU、ARC、HellaSwag、GSM8K、TruthfulQA 等，开源模型的标杆排行榜。</p>
+    </div>
+    <div class="card">
+      <span class="num">🏆</span><h4>Chatbot Arena</h4>
+      <p>LMSYS 运营，基于百万级人类投票的 ELO 排名。最接近"真实用户感受"的排行榜。</p>
+    </div>
+    <div class="card">
+      <span class="num">🏆</span><h4>OpenCompass</h4>
+      <p>上海 AI Lab 运营，支持 100+ 评测数据集，覆盖中英文双语，是国内最全面的评测平台。</p>
+    </div>
+    <div class="card">
+      <span class="num">🏆</span><h4>LiveBench</h4>
+      <p>持续更新题目以对抗数据污染，按月刷新，避免静态 Benchmark 被"刷分"。</p>
+    </div>
+  </div>
+
+  <h3>9.2 如何读一份模型报告中的评测数据</h3>
+  <div class="warning">
+    <strong>阅读评测数据时的关键检查项：</strong>
+    <ul>
+      <li><strong>few-shot 数量：</strong>0-shot / 5-shot / 8-shot 结果差异显著，必须对齐</li>
+      <li><strong>是否使用 CoT：</strong>Chain-of-Thought 可大幅提升推理分数</li>
+      <li><strong>评测框架：</strong>不同框架（lm-eval-harness / OpenCompass / 自研）的 prompt 格式差异导致分数不同</li>
+      <li><strong>数据污染：</strong>测试集是否已泄露到训练数据中</li>
+      <li><strong>报告选择性偏差：</strong>厂商往往只报告自家模型表现最好的指标</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===== 十、总结 ===== -->
+<div class="section">
+  <h2>总结</h2>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 340" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">大模型评测指标速查表</text>
+      <!-- 表头 -->
+      <rect x="30" y="40" width="130" height="30" rx="4" fill="#1a1a2e"/><text x="95" y="60" text-anchor="middle" fill="white" font-size="10" font-weight="600">模态/维度</text>
+      <rect x="165" y="40" width="190" height="30" rx="4" fill="#1a1a2e"/><text x="260" y="60" text-anchor="middle" fill="white" font-size="10" font-weight="600">核心指标</text>
+      <rect x="360" y="40" width="200" height="30" rx="4" fill="#1a1a2e"/><text x="460" y="60" text-anchor="middle" fill="white" font-size="10" font-weight="600">关键公式 / 方法</text>
+      <rect x="565" y="40" width="225" height="30" rx="4" fill="#1a1a2e"/><text x="677" y="60" text-anchor="middle" fill="white" font-size="10" font-weight="600">代表 Benchmark</text>
+
+      <!-- 文本生成 -->
+      <rect x="30" y="75" width="130" height="36" rx="3" fill="#667eea" opacity="0.15"/>
+      <text x="95" y="97" text-anchor="middle" font-size="10" fill="#667eea" font-weight="600">文本生成</text>
+      <text x="260" y="97" text-anchor="middle" font-size="10" fill="#555">PPL / BLEU / ROUGE / BERTScore</text>
+      <text x="460" y="97" text-anchor="middle" font-size="10" fill="#555">n-gram 匹配 / 语义嵌入</text>
+      <text x="677" y="97" text-anchor="middle" font-size="10" fill="#555">WMT / CNN-DM / XSum</text>
+
+      <!-- 知识推理 -->
+      <rect x="30" y="116" width="130" height="36" rx="3" fill="#2a9d8f" opacity="0.15"/>
+      <text x="95" y="138" text-anchor="middle" font-size="10" fill="#2a9d8f" font-weight="600">知识与推理</text>
+      <text x="260" y="138" text-anchor="middle" font-size="10" fill="#555">Accuracy (0/5-shot)</text>
+      <text x="460" y="138" text-anchor="middle" font-size="10" fill="#555">多选题概率 / 生成匹配</text>
+      <text x="677" y="138" text-anchor="middle" font-size="10" fill="#555">MMLU / ARC / HellaSwag / GPQA</text>
+
+      <!-- 代码 -->
+      <rect x="30" y="157" width="130" height="36" rx="3" fill="#e74c3c" opacity="0.15"/>
+      <text x="95" y="179" text-anchor="middle" font-size="10" fill="#e74c3c" font-weight="600">代码生成</text>
+      <text x="260" y="179" text-anchor="middle" font-size="10" fill="#555">pass@k / 解决率</text>
+      <text x="460" y="179" text-anchor="middle" font-size="10" fill="#555">1−C(n−c,k)/C(n,k)</text>
+      <text x="677" y="179" text-anchor="middle" font-size="10" fill="#555">HumanEval / SWE-bench / MBPP</text>
+
+      <!-- 数学 -->
+      <rect x="30" y="198" width="130" height="36" rx="3" fill="#f0a500" opacity="0.15"/>
+      <text x="95" y="220" text-anchor="middle" font-size="10" fill="#f0a500" font-weight="600">数学推理</text>
+      <text x="260" y="220" text-anchor="middle" font-size="10" fill="#555">Accuracy / maj@k</text>
+      <text x="460" y="220" text-anchor="middle" font-size="10" fill="#555">答案精确匹配 / 多数投票</text>
+      <text x="677" y="220" text-anchor="middle" font-size="10" fill="#555">GSM8K / MATH / AIME</text>
+
+      <!-- 多模态 -->
+      <rect x="30" y="239" width="130" height="36" rx="3" fill="#9b59b6" opacity="0.15"/>
+      <text x="95" y="261" text-anchor="middle" font-size="10" fill="#9b59b6" font-weight="600">多模态理解</text>
+      <text x="260" y="261" text-anchor="middle" font-size="10" fill="#555">VQA Acc / CIDEr / CLIP Score</text>
+      <text x="460" y="261" text-anchor="middle" font-size="10" fill="#555">选择题 / 语义匹配 / TF-IDF</text>
+      <text x="677" y="261" text-anchor="middle" font-size="10" fill="#555">MMMU / MMBench / MathVista</text>
+
+      <!-- 图像生成 -->
+      <rect x="30" y="280" width="130" height="36" rx="3" fill="#16a085" opacity="0.15"/>
+      <text x="95" y="302" text-anchor="middle" font-size="10" fill="#16a085" font-weight="600">图像 / 语音</text>
+      <text x="260" y="302" text-anchor="middle" font-size="10" fill="#555">FID / IS / WER / MOS</text>
+      <text x="460" y="302" text-anchor="middle" font-size="10" fill="#555">特征分布距离 / 编辑距离</text>
+      <text x="677" y="302" text-anchor="middle" font-size="10" fill="#555">GenEval / LibriSpeech</text>
+
+      <!-- 分割线 -->
+      <line x1="30" y1="72" x2="790" y2="72" stroke="#e0e0e0" stroke-width="1"/>
+      <line x1="30" y1="113" x2="790" y2="113" stroke="#e0e0e0" stroke-width="0.5"/>
+      <line x1="30" y1="154" x2="790" y2="154" stroke="#e0e0e0" stroke-width="0.5"/>
+      <line x1="30" y1="195" x2="790" y2="195" stroke="#e0e0e0" stroke-width="0.5"/>
+      <line x1="30" y1="236" x2="790" y2="236" stroke="#e0e0e0" stroke-width="0.5"/>
+      <line x1="30" y1="277" x2="790" y2="277" stroke="#e0e0e0" stroke-width="0.5"/>
+    </svg>
+    <div class="caption">图 11：大模型评测指标速查表——按模态分类，一览核心指标、公式与 Benchmark。</div>
+  </div>
+
+  <div class="highlight">
+    <strong>一句话总结：</strong>没有单一指标能全面衡量一个大模型。
+    好的评测需要<strong>多维度覆盖</strong>（知识/推理/代码/数学/多模态/安全）、
+    <strong>多策略结合</strong>（自动指标 + 人类评估 + Arena）、
+    并对<strong>评测条件保持透明</strong>（few-shot / CoT / 框架 / 数据污染）。
+  </div>
+
+  <p>
+    评测体系本身也在快速演化：静态 Benchmark 正逐步被动态评测（LiveBench）和人类偏好平台（Arena）补充；
+    单纯的准确率正被更细粒度的能力诊断取代；而对数据污染和评测公平性的关注，正在推动整个领域走向更成熟的评测范式。
+  </p>
+</div>
+
+<div class="footer">
+  大模型评测指标与计算原理详解 · 文档生成于 2026 年 5 月
+</div>
+
+</div>
+</body>
+</html>

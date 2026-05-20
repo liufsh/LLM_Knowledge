@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大模型常用算子详解</title>
+<style>
+  :root{--primary:#1a1a2e;--accent:#0f3460;--highlight-bg:#f0f4ff;--highlight-border:#4a7dff;--text:#222;--border:#e0e0e0}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text);line-height:1.8;background:#fafafa}
+  .container{max-width:920px;margin:0 auto;padding:20px}
+  .cover{text-align:center;padding:70px 20px 50px;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);color:white;border-radius:12px;margin-bottom:40px}
+  .cover h1{font-size:2.1em;margin-bottom:12px;font-weight:700}
+  .cover .subtitle{font-size:1.05em;color:#aab;margin-bottom:24px}
+  .cover .tags{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}
+  .cover .tag{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:20px;padding:6px 18px;font-size:.9em;color:#dde}
+  .section{background:white;border-radius:10px;padding:36px 40px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid var(--border)}
+  h2{font-size:1.5em;color:var(--primary);margin-bottom:6px;padding-bottom:10px;border-bottom:2px solid var(--highlight-border)}
+  h3{font-size:1.15em;color:var(--accent);margin:22px 0 10px}
+  p{margin:12px 0;text-align:justify}
+  .highlight{background:var(--highlight-bg);border-left:4px solid var(--highlight-border);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .highlight strong{color:var(--accent)}
+  .warning{background:#fff8f0;border-left:4px solid #f0a500;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .success{background:#f0fff4;border-left:4px solid #2a9d8f;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  ul,ol{padding-left:24px;margin:10px 0} li{margin:6px 0}
+  .formula{text-align:center;padding:18px 20px;margin:18px 0;background:#f8f9ff;border-radius:8px;border:1px solid #e8eaf0;font-size:1.1em;font-family:"Times New Roman","STIX",serif;overflow-x:auto}
+  .figure{text-align:center;margin:24px 0;padding:16px;background:#fafafa;border-radius:8px;border:1px solid #eee}
+  .figure img{max-width:100%;height:auto;border-radius:4px}
+  .figure .caption{font-size:.88em;color:#666;margin-top:10px;font-style:italic}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.92em}
+  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid #eee}
+  th{background:var(--primary);color:white;font-weight:600} tr:hover{background:#f8f9ff}
+  td code{background:#f0f0f5;padding:2px 6px;border-radius:3px;font-size:.9em}
+  .card-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .card{background:linear-gradient(135deg,#f8f9ff,#f0f4ff);border:1px solid #d8e0f0;border-radius:10px;padding:20px 24px}
+  .card .num{display:inline-block;background:var(--highlight-border);color:white;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-size:.85em;font-weight:700;margin-right:8px}
+  .card h4{display:inline;color:var(--accent);font-size:1.05em}
+  .card p{margin-top:8px;font-size:.93em}
+  .pros-cons{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .pros,.cons{padding:16px;border-radius:8px}
+  .pros{background:#f0fff4;border:1px solid #c8e6c9} .cons{background:#fff8f0;border:1px solid #ffe0b2}
+  .pros h4{color:#2e7d32;margin-bottom:8px} .cons h4{color:#e65100;margin-bottom:8px}
+  .footer{text-align:center;color:#999;font-size:.85em;padding:30px 0;border-top:1px solid #eee;margin-top:20px}
+  @media(max-width:640px){.section{padding:24px 20px}.cover h1{font-size:1.6em}.pros-cons,.card-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="cover">
+  <h1>大模型常用算子详解</h1>
+  <div class="subtitle">构成 Transformer 的八大基础算子 —— 从数学定义到工程实现</div>
+  <div class="tags">
+    <span class="tag">Linear (MatMul)</span>
+    <span class="tag">LayerNorm / RMSNorm</span>
+    <span class="tag">Softmax</span>
+    <span class="tag">Embedding</span>
+    <span class="tag">Dropout</span>
+    <span class="tag">Residual Add</span>
+    <span class="tag">Activation (SiLU/GELU)</span>
+  </div>
+</div>
+
+<!-- ===== 引言 ===== -->
+<div class="section">
+  <h2>引言：Transformer 的"元件清单"</h2>
+  <p>
+    一个 Transformer 层看起来复杂，但<strong>拆解到最底层只有 7-8 种基础算子</strong>。
+    理解每种算子的数学定义、张量形状变化、计算量和在模型中的角色，
+    是理解 LLM 训练与推理性能的基础。
+  </p>
+
+  <div class="figure">
+    <img src="operator_figures/operator_map.png" alt="All operators in one Transformer layer">
+    <div class="caption">图 1：单个 Transformer 层中所有算子的位置。颜色标识：红色=线性层(MatMul)，
+    橙色=归一化(RMSNorm)，蓝色=注意力相关(Softmax+MatMul)，紫色=激活函数(SiLU)，蓝色=残差(Add)。</div>
+  </div>
+
+  <div class="highlight">
+    <strong>计算量分布：</strong>在典型的 LLM 中，<strong>Linear（矩阵乘法）占 ~99% 的 FLOPs</strong>，
+    其余所有算子（归一化、Softmax、激活、残差、Dropout）合计不到 1%。
+    但后者对训练稳定性、模型质量和数值精度的影响与 Linear 同等重要。
+  </div>
+</div>
+
+<!-- ===== 1. Linear ===== -->
+<div class="section">
+  <h2>一、Linear（线性层 / 矩阵乘法）</h2>
+
+  <h3>1.1 定义</h3>
+  <div class="formula">
+    Y = X &middot; W + b &nbsp;&nbsp;&nbsp; X &isin; R<sup>n&times;d<sub>in</sub></sup>, W &isin; R<sup>d<sub>in</sub>&times;d<sub>out</sub></sup>, Y &isin; R<sup>n&times;d<sub>out</sub></sup>
+  </div>
+  <p>
+    线性层是 Transformer 中<strong>最核心、最耗算力</strong>的算子。一个 Transformer 层包含
+    <strong>7 个线性层</strong>：Q/K/V 投影（3 个）、输出投影（1 个）、FFN 的 gate/up/down（3 个）。
+  </p>
+
+  <div class="figure">
+    <img src="operator_figures/linear.png" alt="Linear layer">
+    <div class="caption">图 2：线性层的矩阵乘法示意。输入 [6, 4096] 与权重 [4096, 11008] 相乘，
+    输出 [6, 11008]。FLOPs = 2 &times; 6 &times; 4096 &times; 11008 &asymp; 541M。</div>
+  </div>
+
+  <h3>1.2 在 Transformer 中的分布</h3>
+  <table>
+    <tr><th>位置</th><th>输入维度</th><th>输出维度</th><th>FLOPs（n=6, d=4096）</th></tr>
+    <tr><td>W<sub>Q</sub></td><td>4096</td><td>4096</td><td>201M</td></tr>
+    <tr><td>W<sub>K</sub></td><td>4096</td><td>4096</td><td>201M</td></tr>
+    <tr><td>W<sub>V</sub></td><td>4096</td><td>4096</td><td>201M</td></tr>
+    <tr><td>W<sub>O</sub></td><td>4096</td><td>4096</td><td>201M</td></tr>
+    <tr><td>W<sub>gate</sub> (FFN)</td><td>4096</td><td>11008</td><td>541M</td></tr>
+    <tr><td>W<sub>up</sub> (FFN)</td><td>4096</td><td>11008</td><td>541M</td></tr>
+    <tr><td>W<sub>down</sub> (FFN)</td><td>11008</td><td>4096</td><td>541M</td></tr>
+    <tr><td><strong>每层合计</strong></td><td></td><td></td><td><strong>~2.43 GFLOPs</strong></td></tr>
+  </table>
+
+  <div class="warning">
+    <strong>GPU 上的实现：</strong>Linear 本质是 GEMM（通用矩阵乘法），GPU 通过 Tensor Core
+    高度并行执行。Prefill 阶段（n 大）是矩阵&times;矩阵（GEMM），GPU 利用率高；
+    Decode 阶段（n=1）是矩阵&times;向量（GEMV），GPU 利用率极低——这就是 Decode 成为瓶颈的根因。
+  </div>
+</div>
+
+<!-- ===== 2. LayerNorm & RMSNorm ===== -->
+<div class="section">
+  <h2>二、LayerNorm 与 RMSNorm</h2>
+
+  <h3>2.1 BatchNorm（批归一化）</h3>
+  <div class="formula">
+    BatchNorm(x) = &gamma; &middot; (x - &mu;<sub>B</sub>) / &radic;(&sigma;<sub>B</sub><sup>2</sup> + &epsilon;) + &beta;
+    <br><br>
+    &mu;<sub>B</sub> = mean(x, dim=batch), &nbsp; &sigma;<sub>B</sub><sup>2</sup> = var(x, dim=batch), &nbsp; <strong>沿 batch 维度</strong>计算
+  </div>
+  <p>
+    BatchNorm（Ioffe & Szegedy, 2015）是最早被广泛使用的归一化技术。
+    它沿<strong>batch 维度</strong>计算每个特征的均值和方差——即对一个 mini-batch 中所有样本的
+    同一个特征维度做统计，然后归一化。
+  </p>
+
+  <h4>BatchNorm 的计算步骤（以输入 X &isin; R<sup>B&times;D</sup> 为例）</h4>
+  <ol>
+    <li><strong>计算每列（每个特征维度）的均值：</strong>&mu;<sub>j</sub> = (1/B) &sum;<sub>i</sub> X[i, j]，结果为 D 维向量</li>
+    <li><strong>计算每列的方差：</strong>&sigma;<sub>j</sub><sup>2</sup> = (1/B) &sum;<sub>i</sub> (X[i, j] - &mu;<sub>j</sub>)<sup>2</sup></li>
+    <li><strong>归一化：</strong>X&#770;[i, j] = (X[i, j] - &mu;<sub>j</sub>) / &radic;(&sigma;<sub>j</sub><sup>2</sup> + &epsilon;)</li>
+    <li><strong>仿射变换：</strong>Y[i, j] = &gamma;<sub>j</sub> &middot; X&#770;[i, j] + &beta;<sub>j</sub>（&gamma;, &beta; 可学习，各 D 个参数）</li>
+  </ol>
+
+  <div class="warning">
+    <strong>BatchNorm 在 LLM 中不可用的三大原因：</strong>
+    <ul>
+      <li><strong>依赖 batch 统计：</strong>推理时 batch=1（单条请求），无法计算有意义的 batch 均值/方差。
+      虽然可以用训练时的滑动平均，但在分布偏移时效果差。</li>
+      <li><strong>变长序列冲突：</strong>一个 batch 中不同序列长度不同，padding token 会污染统计量（见下图）。</li>
+      <li><strong>自回归不兼容：</strong>生成过程中序列逐 token 增长，每步的 "batch" 语义不断变化，
+      batch 统计不稳定。</li>
+    </ul>
+  </div>
+
+  <h3>2.2 LayerNorm（层归一化）</h3>
+  <div class="formula">
+    LayerNorm(x) = &gamma; &middot; (x - &mu;) / &radic;(&sigma;<sup>2</sup> + &epsilon;) + &beta;
+    <br><br>
+    &mu; = mean(x, dim=feature), &nbsp; &sigma;<sup>2</sup> = var(x, dim=feature), &nbsp; <strong>沿 feature 维度</strong>计算
+  </div>
+  <p>
+    LayerNorm（Ba et al., 2016）彻底改变了归一化的维度——<strong>对每个样本（token）的特征向量
+    独立</strong>做归一化：减去该 token 自身特征的均值、除以标准差，
+    然后用可学习的缩放因子 &gamma; 和偏移 &beta; 进行仿射变换。
+  </p>
+
+  <h4>LayerNorm 的计算步骤（以单个 token 的特征向量 x &isin; R<sup>D</sup> 为例）</h4>
+  <ol>
+    <li><strong>计算该 token 所有特征的均值：</strong>&mu; = (1/D) &sum;<sub>j=0</sub><sup>D-1</sup> x[j]
+    <br>例：x = [1.0, 2.0, 3.0, 4.0]，&mu; = (1+2+3+4)/4 = 2.5</li>
+    <li><strong>计算该 token 所有特征的方差：</strong>&sigma;<sup>2</sup> = (1/D) &sum;<sub>j</sub> (x[j] - &mu;)<sup>2</sup>
+    <br>例：&sigma;<sup>2</sup> = ((1-2.5)<sup>2</sup> + (2-2.5)<sup>2</sup> + (3-2.5)<sup>2</sup> + (4-2.5)<sup>2</sup>)/4 = 1.25</li>
+    <li><strong>归一化：</strong>x&#770;[j] = (x[j] - &mu;) / &radic;(&sigma;<sup>2</sup> + &epsilon;)
+    <br>例：x&#770; = [-1.34, -0.45, 0.45, 1.34]（均值=0，标准差=1）</li>
+    <li><strong>仿射变换：</strong>y[j] = &gamma;[j] &middot; x&#770;[j] + &beta;[j]
+    <br>&gamma; 和 &beta; 是 D 维可学习参数，允许模型在需要时"撤销"归一化</li>
+  </ol>
+
+  <h3>2.3 BatchNorm vs LayerNorm：详细对比</h3>
+
+  <div class="figure">
+    <img src="operator_figures/bn_vs_ln_numerical.png" alt="BatchNorm vs LayerNorm numerical example">
+    <div class="caption">图 3a：数值示例。原始数据 [3&times;4]（左）经 BatchNorm 后每列均值=0、标准差=1（中）；
+    经 LayerNorm 后每行均值=0、标准差=1（右）。注意归一化方向的根本差异。</div>
+  </div>
+
+  <table>
+    <tr><th>维度</th><th>BatchNorm</th><th>LayerNorm</th></tr>
+    <tr><td><strong>归一化方向</strong></td><td>沿 batch 维（每列）</td><td>沿 feature 维（每行/每 token）</td></tr>
+    <tr><td><strong>统计量计算</strong></td><td>每个特征维度一组 (&mu;, &sigma;)，共 D 组</td><td>每个样本/token 一组 (&mu;, &sigma;)，共 B&times;T 组</td></tr>
+    <tr><td><strong>可学习参数</strong></td><td>&gamma;, &beta; 各 D 个</td><td>&gamma;, &beta; 各 D 个</td></tr>
+    <tr><td><strong>batch 依赖</strong></td><td><strong>是</strong>——需要多个样本才能算统计量</td><td><strong>否</strong>——每个 token 独立计算</td></tr>
+    <tr><td><strong>推理 batch=1</strong></td><td>需要用训练时的滑动平均（不精确）</td><td>正常工作（与训练完全一致）</td></tr>
+    <tr><td><strong>变长序列</strong></td><td>padding 污染统计量</td><td>无影响（每 token 独立）</td></tr>
+    <tr><td><strong>训练时额外状态</strong></td><td>需维护 running_mean, running_var</td><td>无额外状态</td></tr>
+    <tr><td><strong>适合场景</strong></td><td>CNN（固定大小输入，大 batch）</td><td><strong>Transformer / LLM（变长序列）</strong></td></tr>
+    <tr><td><strong>代表模型</strong></td><td>ResNet, EfficientNet</td><td>BERT, GPT-2, 所有 LLM</td></tr>
+  </table>
+
+  <div class="figure">
+    <img src="operator_figures/bn_ln_sequence.png" alt="BatchNorm vs LayerNorm with sequences">
+    <div class="caption">图 3b：序列任务中 BatchNorm 的困境。左图：变长序列中 padding token 会污染 batch 统计，
+    且推理时 batch=1 无法计算 batch 统计。右图：LayerNorm 对每个 token 独立归一化，完全不受 batch 大小和 padding 影响。</div>
+  </div>
+
+  <div class="highlight">
+    <strong>一句话区分：</strong>BatchNorm 问"这个特征在整个 batch 中的分布如何？"（跨样本统计）；
+    LayerNorm 问"这个 token 的所有特征分布如何？"（跨特征统计）。
+    对于 LLM，每个 token 是独立处理的实体，LayerNorm 的"每 token 独立归一化"正好匹配这种计算范式。
+  </div>
+
+  <h3>2.5 RMSNorm（LLaMA 使用）</h3>
+  <div class="formula">
+    RMSNorm(x) = &gamma; &middot; x / RMS(x) &nbsp;&nbsp;其中 RMS(x) = &radic;(mean(x<sup>2</sup>) + &epsilon;)
+  </div>
+  <p>
+    RMSNorm 是 LayerNorm 的<strong>简化版本</strong>（Zhang & Sennrich, 2019）：
+    <strong>去掉了均值中心化</strong>（不减 &mu;）和偏移项 &beta;，只做尺度归一化。
+  </p>
+
+  <div class="figure">
+    <img src="operator_figures/norm_comparison.png" alt="Norm comparison">
+    <div class="caption">图 3c：BatchNorm、LayerNorm、RMSNorm 的归一化维度矩阵视图对比。
+    BatchNorm 沿 batch 维归一化（每列高亮）；LayerNorm 沿 feature 维归一化（每行高亮）；
+    RMSNorm 与 LayerNorm 相同方向但不减均值。</div>
+  </div>
+
+  <div class="figure">
+    <img src="operator_figures/norm_effect.png" alt="Normalization effect">
+    <div class="caption">图 4：归一化前后的数值分布。原始数据偏斜且方差大；
+    LayerNorm 将其精确标准化为 mean=0, std=1；RMSNorm 将 RMS 归为 1 但保留均值偏移。</div>
+  </div>
+
+  <h3>2.6 为什么 LLM 用 RMSNorm 而非 LayerNorm？</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>计算更快</h4>
+      <p>省去均值计算（少一次 reduce）和偏移项。在大维度（d=4096+）下节省约 10-15% 的归一化耗时。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>效果几乎无差</h4>
+      <p>研究表明，均值中心化对 Transformer 的贡献极小——缩放（除以 RMS）才是关键。
+      去掉均值不影响模型质量。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>参数更少</h4>
+      <p>每层只有 &gamma;（d 个参数），没有 &beta;。对于 80 层的 LLaMA-65B，
+      共节省 80 &times; 2 &times; 8192 &asymp; 1.3M 参数。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>Pre-Norm 兼容性好</h4>
+      <p>LLaMA 使用 Pre-Norm（归一化在子层之前），RMSNorm 在此场景下训练更稳定。</p>
+    </div>
+  </div>
+
+  <h3>2.7 Pre-Norm vs Post-Norm</h3>
+  <table>
+    <tr><th>方案</th><th>公式</th><th>训练稳定性</th><th>表达能力</th><th>代表模型</th></tr>
+    <tr><td><strong>Post-Norm</strong></td><td><code>Norm(x + f(x))</code></td><td>较差（需 warmup）</td><td>略强</td><td>BERT, 原始 Transformer</td></tr>
+    <tr><td><strong>Pre-Norm</strong></td><td><code>x + f(Norm(x))</code></td><td>优秀</td><td>略弱</td><td>GPT-2/3, LLaMA, Mistral</td></tr>
+  </table>
+</div>
+
+<!-- ===== 3. Softmax ===== -->
+<div class="section">
+  <h2>三、Softmax</h2>
+
+  <h3>3.1 定义</h3>
+  <div class="formula">
+    Softmax(x<sub>i</sub>) = e<sup>x<sub>i</sub></sup> / &sum;<sub>j</sub> e<sup>x<sub>j</sub></sup>
+  </div>
+  <p>
+    Softmax 将任意实数向量转化为<strong>概率分布</strong>（所有元素 &gt; 0，和为 1）。
+    在 Transformer 中有两个关键用途：
+  </p>
+  <ul>
+    <li><strong>注意力层：</strong>将注意力分数转化为注意力权重（每行和为 1）</li>
+    <li><strong>输出层：</strong>将 logits 转化为词表上的概率分布</li>
+  </ul>
+
+  <div class="figure">
+    <img src="operator_figures/softmax.png" alt="Softmax">
+    <div class="caption">图 5：Softmax 的效果。左：原始 logits；中：Softmax 后的概率分布（最大值被放大，小值被压缩）；
+    右：温度参数 T 对分布锐度的影响——T 越小越集中，T 越大越均匀。</div>
+  </div>
+
+  <h3>3.2 数值稳定性</h3>
+  <div class="warning">
+    <strong>上溢问题：</strong>如果 x<sub>i</sub> 很大（如 1000），e<sup>1000</sup> 会溢出 float32。
+    解决方案：<strong>减去最大值</strong> Softmax(x) = Softmax(x - max(x))，数学上等价但数值稳定。
+    这就是 FlashAttention 中 Online Softmax 需要维护局部最大值的原因。
+  </div>
+
+  <h3>3.3 计算量</h3>
+  <p>
+    Softmax 本身的 FLOPs 很少（每元素几个操作），但它包含一个 <strong>reduce 操作</strong>
+    （求 &sum;e<sup>x<sub>j</sub></sup>），在 GPU 上需要跨线程同步，是一个潜在的延迟点。
+    对于注意力层的 [N&times;N] 矩阵，Softmax 沿每行 reduce，总量 = O(N<sup>2</sup>)。
+  </p>
+</div>
+
+<!-- ===== 4. Embedding ===== -->
+<div class="section">
+  <h2>四、Embedding（嵌入层）</h2>
+
+  <h3>4.1 定义</h3>
+  <div class="formula">
+    Embedding(token_id) = E[token_id] &nbsp;&nbsp; E &isin; R<sup>V &times; d</sup>
+  </div>
+  <p>
+    Embedding 是一个<strong>查表操作</strong>（不是矩阵乘法）：
+    给定整数 token ID，直接取出嵌入表中对应行的 d 维向量。
+  </p>
+
+  <div class="figure">
+    <img src="operator_figures/embedding.png" alt="Embedding">
+    <div class="caption">图 6：Embedding 与位置编码的两种注入方式。
+    GPT-2 风格（Method A）：Token Embedding + Position Embedding 直接相加；
+    LLaMA 风格（Method B）：只做 Token Embedding，位置信息由 RoPE 在 Attention 中注入。</div>
+  </div>
+
+  <h3>4.2 Weight Tying</h3>
+  <p>
+    许多 LLM（包括 LLaMA）让 Embedding 表和输出层的 LM Head 共享同一个权重矩阵：
+    输入时用 E 做查表（token ID &rarr; 向量），输出时用 E<sup>T</sup> 做投影（向量 &rarr; logits）。
+    这节省了 V &times; d 个参数（LLaMA-7B: 32000 &times; 4096 = 1.31 亿参数）。
+  </p>
+
+  <h3>4.3 参数量</h3>
+  <table>
+    <tr><th>模型</th><th>词表 V</th><th>维度 d</th><th>Embedding 参数</th><th>占总参数比</th></tr>
+    <tr><td>LLaMA-7B</td><td>32,000</td><td>4,096</td><td>131M</td><td>~1.9%</td></tr>
+    <tr><td>LLaMA-65B</td><td>32,000</td><td>8,192</td><td>262M</td><td>~0.4%</td></tr>
+    <tr><td>GPT-4 级别</td><td>~100,000</td><td>~12,000</td><td>~1.2B</td><td>~0.07%</td></tr>
+  </table>
+</div>
+
+<!-- ===== 5. Dropout ===== -->
+<div class="section">
+  <h2>五、Dropout</h2>
+
+  <h3>5.1 定义</h3>
+  <div class="formula">
+    训练时：Dropout(x, p) = x &middot; mask / (1 - p) &nbsp;&nbsp; mask ~ Bernoulli(1 - p)
+    <br><br>
+    推理时：Dropout(x) = x &nbsp;&nbsp;（不做任何操作）
+  </div>
+  <p>
+    Dropout 在训练时<strong>随机将一部分激活值置零</strong>（概率 p），并将存活的值
+    <strong>放大 1/(1-p) 倍</strong>（Inverted Dropout），使得训练和推理的期望值一致。
+  </p>
+
+  <div class="figure">
+    <img src="operator_figures/dropout.png" alt="Dropout">
+    <div class="caption">图 7：Dropout 过程可视化。左：原始激活值；中：30% 的元素被随机置零（红色 X）；
+    右：存活元素放大 1/0.7 倍，保持总期望不变。</div>
+  </div>
+
+  <h3>5.2 在 LLM 中的使用现状</h3>
+  <div class="success">
+    <strong>现代 LLM 趋势：不用 Dropout。</strong>LLaMA、Mistral、Qwen 等主流开源 LLM 在预训练中
+    <strong>完全去掉了 Dropout</strong>（p=0）。原因：
+    <ul>
+      <li>大规模预训练数据本身就是最好的正则化（数据量 >> 参数量）</li>
+      <li>Dropout 引入随机噪声，不利于大 batch 训练的收敛稳定性</li>
+      <li>Dropout 的 mask 生成和存储有额外开销</li>
+      <li>在超长序列训练中，激活值检查点（activation checkpointing）需要保存 Dropout 的 mask 才能精确重算，增加内存</li>
+    </ul>
+    不过在<strong>微调</strong>阶段（数据量小，易过拟合），Dropout 仍然常用（如 LoRA 中 p=0.05-0.1）。
+  </div>
+</div>
+
+<!-- ===== 6. Residual Add ===== -->
+<div class="section">
+  <h2>六、残差连接（Residual Add）</h2>
+
+  <h3>6.1 定义</h3>
+  <div class="formula">
+    h<sub>l</sub> = h<sub>l-1</sub> + f<sub>l-1</sub>(h<sub>l-1</sub>)
+  </div>
+  <p>
+    残差连接（He et al., 2016）是 Transformer 能够堆叠数十甚至上百层的<strong>关键保障</strong>。
+    它将子层的输出<strong>加回</strong>输入，而非替换输入。
+  </p>
+
+  <div class="figure">
+    <img src="operator_figures/residual.png" alt="Residual connection">
+    <div class="caption">图 8：残差连接对梯度传播的影响。没有残差时，梯度随层数指数衰减（每层乘以 &lt;1 的系数）；
+    有残差时，梯度可以沿"高速公路"直接回传，保持 ~1.0 的幅度。</div>
+  </div>
+
+  <h3>6.2 为什么残差有效？</h3>
+  <ol>
+    <li><strong>梯度高速公路：</strong>反向传播时 &part;h<sub>l</sub>/&part;h<sub>l-1</sub> = I + &part;f/&part;h，
+    恒等项 I 保证梯度至少以原幅度传播，不会消失。</li>
+    <li><strong>渐进式精化：</strong>每层学习的是对输入的"增量修正"而非完整变换，
+    学习目标更简单，优化更容易。</li>
+    <li><strong>隐式集成：</strong>展开后 h<sub>L</sub> = h<sub>1</sub> + &sum;f<sub>i</sub>(h<sub>i</sub>)，
+    相当于所有层输出的集成，类似 ensemble 效果。</li>
+  </ol>
+
+  <div class="highlight">
+    <strong>计算开销：</strong>残差连接只是一个<strong>逐元素加法</strong>（element-wise add），
+    FLOPs = d（每个元素一次加法），对总计算量的贡献可忽略（&lt;0.01%）。
+    但它是模型能训练成功的最关键操作之一。
+  </div>
+</div>
+
+<!-- ===== 7. Activation ===== -->
+<div class="section">
+  <h2>七、激活函数（SiLU / GELU）</h2>
+  <p>
+    激活函数为网络引入非线性，使其能拟合复杂函数。在 Transformer 的 FFN 层中，
+    激活函数作用于中间的高维表示。
+  </p>
+
+  <table>
+    <tr><th>激活函数</th><th>公式</th><th>使用模型</th><th>特点</th></tr>
+    <tr><td><strong>ReLU</strong></td><td><code>max(0, x)</code></td><td>原始 Transformer</td><td>极快，但有死亡神经元</td></tr>
+    <tr><td><strong>GELU</strong></td><td><code>x &middot; &Phi;(x)</code></td><td>BERT, GPT-2</td><td>高斯误差函数，平滑</td></tr>
+    <tr><td><strong>SiLU (Swish)</strong></td><td><code>x &middot; &sigma;(x)</code></td><td>LLaMA, Mistral, Qwen</td><td>自门控，非单调</td></tr>
+    <tr><td><strong>SwiGLU</strong></td><td><code>SiLU(xW<sub>g</sub>) &otimes; xW<sub>u</sub></code></td><td>LLaMA FFN</td><td>门控 + 双路径</td></tr>
+  </table>
+
+  <div class="success">
+    <strong>当前标准：</strong>现代 LLM 几乎全部使用 <strong>SiLU + 门控结构（SwiGLU）</strong>。
+    GELU 仍在 BERT 系列和部分视觉模型中使用。ReLU 在 LLM 中基本被淘汰。
+    详细的激活函数原理参见 <a href="Deep_Learning_Activations.html" style="color:#4a7dff">激活函数详解</a> 文档。
+  </div>
+</div>
+
+<!-- ===== 8. 其他算子 ===== -->
+<div class="section">
+  <h2>八、其他重要算子</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>Masked Fill</h4>
+      <p>将注意力矩阵的指定位置设为 -&infin;（因果掩码）。Softmax 后这些位置变为 0。
+      是实现自回归的关键——阻止 token "偷看"未来。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>Concatenate / Split</h4>
+      <p>多头注意力中，将 d 维向量拆分为 h 个 d/h 维的头（Split），
+      注意力计算后再拼合（Concat）。纯内存操作，零 FLOPs。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>Reshape / Transpose</h4>
+      <p>调整张量形状和维度顺序。如 [B, T, h, d_k] &harr; [B, h, T, d_k]。
+      逻辑操作（改变 stride），不搬运数据。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>Element-wise Multiply</h4>
+      <p>SwiGLU 中 gate &otimes; up 的逐元素乘法，以及 RoPE 中的旋转操作。
+      FLOPs = 元素数，是"轻量级"操作。</p>
+    </div>
+    <div class="card">
+      <span class="num">5</span>
+      <h4>Top-k / Argmax</h4>
+      <p>输出层从 32000 个概率中选出最大值（greedy）或前 k 个候选（sampling）。
+      推理时每步只执行一次，开销可忽略。</p>
+    </div>
+    <div class="card">
+      <span class="num">6</span>
+      <h4>Cross-Entropy Loss</h4>
+      <p>训练时的损失函数：-log(P(正确 token))。包含 log-softmax + NLL loss。
+      只在训练时使用，推理时不需要。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 综合对比 ===== -->
+<div class="section">
+  <h2>九、综合对比</h2>
+
+  <table>
+    <tr><th>算子</th><th>FLOPs 占比</th><th>内存占比</th><th>每层调用次数</th><th>训练/推理</th><th>可否融合</th></tr>
+    <tr><td><strong>Linear (MatMul)</strong></td><td>~99%</td><td>参数主体</td><td>7 次</td><td>都用</td><td>否（核心）</td></tr>
+    <tr><td><strong>RMSNorm</strong></td><td>&lt;0.1%</td><td>可忽略</td><td>2-3 次</td><td>都用</td><td>是（kernel fusion）</td></tr>
+    <tr><td><strong>Softmax</strong></td><td>&lt;0.1%</td><td>O(N<sup>2</sup>) 注意力矩阵</td><td>1 次 + 输出层</td><td>都用</td><td>是（FlashAttention）</td></tr>
+    <tr><td><strong>Embedding</strong></td><td>0</td><td>V&times;d 参数</td><td>1 次</td><td>都用</td><td>否</td></tr>
+    <tr><td><strong>Dropout</strong></td><td>~0</td><td>mask 存储</td><td>0-2 次</td><td>仅训练</td><td>是</td></tr>
+    <tr><td><strong>Residual Add</strong></td><td>&lt;0.01%</td><td>0</td><td>2 次</td><td>都用</td><td>是</td></tr>
+    <tr><td><strong>Activation (SiLU)</strong></td><td>&lt;0.1%</td><td>需存储用于反向</td><td>1 次</td><td>都用</td><td>是</td></tr>
+    <tr><td><strong>Masked Fill</strong></td><td>~0</td><td>mask 矩阵</td><td>1 次</td><td>都用</td><td>是（FlashAttention）</td></tr>
+  </table>
+
+  <div class="highlight">
+    <strong>Kernel Fusion 优化：</strong>实际 GPU 执行中，轻量算子不会独立启动 kernel，
+    而是被<strong>融合</strong>到相邻的重计算 kernel 中。例如：
+    RMSNorm + Linear 融合；Softmax + Mask 融合（FlashAttention）；
+    SiLU + Element-wise Multiply 融合；Residual Add + RMSNorm 融合。
+    这大幅减少了 kernel launch 开销和显存读写次数。
+  </div>
+</div>
+
+<!-- ===== 总结 ===== -->
+<div class="section">
+  <h2>十、总结</h2>
+  <p>Transformer 的算子可以分为三类：</p>
+  <ol>
+    <li><strong>计算密集型（Linear）：</strong>占 99% 的 FLOPs，是训练和推理的主要计算负载。
+    所有性能优化的核心目标是让 GPU 的 Tensor Core 尽可能长时间地执行 GEMM。</li>
+    <li><strong>数值稳定型（RMSNorm, Softmax）：</strong>FLOPs 很少但对训练至关重要。
+    没有 RMSNorm，深层网络无法训练；没有 Softmax，注意力权重无法归一化。</li>
+    <li><strong>结构功能型（Embedding, Residual, Dropout, Activation, Mask）：</strong>
+    定义了模型的信息流结构——数据如何进入（Embedding）、如何跨层传递（Residual）、
+    如何引入非线性（Activation）、如何防止过拟合（Dropout）。</li>
+  </ol>
+  <div class="highlight">
+    <strong>一句话理解：</strong>Linear 是 Transformer 的"肌肉"（提供计算力），
+    Normalization 是"免疫系统"（维持数值健康），Residual 是"骨架"（支撑深度），
+    Activation 是"关节"（提供灵活性），Softmax 是"大脑"（做出选择），
+    Embedding 是"感官"（接收输入）。缺一不可。
+  </div>
+</div>
+
+<div class="footer">
+  深度学习基础系列 &middot; 大模型常用算子详解
+</div>
+
+</div>
+</body>
+</html>

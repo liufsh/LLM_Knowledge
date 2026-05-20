@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大模型位置编码的原理与实现</title>
+<style>
+  :root {
+    --primary: #1a1a2e;
+    --accent: #0f3460;
+    --highlight-bg: #f0f4ff;
+    --highlight-border: #4a7dff;
+    --text: #222;
+    --border: #e0e0e0;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: var(--text); line-height: 1.8; background: #fafafa;
+  }
+  .container { max-width: 920px; margin: 0 auto; padding: 20px; }
+  .cover {
+    text-align: center; padding: 70px 20px 50px;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    color: white; border-radius: 12px; margin-bottom: 40px;
+  }
+  .cover h1 { font-size: 2.1em; margin-bottom: 12px; font-weight: 700; letter-spacing: 1px; }
+  .cover .subtitle { font-size: 1.05em; color: #aab; margin-bottom: 24px; }
+  .cover .tags { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+  .cover .tag {
+    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 20px; padding: 6px 18px; font-size: 0.9em; color: #dde;
+  }
+  .section {
+    background: white; border-radius: 10px; padding: 36px 40px;
+    margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid var(--border);
+  }
+  h2 { font-size: 1.5em; color: var(--primary); margin-bottom: 6px; padding-bottom: 10px; border-bottom: 2px solid var(--highlight-border); }
+  h3 { font-size: 1.15em; color: var(--accent); margin: 22px 0 10px; }
+  p { margin: 12px 0; text-align: justify; }
+  .highlight { background: var(--highlight-bg); border-left: 4px solid var(--highlight-border); padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  .highlight strong { color: var(--accent); }
+  .warning { background: #fff8f0; border-left: 4px solid #f0a500; padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  .success { background: #f0fff4; border-left: 4px solid #2a9d8f; padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  ul, ol { padding-left: 24px; margin: 10px 0; }
+  li { margin: 6px 0; }
+  .formula {
+    text-align: center; padding: 18px 20px; margin: 18px 0; background: #f8f9ff;
+    border-radius: 8px; border: 1px solid #e8eaf0; font-size: 1.12em;
+    font-family: "Times New Roman", "STIX", serif; letter-spacing: 0.5px; overflow-x: auto;
+  }
+  .figure { text-align: center; margin: 24px 0; padding: 16px; background: #fafafa; border-radius: 8px; border: 1px solid #eee; }
+  .figure img { max-width: 100%; height: auto; border-radius: 4px; }
+  .figure .caption { font-size: 0.88em; color: #666; margin-top: 10px; font-style: italic; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.92em; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #eee; }
+  th { background: var(--primary); color: white; font-weight: 600; }
+  tr:hover { background: #f8f9ff; }
+  td code { background: #f0f0f5; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+  .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+  .card {
+    background: linear-gradient(135deg, #f8f9ff 0%, #f0f4ff 100%);
+    border: 1px solid #d8e0f0; border-radius: 10px; padding: 20px 24px;
+  }
+  .card .num {
+    display: inline-block; background: var(--highlight-border); color: white;
+    width: 28px; height: 28px; border-radius: 50%; text-align: center;
+    line-height: 28px; font-size: 0.85em; font-weight: 700; margin-right: 8px;
+  }
+  .card h4 { display: inline; color: var(--accent); font-size: 1.05em; }
+  .card p { margin-top: 8px; font-size: 0.93em; }
+  .pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+  .pros, .cons { padding: 16px; border-radius: 8px; }
+  .pros { background: #f0fff4; border: 1px solid #c8e6c9; }
+  .cons { background: #fff8f0; border: 1px solid #ffe0b2; }
+  .pros h4 { color: #2e7d32; margin-bottom: 8px; }
+  .cons h4 { color: #e65100; margin-bottom: 8px; }
+  .pros li, .cons li { font-size: 0.93em; }
+  .code-block {
+    background: #1e1e2e; color: #cdd6f4; padding: 20px 24px; border-radius: 8px;
+    margin: 16px 0; overflow-x: auto; font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 0.88em; line-height: 1.6;
+  }
+  .code-block .comment { color: #6c7086; }
+  .code-block .keyword { color: #cba6f7; }
+  .code-block .func { color: #89b4fa; }
+  .code-block .string { color: #a6e3a1; }
+  .code-block .number { color: #fab387; }
+  .timeline { position: relative; padding-left: 30px; margin: 20px 0; }
+  .timeline::before {
+    content: ''; position: absolute; left: 8px; top: 0; bottom: 0; width: 3px;
+    background: linear-gradient(to bottom, #e63946, #f0a500, #2a9d8f, #6a4c93, #4a7dff); border-radius: 2px;
+  }
+  .timeline-item { position: relative; margin-bottom: 20px; padding: 16px 20px; background: white; border: 1px solid #e8e8e8; border-radius: 8px; }
+  .timeline-item::before {
+    content: ''; position: absolute; left: -26px; top: 20px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;
+  }
+  .timeline-item:nth-child(1)::before { background: #e63946; }
+  .timeline-item:nth-child(2)::before { background: #f0a500; }
+  .timeline-item:nth-child(3)::before { background: #2a9d8f; }
+  .timeline-item:nth-child(4)::before { background: #6a4c93; }
+  .timeline-item:nth-child(5)::before { background: #4a7dff; }
+  .timeline-item .year { font-size: 0.8em; color: #999; font-weight: 600; }
+  .timeline-item h4 { margin: 4px 0 8px; color: var(--accent); }
+  .footer { text-align: center; color: #999; font-size: 0.85em; padding: 30px 0; border-top: 1px solid #eee; margin-top: 20px; }
+  @media (max-width: 640px) {
+    .section { padding: 24px 20px; }
+    .cover h1 { font-size: 1.6em; }
+    .pros-cons, .card-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ===== Cover ===== -->
+<div class="cover">
+  <h1>大模型位置编码的原理与实现</h1>
+  <div class="subtitle">从正弦编码到 RoPE —— 让 Transformer 理解"顺序"的关键技术</div>
+  <div class="tags">
+    <span class="tag">Sinusoidal PE</span>
+    <span class="tag">Learned PE</span>
+    <span class="tag">RoPE</span>
+    <span class="tag">ALiBi</span>
+    <span class="tag">长度外推</span>
+    <span class="tag">YaRN / NTK-Aware</span>
+  </div>
+</div>
+
+<!-- ===== 引言 ===== -->
+<div class="section">
+  <h2>引言：为什么 Transformer 需要位置编码？</h2>
+  <p>
+    Transformer 的自注意力机制有一个根本性的"缺陷"：它是<strong>置换不变的</strong>
+    （permutation invariant）。对于输入序列中的任意两个 token，注意力只计算它们
+    <strong>内容</strong>的相似度，完全不考虑它们的<strong>位置</strong>。
+  </p>
+
+  <div class="figure">
+    <img src="pos_encoding_figures/why_position.png" alt="Why position matters">
+    <div class="caption">图 1："cat eats fish" 和 "fish eats cat" 意义完全不同，
+    但没有位置编码时，Attention 计算的分数完全相同。</div>
+  </div>
+
+  <div class="highlight">
+    <strong>核心问题：</strong>如果不引入位置信息，"猫吃鱼"和"鱼吃猫"对模型来说
+    是完全等价的——它们包含相同的 token 集合，注意力得分矩阵完全相同。
+    语言是有序的，位置编码就是告诉模型"谁在前面、谁在后面"的机制。
+  </div>
+
+  <p>本文将系统介绍五种主要的位置编码方案，按照发展脉络逐步深入：</p>
+
+  <div class="timeline">
+    <div class="timeline-item">
+      <span class="year">2017 — Transformer 原作</span>
+      <h4>正弦位置编码（Sinusoidal PE）</h4>
+      <p>用固定的正弦/余弦函数生成位置向量，加到词嵌入上。优雅但有局限。</p>
+    </div>
+    <div class="timeline-item">
+      <span class="year">2018-2019 — BERT / GPT-2</span>
+      <h4>可学习位置编码（Learned PE）</h4>
+      <p>将位置向量作为可训练参数，简单直接但无法泛化到训练之外的长度。</p>
+    </div>
+    <div class="timeline-item">
+      <span class="year">2021 — RoFormer / LLaMA</span>
+      <h4>旋转位置编码（RoPE）</h4>
+      <p>通过旋转 Q/K 向量编码相对位置，成为当前 LLM 的主流选择。</p>
+    </div>
+    <div class="timeline-item">
+      <span class="year">2022 — BLOOM</span>
+      <h4>ALiBi（线性注意力偏置）</h4>
+      <p>不修改嵌入，直接在注意力分数上加线性偏置，天然支持长度外推。</p>
+    </div>
+    <div class="timeline-item">
+      <span class="year">2023 — 长上下文时代</span>
+      <h4>YaRN / NTK-Aware 扩展</h4>
+      <p>改进 RoPE 的频率分配，将上下文窗口从 4K 扩展到 128K+。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 1. 正弦位置编码 ===== -->
+<div class="section">
+  <h2>一、正弦位置编码（Sinusoidal PE）</h2>
+
+  <h3>1.1 数学定义</h3>
+  <p>
+    原始 Transformer（Vaswani et al., 2017）提出的位置编码使用不同频率的正弦和余弦函数：
+  </p>
+  <div class="formula">
+    PE(pos, 2i) = sin(pos / 10000<sup>2i/d</sup>)
+    <br>
+    PE(pos, 2i+1) = cos(pos / 10000<sup>2i/d</sup>)
+  </div>
+  <p>
+    其中 pos 是位置索引，i 是维度索引，d 是模型维度。偶数维度用 sin，奇数维度用 cos。
+  </p>
+
+  <h3>1.2 直觉理解</h3>
+  <p>
+    可以把每个位置想象成一个<strong>"多刻度时钟"</strong>：
+  </p>
+  <ul>
+    <li><strong>低维度（i 小）：</strong>频率高，像秒针——相邻位置之间变化剧烈，编码<strong>精细的局部位置</strong></li>
+    <li><strong>高维度（i 大）：</strong>频率低，像时针——需要跨越很多位置才会有明显变化，编码<strong>粗略的全局位置</strong></li>
+    <li><strong>合在一起：</strong>就像用"时:分:秒"三个刻度唯一标识一个时间点一样，不同频率的组合唯一标识每个位置</li>
+  </ul>
+
+  <div class="figure">
+    <img src="pos_encoding_figures/sinusoidal_pe.png" alt="Sinusoidal PE">
+    <div class="caption">图 2：正弦位置编码的可视化。左图：热力图显示不同位置和维度的编码值，
+    低维度变化快、高维度变化慢。右图：四个不同维度的编码值随位置的变化曲线。</div>
+  </div>
+
+  <h3>1.3 为什么选择正弦函数？</h3>
+  <p>Vaswani 等人选择正弦函数有一个深刻的数学原因：</p>
+  <div class="highlight">
+    <strong>线性变换性质：</strong>对于任意固定的偏移 k，PE(pos+k) 可以表示为 PE(pos) 的线性变换。
+    即存在一个只依赖于 k（不依赖于 pos）的矩阵 M<sub>k</sub>，使得 PE(pos+k) = M<sub>k</sub> &middot; PE(pos)。
+    这意味着模型理论上可以通过学习来"关注相对位置"。
+  </div>
+  <p>证明很简洁，基于三角恒等式：</p>
+  <div class="formula">
+    sin(pos+k) = sin(pos)cos(k) + cos(pos)sin(k)
+    <br>
+    cos(pos+k) = cos(pos)cos(k) - sin(pos)sin(k)
+  </div>
+  <p>
+    这正好可以写成一个 2&times;2 旋转矩阵乘以 [sin(pos), cos(pos)]<sup>T</sup>。
+  </p>
+
+  <h3>1.4 使用方式</h3>
+  <p>
+    正弦 PE 通过<strong>加法</strong>注入：将位置编码向量直接加到 token 的词嵌入上：
+  </p>
+  <div class="formula">
+    x<sub>i</sub> = Embedding(token<sub>i</sub>) + PE(i)
+  </div>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; 优点</h4>
+      <ul>
+        <li>无需训练，参数量为零</li>
+        <li>理论上支持任意长度（函数可计算任意 pos）</li>
+        <li>数学性质优美（线性变换 → 可学习相对位置）</li>
+        <li>不同位置的 PE 向量两两正交（近似）</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; 缺点</h4>
+      <ul>
+        <li>实际长度外推效果有限（未在长序列上训练过）</li>
+        <li>加法注入会"污染"词嵌入空间</li>
+        <li>绝对位置编码——位置 0 和位置 100 的 PE 差异与位置 500 和位置 600 的不同</li>
+        <li>已被现代 LLM 淘汰</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 2. 可学习 PE ===== -->
+<div class="section">
+  <h2>二、可学习位置编码（Learned PE）</h2>
+
+  <h3>2.1 定义</h3>
+  <p>
+    最简单的思路：为每个位置分配一个<strong>可训练的参数向量</strong>，让模型自己学习
+    什么样的位置表示最有效。
+  </p>
+  <div class="formula">
+    PE = nn.Embedding(max_len, d_model)
+    <br><br>
+    x<sub>i</sub> = TokenEmbed(token<sub>i</sub>) + PE(i)
+  </div>
+  <p>
+    实现上就是一个额外的 Embedding 查表操作。代表模型：<strong>BERT</strong>（512 位置）、
+    <strong>GPT-2</strong>（1024 位置）。
+  </p>
+
+  <h3>2.2 直觉与局限</h3>
+  <p>
+    可学习 PE 的优势是<strong>极其灵活</strong>——模型可以学到任何位置模式。
+    但最大的致命缺陷也很明显：
+  </p>
+  <div class="warning">
+    <strong>硬长度限制：</strong>如果训练时 max_len = 512，推理时遇到第 513 个 token，
+    对应的位置嵌入<strong>根本不存在</strong>（没有这一行参数）。
+    模型无法处理超过训练长度的序列，完全没有外推能力。
+  </div>
+
+  <div class="figure">
+    <img src="pos_encoding_figures/absolute_vs_relative.png" alt="Absolute vs Relative">
+    <div class="caption">图 3：绝对位置编码（左）vs 相对位置编码（右）。绝对编码为每个位置赋予固定标签；
+    相对编码只关心 token 之间的距离，更符合语言理解的本质。</div>
+  </div>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; 优点</h4>
+      <ul>
+        <li>实现极简（一行代码）</li>
+        <li>极度灵活，可学到任意模式</li>
+        <li>在训练长度内表现良好</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; 缺点</h4>
+      <ul>
+        <li><strong>零外推能力</strong>：无法处理训练长度之外的位置</li>
+        <li>额外参数量（max_len &times; d_model）</li>
+        <li>绝对位置——不直接建模相对关系</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 3. RoPE ===== -->
+<div class="section">
+  <h2>三、旋转位置编码（RoPE）—— 详细原理</h2>
+  <p>
+    <strong>RoPE</strong>（Rotary Position Embedding，Su et al., 2021）是当前大语言模型中
+    最广泛使用的位置编码方案，被 LLaMA、Mistral、Qwen、Gemma 等主流模型采用。
+  </p>
+
+  <h3>3.1 核心思想：用"旋转"编码位置</h3>
+  <p>
+    RoPE 的核心洞察极为优雅：<strong>不在嵌入上加位置信息，而是在 Q 和 K 上做位置相关的旋转</strong>。
+  </p>
+  <div class="highlight">
+    <strong>关键性质：</strong>如果我们将位置 i 处的 Q 向量旋转角度 i&middot;&theta;，
+    位置 j 处的 K 向量旋转角度 j&middot;&theta;，那么 Q<sub>i</sub> &middot; K<sub>j</sub>
+    的点积只取决于 <strong>(i - j) &middot; &theta;</strong>——即只取决于相对距离 i-j。
+    这就是 RoPE 编码相对位置的数学本质。
+  </div>
+
+  <h3>3.2 二维旋转的直觉</h3>
+  <p>
+    先从最简单的二维情况理解。假设 Q 和 K 各只有 2 个分量 (q<sub>0</sub>, q<sub>1</sub>)，
+    RoPE 对这对分量做一个旋转：
+  </p>
+  <div class="formula">
+    RoPE(q, pos) = R(&theta; &middot; pos) &middot; q
+    <br><br>
+    其中 R(&alpha;) = <span style="font-family: monospace;">[ cos&alpha;  -sin&alpha; ]</span>
+    <br>
+    <span style="font-family: monospace;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[ sin&alpha;   cos&alpha; ]</span>
+  </div>
+  <p>
+    就像时钟的指针一样：位置 0 不旋转，位置 1 旋转 &theta; 角，位置 2 旋转 2&theta; 角……
+  </p>
+
+  <div class="figure">
+    <img src="pos_encoding_figures/rope_visualization.png" alt="RoPE visualization">
+    <div class="caption">图 4：RoPE 的三视角可视化。<br>
+    左：同一向量在不同位置被旋转不同角度；
+    中：Q(pos=5) 与各位置 K 的点积只取决于相对距离；
+    右：高维 RoPE 的多频率旋转——低维度转得快（精细位置），高维度转得慢（粗略位置）。</div>
+  </div>
+
+  <h3>3.3 高维扩展</h3>
+  <p>
+    在高维空间（如 d=128），RoPE 将向量<strong>两两配对</strong>：
+    (q<sub>0</sub>, q<sub>1</sub>)、(q<sub>2</sub>, q<sub>3</sub>)、...、(q<sub>126</sub>, q<sub>127</sub>)，
+    共 64 对。每对使用<strong>不同的频率</strong>进行独立旋转：
+  </p>
+  <div class="formula">
+    &theta;<sub>m</sub> = 1 / 10000<sup>2m/d</sup> &nbsp;&nbsp;&nbsp; m = 0, 1, 2, ..., d/2-1
+  </div>
+  <ul>
+    <li><strong>m=0：</strong>&theta;<sub>0</sub> = 1（最高频率），每个位置旋转 1 弧度 —— 编码精细的局部位置</li>
+    <li><strong>m=63：</strong>&theta;<sub>63</sub> = 1/10000 &asymp; 0.0001（最低频率），几千个位置才转一圈 —— 编码粗略的全局位置</li>
+  </ul>
+
+  <div class="figure">
+    <img src="pos_encoding_figures/rope_matrix.png" alt="RoPE rotation matrix">
+    <div class="caption">图 5：RoPE 的实现流程。输入经过线性投影得到 Q/K 后，将向量分成 2D 对，
+    每对以不同频率旋转，旋转角度与位置成正比。关键性质：Q·K 的点积只取决于相对位置差。</div>
+  </div>
+
+  <h3>3.4 数学证明：为什么只取决于相对位置</h3>
+  <p>核心推导只需一步：</p>
+  <div class="formula">
+    Q<sub>i</sub><sup>T</sup> K<sub>j</sub> = (R(&theta;&middot;i) &middot; q)<sup>T</sup> (R(&theta;&middot;j) &middot; k)
+    = q<sup>T</sup> R(&theta;&middot;i)<sup>T</sup> R(&theta;&middot;j) k
+    = q<sup>T</sup> R(&theta;&middot;(j - i)) k
+  </div>
+  <p>
+    最后一步利用了旋转矩阵的性质：R(&alpha;)<sup>T</sup> R(&beta;) = R(&beta; - &alpha;)。
+    这证明了点积只取决于相对距离 (j - i)。
+  </p>
+
+  <h3>3.5 PyTorch 实现</h3>
+  <div class="code-block">
+<span class="keyword">import</span> torch
+
+<span class="keyword">def</span> <span class="func">precompute_freqs</span>(dim, max_len, base=<span class="number">10000.0</span>):
+    <span class="comment"># 计算每对维度的频率</span>
+    freqs = <span class="number">1.0</span> / (base ** (torch.arange(<span class="number">0</span>, dim, <span class="number">2</span>).float() / dim))
+    <span class="comment"># 生成位置 × 频率 的角度矩阵</span>
+    t = torch.arange(max_len)
+    angles = torch.outer(t, freqs)  <span class="comment"># [max_len, dim/2]</span>
+    <span class="comment"># 返回 cos 和 sin</span>
+    <span class="keyword">return</span> torch.cos(angles), torch.sin(angles)
+
+<span class="keyword">def</span> <span class="func">apply_rope</span>(x, cos, sin):
+    <span class="comment"># x: [batch, seq_len, n_heads, dim]</span>
+    <span class="comment"># 将 x 拆成相邻对: (x0,x1), (x2,x3), ...</span>
+    x_even = x[..., <span class="number">0</span>::<span class="number">2</span>]   <span class="comment"># 偶数维</span>
+    x_odd  = x[..., <span class="number">1</span>::<span class="number">2</span>]   <span class="comment"># 奇数维</span>
+    <span class="comment"># 2D 旋转: [cos -sin] [x_even]</span>
+    <span class="comment">#          [sin  cos] [x_odd ]</span>
+    out_even = x_even * cos - x_odd * sin
+    out_odd  = x_even * sin + x_odd * cos
+    <span class="comment"># 交错合并回原始形状</span>
+    <span class="keyword">return</span> torch.stack([out_even, out_odd], dim=-<span class="number">1</span>).flatten(-<span class="number">2</span>)
+  </div>
+
+  <div class="success">
+    <strong>实现的优雅性：</strong>RoPE 不需要额外的参数（频率是固定公式），不需要修改模型结构
+    （只在 Attention 的 Q、K 上操作），且可以高效地用逐元素乘法实现（无需构造完整的旋转矩阵），
+    计算开销几乎可以忽略。
+  </div>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; 优点</h4>
+      <ul>
+        <li><strong>天然相对位置</strong>：数学上保证只编码相对距离</li>
+        <li><strong>零额外参数</strong>：频率由公式确定</li>
+        <li><strong>不污染嵌入空间</strong>：只作用于 Q/K，不修改 token embedding</li>
+        <li><strong>远程衰减</strong>：距离越远的 token 对，注意力自然衰减</li>
+        <li><strong>高效实现</strong>：逐元素乘法，几乎无额外开销</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; 缺点</h4>
+      <ul>
+        <li><strong>外推有限</strong>：虽然优于绝对 PE，但直接外推到远超训练长度时仍会退化</li>
+        <li><strong>固定基频</strong>：base=10000 在所有场景下未必最优</li>
+        <li><strong>需要扩展技术</strong>：超长上下文需要配合 NTK-Aware / YaRN 等修改</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 4. ALiBi ===== -->
+<div class="section">
+  <h2>四、ALiBi（Attention with Linear Biases）</h2>
+
+  <h3>4.1 核心思想</h3>
+  <p>
+    ALiBi（Press et al., 2022）的思路截然不同：<strong>完全不修改嵌入或 Q/K 向量</strong>，
+    而是直接在<strong>注意力分数上加一个与距离成正比的负偏置</strong>。
+  </p>
+  <div class="formula">
+    Attention(Q, K, V) = Softmax(Q &middot; K<sup>T</sup> / &radic;d<sub>k</sub> <strong style="color:#e63946">- m &middot; |i - j|</strong>) &middot; V
+  </div>
+  <p>
+    其中 m 是每个注意力头特有的<strong>斜率</strong>（slope），|i - j| 是 query 位置 i 和 key 位置 j 之间的距离。
+  </p>
+
+  <div class="highlight">
+    <strong>直觉理解：</strong>ALiBi 就是在告诉模型：
+    "距离越远的 token，你应该给予越少的关注。"
+    偏置值随距离线性增长（取负值），距离越远，注意力分数被压得越低。
+    不同的头有不同的斜率——有的头"近视"（斜率大，只关注近处），有的头"远视"（斜率小，能关注远处）。
+  </div>
+
+  <div class="figure">
+    <img src="pos_encoding_figures/alibi.png" alt="ALiBi">
+    <div class="caption">图 6：ALiBi 的可视化。左图：单个头的偏置矩阵（斜率 m=0.25），
+    距离越远偏置越大（颜色越深，值越负）。右图：不同头使用不同斜率，从 m=1（强近视）到 m=0.0625（弱远视）。</div>
+  </div>
+
+  <h3>4.2 斜率设定</h3>
+  <p>
+    ALiBi 不需要训练斜率——使用一个<strong>固定的几何级数</strong>：
+    对于 h 个注意力头，斜率为 2<sup>-8/h</sup>, 2<sup>-16/h</sup>, ..., 2<sup>-8</sup>。
+    例如 8 个头的斜率为：1/2, 1/4, 1/8, 1/16, 1/32, 1/64, 1/128, 1/256。
+  </p>
+
+  <h3>4.3 长度外推能力</h3>
+  <p>
+    ALiBi 的最大优势是<strong>天然的长度外推能力</strong>。因为偏置公式 -m&middot;|i-j|
+    对任何距离都有定义，不存在"超出训练范围"的问题。实验表明，在 1024 token 上训练的 ALiBi 模型
+    可以在 2048 甚至更长的序列上保持良好性能。
+  </p>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; 优点</h4>
+      <ul>
+        <li><strong>出色的外推能力</strong>：无需任何修改即可处理更长序列</li>
+        <li><strong>极简实现</strong>：只需在注意力分数上加一个预计算矩阵</li>
+        <li><strong>零额外参数</strong>：斜率是固定公式</li>
+        <li><strong>不修改嵌入</strong>：与 Embedding 层完全解耦</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; 缺点</h4>
+      <ul>
+        <li>线性偏置可能过于简单，表达力有限</li>
+        <li>强制"近处重要"的先验不适用于所有任务</li>
+        <li>在训练长度内的性能通常略逊于 RoPE</li>
+        <li>未被 LLaMA / GPT 等主流模型采用（BLOOM 使用）</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 5. 长度外推 ===== -->
+<div class="section">
+  <h2>五、长度外推：从 4K 到 128K+ 的突破</h2>
+
+  <h3>5.1 外推的挑战</h3>
+  <p>
+    当代 LLM 面临一个实际需求：在 4096 token 上训练，却需要在推理时处理几万甚至十几万 token
+    的长文档。直接使用超出训练长度的序列，大多数位置编码方案的性能都会严重退化。
+  </p>
+
+  <div class="figure">
+    <img src="pos_encoding_figures/length_extrapolation.png" alt="Length extrapolation comparison">
+    <div class="caption">图 7：不同位置编码方案的长度外推能力对比（示意）。训练长度=2048 时，
+    Learned PE 和 Sinusoidal PE 在超出训练范围后性能急剧下降，RoPE 退化较缓，ALiBi 最为稳健。</div>
+  </div>
+
+  <h3>5.2 RoPE 的外推问题</h3>
+  <p>
+    RoPE 的外推问题源于<strong>高频维度</strong>：当位置超出训练范围时，
+    高频维度的旋转角度进入了训练时从未见过的区域，导致注意力计算"失真"。
+    可以类比为：时钟的秒针转到了一个训练时从未出现过的角度。
+  </p>
+
+  <h3>5.3 解决方案：位置插值与频率修改</h3>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>位置插值（PI）</h4>
+      <p>将位置索引线性缩放到训练范围内：pos' = pos &times; L<sub>train</sub> / L<sub>target</sub>。
+      简单有效，但需要少量微调。代表：Meta 的 Code Llama。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>NTK-Aware 缩放</h4>
+      <p>修改 RoPE 的基频 base：base' = base &times; scale<sup>d/(d-2)</sup>。
+      只改变低频维度（时针），保留高频维度（秒针）的分辨率。无需微调。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>YaRN</h4>
+      <p>结合 NTK 缩放和注意力温度调整，按维度分组使用不同的缩放策略。
+      效果最好，但更复杂。代表：Mistral、LLaMA 3 的长上下文版本。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>动态 NTK</h4>
+      <p>在推理时根据实际序列长度动态调整 base 值。序列短时不缩放，序列超出训练长度时自动启用。
+      灵活但实现更复杂。</p>
+    </div>
+  </div>
+
+  <div class="success">
+    <strong>实际效果：</strong>通过 YaRN 等技术，基于 4K 上下文训练的 LLaMA 模型
+    可以在 128K 甚至更长的上下文中保持良好性能，且只需极少量的微调数据
+    （通常几百步即可适应新长度）。
+  </div>
+</div>
+
+<!-- ===== 6. 综合对比 ===== -->
+<div class="section">
+  <h2>六、综合对比</h2>
+
+  <div class="figure">
+    <img src="pos_encoding_figures/comparison_overview.png" alt="Comparison overview">
+    <div class="caption">图 8：五种位置编码方案总览。从固定的正弦编码到可学习 PE，再到 RoPE 和 ALiBi 的相对编码，
+    最后到 YaRN 的长上下文扩展。</div>
+  </div>
+
+  <table>
+    <tr>
+      <th>特性</th>
+      <th>Sinusoidal</th>
+      <th>Learned</th>
+      <th>RoPE</th>
+      <th>ALiBi</th>
+    </tr>
+    <tr>
+      <td><strong>编码类型</strong></td>
+      <td>绝对</td>
+      <td>绝对</td>
+      <td>相对</td>
+      <td>相对</td>
+    </tr>
+    <tr>
+      <td><strong>注入方式</strong></td>
+      <td>加到 Embedding</td>
+      <td>加到 Embedding</td>
+      <td>旋转 Q/K</td>
+      <td>偏置注意力分数</td>
+    </tr>
+    <tr>
+      <td><strong>额外参数</strong></td>
+      <td>0</td>
+      <td>max_len &times; d</td>
+      <td>0</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td><strong>训练内性能</strong></td>
+      <td>良好</td>
+      <td>最优</td>
+      <td>优秀</td>
+      <td>良好</td>
+    </tr>
+    <tr>
+      <td><strong>外推能力</strong></td>
+      <td>差</td>
+      <td>无</td>
+      <td>中等（可扩展）</td>
+      <td>优秀</td>
+    </tr>
+    <tr>
+      <td><strong>实现复杂度</strong></td>
+      <td>低</td>
+      <td>极低</td>
+      <td>中</td>
+      <td>低</td>
+    </tr>
+    <tr>
+      <td><strong>代表模型</strong></td>
+      <td>原始 Transformer</td>
+      <td>BERT, GPT-2</td>
+      <td>LLaMA, Mistral, Qwen</td>
+      <td>BLOOM, MPT</td>
+    </tr>
+    <tr>
+      <td><strong>当前地位</strong></td>
+      <td>已淘汰</td>
+      <td>仅限短序列</td>
+      <td><strong>主流首选</strong></td>
+      <td>备选方案</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ===== 7. 总结 ===== -->
+<div class="section">
+  <h2>七、总结</h2>
+  <p>位置编码的演化反映了对两个核心问题的持续探索：</p>
+  <ol>
+    <li><strong>如何优雅地注入位置信息？</strong>
+    从加法（Sinusoidal/Learned）到旋转（RoPE）到偏置（ALiBi），
+    注入方式逐渐从"修改嵌入"演变为"修改注意力计算"，对模型的侵入性越来越小。</li>
+    <li><strong>如何处理超长序列？</strong>
+    从完全不能外推（Learned）到有限外推（Sinusoidal）到可扩展外推（RoPE + YaRN）
+    到天然外推（ALiBi），长上下文能力不断提升。</li>
+  </ol>
+
+  <div class="highlight">
+    <strong>实践建议：</strong>
+    <ul>
+      <li>构建 LLM：首选 <strong>RoPE</strong>，配合 YaRN 实现长上下文</li>
+      <li>需要强外推能力且不想微调：考虑 <strong>ALiBi</strong></li>
+      <li>短序列分类/理解任务：<strong>Learned PE</strong> 仍然实用（如 BERT）</li>
+      <li>教学/理解原理：从 <strong>Sinusoidal PE</strong> 入手最容易建立直觉</li>
+    </ul>
+  </div>
+
+  <p>
+    RoPE 之所以成为主流，是因为它在数学优美性、实现简洁性、性能表现和可扩展性之间
+    取得了最佳平衡。它用一个简单的旋转操作，以零参数的代价，实现了高质量的相对位置编码——
+    这正是工程与数学完美结合的典范。
+  </p>
+</div>
+
+<div class="footer">
+  深度学习基础系列 &middot; 大模型位置编码的原理与实现
+</div>
+
+</div>
+</body>
+</html>

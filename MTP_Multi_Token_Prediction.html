@@ -1,0 +1,1453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-Token Prediction (MTP) 详解：原理、架构与模型应用</title>
+<style>
+  :root{--primary:#1a1a2e;--accent:#0f3460;--highlight-bg:#f0f4ff;--highlight-border:#4a7dff;--text:#222;--border:#e0e0e0}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text);line-height:1.8;background:#fafafa}
+  .container{max-width:920px;margin:0 auto;padding:20px}
+  .cover{text-align:center;padding:70px 20px 50px;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);color:white;border-radius:12px;margin-bottom:40px}
+  .cover h1{font-size:2.1em;margin-bottom:12px;font-weight:700}
+  .cover .subtitle{font-size:1.05em;color:#aab;margin-bottom:24px}
+  .cover .tags{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}
+  .cover .tag{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:20px;padding:6px 18px;font-size:.9em;color:#dde}
+  .section{background:white;border-radius:10px;padding:36px 40px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid var(--border)}
+  h2{font-size:1.5em;color:var(--primary);margin-bottom:6px;padding-bottom:10px;border-bottom:2px solid var(--highlight-border)}
+  h3{font-size:1.15em;color:var(--accent);margin:22px 0 10px}
+  h4{font-size:1em;color:var(--accent);margin:14px 0 8px}
+  p{margin:12px 0;text-align:justify}
+  .highlight{background:var(--highlight-bg);border-left:4px solid var(--highlight-border);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .highlight strong{color:var(--accent)}
+  .warning{background:#fff8f0;border-left:4px solid #f0a500;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .success{background:#f0fff4;border-left:4px solid #2a9d8f;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  ul,ol{padding-left:24px;margin:10px 0} li{margin:6px 0}
+  .formula{text-align:center;padding:18px 20px;margin:18px 0;background:#f8f9ff;border-radius:8px;border:1px solid #e8eaf0;font-size:1.1em;font-family:"Times New Roman","STIX",serif;overflow-x:auto}
+  .figure{text-align:center;margin:24px 0;padding:20px 16px;background:#fafafa;border-radius:8px;border:1px solid #eee}
+  .figure svg{max-width:100%;height:auto}
+  .figure .caption{font-size:.88em;color:#666;margin-top:10px;font-style:italic}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.9em}
+  th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #eee}
+  th{background:var(--primary);color:white;font-weight:600} tr:hover{background:#f8f9ff}
+  td code{background:#f0f0f5;padding:2px 6px;border-radius:3px;font-size:.9em}
+  .card-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .card{background:linear-gradient(135deg,#f8f9ff,#f0f4ff);border:1px solid #d8e0f0;border-radius:10px;padding:20px 24px}
+  .card .num{display:inline-block;background:var(--highlight-border);color:white;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-size:.85em;font-weight:700;margin-right:8px}
+  .card h4{display:inline;color:var(--accent);font-size:1.05em;margin:0}
+  .card p{margin-top:8px;font-size:.93em}
+  .pros-cons{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .pros,.cons{padding:16px;border-radius:8px}
+  .pros{background:#f0fff4;border:1px solid #c8e6c9} .cons{background:#fff8f0;border:1px solid #ffe0b2}
+  .pros h4{color:#2e7d32;margin-bottom:8px} .cons h4{color:#e65100;margin-bottom:8px}
+  .timeline{position:relative;padding:20px 0 20px 40px;margin:20px 0}
+  .timeline::before{content:'';position:absolute;left:15px;top:0;bottom:0;width:3px;background:linear-gradient(to bottom,var(--highlight-border),var(--accent))}
+  .timeline-item{position:relative;margin-bottom:24px;padding-left:24px}
+  .timeline-item::before{content:'';position:absolute;left:-32px;top:6px;width:14px;height:14px;border-radius:50%;background:var(--highlight-border);border:3px solid white;box-shadow:0 0 0 2px var(--highlight-border)}
+  .timeline-item .year{font-weight:700;color:var(--accent);font-size:.95em}
+  .timeline-item .desc{font-size:.93em;margin-top:2px}
+  .footer{text-align:center;color:#999;font-size:.85em;padding:30px 0;border-top:1px solid #eee;margin-top:20px}
+  @media(max-width:640px){.section{padding:24px 20px}.cover h1{font-size:1.6em}.card-grid,.pros-cons{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ===== Cover ===== -->
+<div class="cover">
+  <h1>Multi-Token Prediction 详解<br>原理、架构与模型应用</h1>
+  <div class="subtitle">打破"一次一个 Token"的瓶颈 —— 从训练质量到推理加速的全方位升级</div>
+  <div class="tags">
+    <span class="tag">Multi-Token Prediction</span>
+    <span class="tag">Next-Token Prediction</span>
+    <span class="tag">Speculative Decoding</span>
+    <span class="tag">DeepSeek-V3 MTP</span>
+    <span class="tag">Meta MTP</span>
+    <span class="tag">Medusa</span>
+    <span class="tag">EAGLE</span>
+    <span class="tag">Lookahead</span>
+  </div>
+</div>
+
+<!-- ===== 引言 ===== -->
+<div class="section">
+  <h2>引言：为什么需要 Multi-Token Prediction？</h2>
+  <p>
+    自 GPT 以来，几乎所有主流大语言模型的训练目标都是<strong>Next-Token Prediction（NTP）</strong>
+    ——给定前文，预测下一个 token。这个看似简单的目标成就了 ChatGPT 等产品，但它也有深层的局限性：
+    每次只看"一步之遥"，模型缺乏对<strong>未来多步</略构的规划能力</strong>；
+    推理时逐 token 自回归生成，速度被<strong>显存带宽（Memory-Bound）</strong>严重限制。
+  </p>
+  <div class="highlight">
+    <strong>MTP（Multi-Token Prediction）</strong>通过让模型<strong>同时预测未来 k 个 token</strong>，
+    从两个维度带来收益：<br>
+    (1) <strong>训练质量提升</strong>——多步预测提供更丰富的梯度信号，迫使模型学习更深层的语义规划；<br>
+    (2) <strong>推理速度加速</strong>——一次前向传播产生多个候选 token，配合验证机制实现 2-3 倍加速。
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 840 190" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar0" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+        <linearGradient id="gA" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#667eea"/><stop offset="100%" stop-color="#764ba2"/></linearGradient>
+        <linearGradient id="gB" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#43e97b"/><stop offset="100%" stop-color="#38f9d7"/></linearGradient>
+      </defs>
+      <!-- NTP -->
+      <rect x="10" y="30" width="390" height="130" rx="12" fill="#fff0f0" stroke="#e74c3c" stroke-width="1.5"/>
+      <text x="205" y="55" text-anchor="middle" font-size="14" font-weight="700" fill="#c0392b">传统 NTP：一次预测一个 Token</text>
+      <rect x="30" y="70" width="60" height="35" rx="5" fill="url(#gA)" opacity="0.7"/><text x="60" y="92" text-anchor="middle" fill="white" font-size="10" font-weight="600">x₁</text>
+      <rect x="100" y="70" width="60" height="35" rx="5" fill="url(#gA)" opacity="0.7"/><text x="130" y="92" text-anchor="middle" fill="white" font-size="10" font-weight="600">x₂</text>
+      <rect x="170" y="70" width="60" height="35" rx="5" fill="url(#gA)" opacity="0.7"/><text x="200" y="92" text-anchor="middle" fill="white" font-size="10" font-weight="600">x₃</text>
+      <text x="248" y="92" text-anchor="middle" font-size="16" fill="#888">→</text>
+      <rect x="265" y="70" width="60" height="35" rx="5" fill="#e74c3c" opacity="0.8"/><text x="295" y="92" text-anchor="middle" fill="white" font-size="10" font-weight="600">x₄</text>
+      <text x="343" y="92" text-anchor="middle" font-size="14" fill="#888">仅此</text>
+      <text x="205" y="140" text-anchor="middle" font-size="11" fill="#888">每步只产生 1 个预测 → 梯度信号有限 / 推理逐步解码</text>
+
+      <!-- MTP -->
+      <rect x="430" y="30" width="400" height="130" rx="12" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="630" y="55" text-anchor="middle" font-size="14" font-weight="700" fill="#1a6b61">MTP：一次预测 k 个 Token</text>
+      <rect x="450" y="70" width="55" height="35" rx="5" fill="url(#gA)" opacity="0.7"/><text x="477" y="92" text-anchor="middle" fill="white" font-size="10" font-weight="600">x₁</text>
+      <rect x="515" y="70" width="55" height="35" rx="5" fill="url(#gA)" opacity="0.7"/><text x="542" y="92" text-anchor="middle" fill="white" font-size="10" font-weight="600">x₂</text>
+      <rect x="580" y="70" width="55" height="35" rx="5" fill="url(#gA)" opacity="0.7"/><text x="607" y="92" text-anchor="middle" fill="white" font-size="10" font-weight="600">x₃</text>
+      <text x="650" y="92" text-anchor="middle" font-size="16" fill="#888">→</text>
+      <rect x="663" y="60" width="45" height="28" rx="4" fill="#2a9d8f" opacity="0.85"/><text x="685" y="79" text-anchor="middle" fill="white" font-size="9" font-weight="600">x₄</text>
+      <rect x="715" y="60" width="45" height="28" rx="4" fill="#2a9d8f" opacity="0.7"/><text x="737" y="79" text-anchor="middle" fill="white" font-size="9" font-weight="600">x₅</text>
+      <rect x="767" y="60" width="45" height="28" rx="4" fill="#2a9d8f" opacity="0.55"/><text x="789" y="79" text-anchor="middle" fill="white" font-size="9" font-weight="600">x₆</text>
+      <rect x="663" y="95" width="45" height="28" rx="4" fill="#2a9d8f" opacity="0.4"/><text x="685" y="114" text-anchor="middle" fill="white" font-size="9" font-weight="600">x₇</text>
+      <text x="630" y="145" text-anchor="middle" font-size="11" fill="#888">一次前向传播预测多步 → 更丰富信号 / 并行解码</text>
+    </svg>
+    <div class="caption">图 1：NTP vs MTP。NTP 每步只预测 1 个 token；MTP 每步同时预测未来 k 个 token，提供更丰富的训练信号和推理并行性。</div>
+  </div>
+
+  <h3>发展时间线</h3>
+  <div class="timeline">
+    <div class="timeline-item"><span class="year">2017</span><div class="desc">Transformer 确立 NTP 自回归范式</div></div>
+    <div class="timeline-item"><span class="year">2023.05</span><div class="desc">Google 提出 Speculative Decoding，用小模型草稿 + 大模型验证加速推理</div></div>
+    <div class="timeline-item"><span class="year">2023.09</span><div class="desc">Medusa 发布：给 LLM 加多个预测头实现并行解码</div></div>
+    <div class="timeline-item"><span class="year">2024.01</span><div class="desc">EAGLE 发布：用特征级别自回归实现更高命中率的推测解码</div></div>
+    <div class="timeline-item"><span class="year">2024.04</span><div class="desc">Meta 发表 "Better &amp; Faster LLMs via Multi-Token Prediction"，系统论证 MTP 训练价值</div></div>
+    <div class="timeline-item"><span class="year">2024.12</span><div class="desc">DeepSeek-V3 发布，将 MTP 作为核心训练目标之一，实证验证其在超大规模预训练中的效果</div></div>
+    <div class="timeline-item"><span class="year">2025</span><div class="desc">MTP 成为大模型预训练标配技术方向，各主流模型积极采纳</div></div>
+  </div>
+</div>
+
+<!-- ===== 背景知识 ===== -->
+<div class="section">
+  <h2>一、背景知识：Next-Token Prediction 及其局限</h2>
+
+  <h3>1.1 NTP 回顾</h3>
+  <p>标准自回归语言模型的训练目标是最大化给定前文下一个 token 的对数似然：</p>
+  <div class="formula">
+    L<sub>NTP</sub> = − (1/T) Σ<sub>t=1..T</sub> log P<sub>θ</sub>(x<sub>t</sub> | x<sub>1</sub>, ..., x<sub>t−1</sub>)
+  </div>
+  <p>
+    推理时，模型逐步采样：每一步需要完整的前向传播（所有 Transformer 层），
+    只产出一个 token。这个过程是<strong>严格串行</strong>的。
+  </p>
+
+  <h3>1.2 NTP 的三大局限</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>训练信号短视</h4>
+      <p>每个位置只监督"下一个 token"，模型不需要规划未来就能获得低 loss——
+      它可以靠局部 n-gram 模式得到不错的 NTP 分数，但缺乏深层语义理解。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>推理速度瓶颈</h4>
+      <p>自回归逐 token 生成时，每步都要加载全部模型权重但只产出一个 token，
+      计算量/访存比（Arithmetic Intensity）极低——是典型的 <strong>Memory-Bound</strong> 问题。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>规划能力弱</h4>
+      <p>人类写作时会"先想好后面几个词再落笔"，NTP 模型没有这种前瞻性。
+      这在代码生成、数学推理等需要长程规划的任务中尤为突出。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>Teacher Forcing 偏差</h4>
+      <p>训练时总是看到 ground truth 前文（Teacher Forcing），
+      但推理时看到的是自己生成的（可能有误的）token——这种<strong>暴露偏差</strong>导致错误累积。</p>
+    </div>
+  </div>
+
+  <h3>1.3 推理的 Memory-Bound 问题</h3>
+  <div class="figure">
+    <svg viewBox="0 0 800 230" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs><marker id="ar1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker></defs>
+      <text x="400" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">自回归推理的 Memory-Bound 瓶颈</text>
+      <!-- NTP sequential -->
+      <rect x="30" y="50" width="740" height="75" rx="8" fill="#fff0f0" stroke="#e74c3c" stroke-width="1"/>
+      <text x="55" y="72" font-size="11" fill="#c0392b" font-weight="700">NTP 推理（逐 Token）：</text>
+      <rect x="55" y="82" width="80" height="28" rx="4" fill="#667eea" opacity="0.6"/><text x="95" y="101" text-anchor="middle" fill="white" font-size="9">Step 1→x₄</text>
+      <rect x="145" y="82" width="80" height="28" rx="4" fill="#667eea" opacity="0.6"/><text x="185" y="101" text-anchor="middle" fill="white" font-size="9">Step 2→x₅</text>
+      <rect x="235" y="82" width="80" height="28" rx="4" fill="#667eea" opacity="0.6"/><text x="275" y="101" text-anchor="middle" fill="white" font-size="9">Step 3→x₆</text>
+      <rect x="325" y="82" width="80" height="28" rx="4" fill="#667eea" opacity="0.6"/><text x="365" y="101" text-anchor="middle" fill="white" font-size="9">Step 4→x₇</text>
+      <rect x="415" y="82" width="80" height="28" rx="4" fill="#667eea" opacity="0.6"/><text x="455" y="101" text-anchor="middle" fill="white" font-size="9">Step 5→x₈</text>
+      <rect x="505" y="82" width="80" height="28" rx="4" fill="#667eea" opacity="0.6"/><text x="545" y="101" text-anchor="middle" fill="white" font-size="9">Step 6→x₉</text>
+      <text x="620" y="101" font-size="11" fill="#c0392b" font-weight="600">6 步 × 全量权重加载</text>
+      <!-- MTP parallel -->
+      <rect x="30" y="140" width="740" height="75" rx="8" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1"/>
+      <text x="55" y="162" font-size="11" fill="#1a6b61" font-weight="700">MTP 推理（k=3）：</text>
+      <rect x="55" y="172" width="190" height="28" rx="4" fill="#2a9d8f" opacity="0.7"/><text x="150" y="191" text-anchor="middle" fill="white" font-size="9">Step 1 → x₄, x₅, x₆</text>
+      <rect x="260" y="172" width="190" height="28" rx="4" fill="#2a9d8f" opacity="0.7"/><text x="355" y="191" text-anchor="middle" fill="white" font-size="9">Step 2 → x₇, x₈, x₉</text>
+      <text x="500" y="191" font-size="11" fill="#1a6b61" font-weight="600">仅 2 步！加速约 3 倍</text>
+    </svg>
+    <div class="caption">图 2：NTP 需要 6 步串行前向传播生成 6 个 token；MTP（k=3）理想情况下仅需 2 步。</div>
+  </div>
+</div>
+
+<!-- ===== MTP 核心原理 ===== -->
+<div class="section">
+  <h2>二、MTP 核心原理</h2>
+
+  <h3>2.1 基本思想</h3>
+  <p>
+    MTP 的核心非常简单：在每个位置 t，不只预测 x<sub>t+1</sub>，而是同时预测 x<sub>t+1</sub>, x<sub>t+2</sub>, ..., x<sub>t+k</sub>。
+    其训练损失为 k 个位置的 NTP 损失之和：
+  </p>
+  <div class="formula">
+    <strong>L<sub>MTP</sub> = Σ<sub>j=1..k</sub> λ<sub>j</sub> · L<sub>j</sub></strong>
+    <br><br>
+    L<sub>j</sub> = − (1/T) Σ<sub>t=1..T</sub> log P<sub>θ,j</sub>(x<sub>t+j</sub> | x<sub>1</sub>, ..., x<sub>t</sub>)
+  </div>
+  <p>其中：</p>
+  <ul>
+    <li><strong>k</strong>：预测步数（prediction depth），通常 k = 2~8</li>
+    <li><strong>λ<sub>j</sub></strong>：第 j 步的损失权重，通常 λ<sub>1</sub> = 1（NTP 主损失），λ<sub>j>1</sub> ∈ [0.1, 1.0]</li>
+    <li><strong>P<sub>θ,j</sub></strong>：第 j 个预测头的输出概率分布</li>
+  </ul>
+
+  <h3>2.2 为什么多步预测能提升模型质量？</h3>
+  <div class="highlight">
+    <strong>信息论视角：</strong>预测第 t+k 个 token 需要对位置 t 的隐藏状态编码<strong>更长远的语义信息</strong>。
+    NTP 只需要编码"下一个词是什么"的信息，但预测 t+3 要求模型在位置 t 就"想好"后面 3 步的走向——
+    这迫使 Transformer 的中间表示学习<strong>更抽象、更具规划性</strong>的特征。
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 800 280" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+        <marker id="ar2g" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2a9d8f"/></marker>
+        <marker id="ar2o" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#f0a500"/></marker>
+        <marker id="ar2r" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#9b59b6"/></marker>
+      </defs>
+      <text x="400" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">MTP 迫使隐藏表示编码更丰富的未来信息</text>
+      <!-- Input tokens -->
+      <text x="80" y="55" text-anchor="middle" font-size="11" fill="#888">位置 t</text>
+      <rect x="45" y="62" width="70" height="35" rx="6" fill="#667eea" opacity="0.8"/><text x="80" y="84" text-anchor="middle" fill="white" font-size="11" font-weight="600">h_t</text>
+      <text x="80" y="112" text-anchor="middle" font-size="10" fill="#667eea" font-weight="600">"猫 坐在"</text>
+      <!-- Arrows and predictions -->
+      <!-- NTP: only 1 -->
+      <line x1="115" y1="72" x2="200" y2="72" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar2)"/>
+      <rect x="205" y="57" width="95" height="30" rx="5" fill="#4a7dff" opacity="0.7"/>
+      <text x="252" y="77" text-anchor="middle" fill="white" font-size="10" font-weight="600">Head 1: "桌"</text>
+      <text x="348" y="77" font-size="10" fill="#4a7dff" font-weight="600">← NTP 只需预测这一步</text>
+      <!-- MTP: +2 -->
+      <line x1="115" y1="82" x2="155" y2="140" stroke="#2a9d8f" stroke-width="1.8" marker-end="url(#ar2g)"/>
+      <rect x="160" y="127" width="95" height="30" rx="5" fill="#2a9d8f" opacity="0.7"/>
+      <text x="207" y="147" text-anchor="middle" fill="white" font-size="10" font-weight="600">Head 2: "子"</text>
+      <text x="303" y="147" font-size="10" fill="#2a9d8f" font-weight="600">← 需要知道 "桌" 后面接什么</text>
+      <!-- MTP: +3 -->
+      <line x1="115" y1="88" x2="155" y2="192" stroke="#f0a500" stroke-width="1.8" marker-end="url(#ar2o)"/>
+      <rect x="160" y="180" width="95" height="30" rx="5" fill="#f0a500" opacity="0.7"/>
+      <text x="207" y="200" text-anchor="middle" fill="white" font-size="10" font-weight="600">Head 3: "上"</text>
+      <text x="303" y="200" font-size="10" fill="#c17900" font-weight="600">← 需要在 t 就规划完整短语</text>
+      <!-- MTP: +4 -->
+      <line x1="115" y1="92" x2="155" y2="242" stroke="#9b59b6" stroke-width="1.8" marker-end="url(#ar2r)"/>
+      <rect x="160" y="230" width="95" height="30" rx="5" fill="#9b59b6" opacity="0.7"/>
+      <text x="207" y="250" text-anchor="middle" fill="white" font-size="10" font-weight="600">Head 4: "面"</text>
+      <text x="303" y="250" font-size="10" fill="#6c3baa" font-weight="600">← h_t 必须编码 "坐在桌子上面" 的完整意图</text>
+      <!-- Summary -->
+      <rect x="470" y="120" width="310" height="100" rx="10" fill="white" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="625" y="148" text-anchor="middle" font-size="12" font-weight="700" fill="#1a1a2e">MTP 的信息压力</text>
+      <text x="490" y="172" font-size="10" fill="#333">• NTP: h_t 只需编码 P(x_{t+1})</text>
+      <text x="490" y="192" font-size="10" fill="#333">• MTP: h_t 需同时编码</text>
+      <text x="500" y="208" font-size="10" fill="#333">P(x_{t+1}), P(x_{t+2}), ..., P(x_{t+k})</text>
+    </svg>
+    <div class="caption">图 3：MTP 的多步预测迫使隐藏状态 h_t 编码更远未来的语义信息，提升表示质量。</div>
+  </div>
+
+  <h3>2.3 MTP 的两大应用场景</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">A</span><h4>训练阶段：辅助损失</h4>
+      <p>MTP 作为<strong>额外的训练目标</strong>，辅助主 NTP 损失。训练完成后可以丢弃额外的预测头，
+      模型架构不变但质量更好。代表：Meta MTP、DeepSeek-V3。</p>
+    </div>
+    <div class="card">
+      <span class="num">B</span><h4>推理阶段：推测解码</h4>
+      <p>多个预测头在推理时<strong>并行生成候选 token</strong>，主模型通过一次前向传播验证/接受，实现加速。
+      代表：Medusa、EAGLE、DeepSeek-V3 推理。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 架构分类 ===== -->
+<div class="section">
+  <h2>三、MTP 架构分类学</h2>
+  <p>不同的 MTP 方法在"如何预测第 2, 3, ..., k 个 token"的架构设计上有显著差异。核心的设计选择包括：
+  预测头是<strong>独立并行</strong>还是<strong>顺序级联</strong>？是否共享 Backbone？预测头的结构是轻量 Linear 还是完整 Transformer？</p>
+
+  <h3>3.1 架构分类概览</h3>
+  <div class="figure">
+    <svg viewBox="0 0 820 380" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="25" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">四种 MTP 架构模式</text>
+
+      <!-- A: Independent Parallel Heads -->
+      <rect x="15" y="45" width="380" height="145" rx="10" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="205" y="68" text-anchor="middle" font-size="12" font-weight="700" fill="#1a1a2e">(A) 独立并行头 (Meta MTP)</text>
+      <!-- Backbone -->
+      <rect x="40" y="82" width="240" height="32" rx="6" fill="#667eea" opacity="0.8"/>
+      <text x="160" y="103" text-anchor="middle" fill="white" font-size="10" font-weight="600">共享 Backbone → h_t</text>
+      <!-- Heads -->
+      <line x1="100" y1="114" x2="70" y2="138" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar3)"/>
+      <line x1="160" y1="114" x2="160" y2="138" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar3)"/>
+      <line x1="220" y1="114" x2="250" y2="138" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar3)"/>
+      <line x1="280" y1="114" x2="330" y2="138" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar3)"/>
+      <rect x="40" y="140" width="55" height="28" rx="4" fill="#4a7dff" opacity="0.7"/><text x="67" y="159" text-anchor="middle" fill="white" font-size="9">Head₁</text>
+      <rect x="110" y="140" width="55" height="28" rx="4" fill="#2a9d8f" opacity="0.7"/><text x="137" y="159" text-anchor="middle" fill="white" font-size="9">Head₂</text>
+      <rect x="225" y="140" width="55" height="28" rx="4" fill="#f0a500" opacity="0.7"/><text x="252" y="159" text-anchor="middle" fill="white" font-size="9">Head₃</text>
+      <rect x="305" y="140" width="55" height="28" rx="4" fill="#9b59b6" opacity="0.7"/><text x="332" y="159" text-anchor="middle" fill="white" font-size="9">Head₄</text>
+      <text x="205" y="183" text-anchor="middle" font-size="9" fill="#888">各头独立、无依赖，可完全并行</text>
+
+      <!-- B: Sequential Cascaded Heads -->
+      <rect x="420" y="45" width="385" height="145" rx="10" fill="#fff8f0" stroke="#f0a500" stroke-width="1.5"/>
+      <text x="612" y="68" text-anchor="middle" font-size="12" font-weight="700" fill="#1a1a2e">(B) 顺序级联头 (DeepSeek-V3 MTP)</text>
+      <!-- Backbone -->
+      <rect x="440" y="82" width="140" height="32" rx="6" fill="#667eea" opacity="0.8"/>
+      <text x="510" y="103" text-anchor="middle" fill="white" font-size="10" font-weight="600">Backbone → h_t</text>
+      <!-- Sequential -->
+      <line x1="510" y1="114" x2="510" y2="133" stroke="#f0a500" stroke-width="1.5" marker-end="url(#ar3)"/>
+      <rect x="470" y="135" width="80" height="26" rx="4" fill="#f0a500" opacity="0.8"/><text x="510" y="153" text-anchor="middle" fill="white" font-size="9">MTP₁→x̂₄</text>
+      <line x1="550" y1="148" x2="575" y2="148" stroke="#f0a500" stroke-width="1.5" marker-end="url(#ar3)"/>
+      <rect x="580" y="135" width="80" height="26" rx="4" fill="#f0a500" opacity="0.65"/><text x="620" y="153" text-anchor="middle" fill="white" font-size="9">MTP₂→x̂₅</text>
+      <line x1="660" y1="148" x2="685" y2="148" stroke="#f0a500" stroke-width="1.5" marker-end="url(#ar3)"/>
+      <rect x="690" y="135" width="80" height="26" rx="4" fill="#f0a500" opacity="0.5"/><text x="730" y="153" text-anchor="middle" fill="white" font-size="9">MTP₃→x̂₆</text>
+      <text x="612" y="183" text-anchor="middle" font-size="9" fill="#888">前一个头的输出是下一个头的输入（级联）</text>
+
+      <!-- C: Draft Model -->
+      <rect x="15" y="210" width="380" height="150" rx="10" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="205" y="233" text-anchor="middle" font-size="12" font-weight="700" fill="#1a1a2e">(C) 独立小模型 (Speculative Decoding)</text>
+      <rect x="40" y="250" width="120" height="40" rx="6" fill="#888" opacity="0.6"/>
+      <text x="100" y="275" text-anchor="middle" fill="white" font-size="10" font-weight="600">小 Draft Model</text>
+      <line x1="160" y1="270" x2="195" y2="270" stroke="#2a9d8f" stroke-width="1.5" marker-end="url(#ar3)"/>
+      <text x="178" y="262" text-anchor="middle" font-size="8" fill="#888">k 个草稿</text>
+      <rect x="200" y="250" width="170" height="40" rx="6" fill="#2a9d8f" opacity="0.8"/>
+      <text x="285" y="275" text-anchor="middle" fill="white" font-size="10" font-weight="600">大 Target Model 验证</text>
+      <text x="205" y="325" text-anchor="middle" font-size="9" fill="#888">两个完全独立的模型，Draft 自回归生成多步草稿</text>
+
+      <!-- D: Feature-level autoregressive -->
+      <rect x="420" y="210" width="385" height="150" rx="10" fill="#f8f0ff" stroke="#9b59b6" stroke-width="1.5"/>
+      <text x="612" y="233" text-anchor="middle" font-size="12" font-weight="700" fill="#1a1a2e">(D) 特征级自回归 (EAGLE)</text>
+      <rect x="440" y="250" width="140" height="40" rx="6" fill="#667eea" opacity="0.7"/>
+      <text x="510" y="275" text-anchor="middle" fill="white" font-size="10" font-weight="600">Backbone → h_t</text>
+      <line x1="580" y1="270" x2="605" y2="270" stroke="#9b59b6" stroke-width="1.5" marker-end="url(#ar3)"/>
+      <rect x="610" y="248" width="170" height="44" rx="6" fill="#9b59b6" opacity="0.7"/>
+      <text x="695" y="268" text-anchor="middle" fill="white" font-size="10" font-weight="600">轻量 Draft Head</text>
+      <text x="695" y="283" text-anchor="middle" fill="white" font-size="9">特征级自回归 → k tokens</text>
+      <text x="612" y="325" text-anchor="middle" font-size="9" fill="#888">在特征空间而非 token 空间做自回归，更高命中率</text>
+    </svg>
+    <div class="caption">图 4：四种 MTP 架构模式。(A) 独立并行头——完全并行，简洁高效；(B) 顺序级联——前一步输出为后一步输入，精度更高；
+    (C) 独立小模型——经典推测解码；(D) 特征级自回归——在隐空间做草稿生成。</div>
+  </div>
+
+  <h3>3.2 架构模式速查表</h3>
+  <table>
+    <tr><th>模式</th><th>训练/推理</th><th>预测头结构</th><th>头间依赖</th><th>额外参数</th><th>代表</th></tr>
+    <tr><td><strong>(A) 独立并行头</strong></td><td>训练 + 推理</td><td>k 个独立 LM Head</td><td>无</td><td>~k × d×|V|</td><td>Meta MTP</td></tr>
+    <tr><td><strong>(B) 顺序级联</strong></td><td>训练 + 推理</td><td>k 个 Transformer 层 + Head</td><td>顺序依赖</td><td>k × (TRM层 + Head)</td><td>DeepSeek-V3</td></tr>
+    <tr><td><strong>(C) 独立小模型</strong></td><td>仅推理</td><td>独立的小 LLM</td><td>无</td><td>完整小模型</td><td>Speculative Decoding</td></tr>
+    <tr><td><strong>(D) 特征级自回归</strong></td><td>推理（+训练）</td><td>轻量 Transformer</td><td>特征空间顺序</td><td>~1 层 TRM</td><td>EAGLE / EAGLE-2</td></tr>
+  </table>
+</div>
+
+<!-- ===== Meta MTP ===== -->
+<div class="section">
+  <h2>四、Meta MTP：系统论证多步预测的训练价值</h2>
+  <p>
+    Meta 在 2024 年发表了 <strong>"Better &amp; Faster Large Language Models via Multi-Token Prediction"</strong>，
+    第一次大规模、系统性地论证了 MTP 在训练中的价值。
+  </p>
+
+  <h3>4.1 架构设计</h3>
+  <p>
+    Meta 采用<strong>独立并行头（模式 A）</strong>：在共享 Backbone 之上挂载 k 个<strong>独立的输出头</strong>，
+    每个头预测不同位置的下一个 token。
+  </p>
+  <div class="figure">
+    <svg viewBox="0 0 820 340" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar4" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">Meta MTP 架构</text>
+
+      <!-- Input -->
+      <rect x="80" y="50" width="60" height="32" rx="5" fill="#ddd"/><text x="110" y="71" text-anchor="middle" font-size="10">x₁</text>
+      <rect x="160" y="50" width="60" height="32" rx="5" fill="#ddd"/><text x="190" y="71" text-anchor="middle" font-size="10">x₂</text>
+      <rect x="240" y="50" width="60" height="32" rx="5" fill="#ddd"/><text x="270" y="71" text-anchor="middle" font-size="10">x₃</text>
+      <rect x="320" y="50" width="60" height="32" rx="5" fill="#ddd"/><text x="350" y="71" text-anchor="middle" font-size="10">x₄</text>
+      <rect x="400" y="50" width="60" height="32" rx="5" fill="#ddd"/><text x="430" y="71" text-anchor="middle" font-size="10">x₅</text>
+      <rect x="480" y="50" width="60" height="32" rx="5" fill="#ddd"/><text x="510" y="71" text-anchor="middle" font-size="10">x₆</text>
+      <text x="680" y="71" text-anchor="middle" font-size="11" fill="#888">输入 Tokens</text>
+
+      <!-- Arrows down -->
+      <line x1="110" y1="82" x2="110" y2="105" stroke="#4a7dff" stroke-width="1.2" marker-end="url(#ar4)"/>
+      <line x1="190" y1="82" x2="190" y2="105" stroke="#4a7dff" stroke-width="1.2" marker-end="url(#ar4)"/>
+      <line x1="270" y1="82" x2="270" y2="105" stroke="#4a7dff" stroke-width="1.2" marker-end="url(#ar4)"/>
+      <line x1="350" y1="82" x2="350" y2="105" stroke="#4a7dff" stroke-width="1.2" marker-end="url(#ar4)"/>
+      <line x1="430" y1="82" x2="430" y2="105" stroke="#4a7dff" stroke-width="1.2" marker-end="url(#ar4)"/>
+      <line x1="510" y1="82" x2="510" y2="105" stroke="#4a7dff" stroke-width="1.2" marker-end="url(#ar4)"/>
+
+      <!-- Shared Backbone -->
+      <rect x="60" y="108" width="510" height="55" rx="10" fill="#667eea" opacity="0.85"/>
+      <text x="315" y="132" text-anchor="middle" fill="white" font-size="14" font-weight="700">Shared Transformer Backbone (N layers)</text>
+      <text x="315" y="152" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="10">h₁, h₂, h₃, h₄, h₅, h₆ — 共享的隐藏表示</text>
+      <text x="680" y="140" text-anchor="middle" font-size="11" fill="#667eea" font-weight="600">参数共享</text>
+
+      <!-- Head 1 (NTP) -->
+      <line x1="190" y1="163" x2="190" y2="195" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar4)"/>
+      <rect x="120" y="198" width="140" height="35" rx="6" fill="#4a7dff" opacity="0.85"/>
+      <text x="190" y="220" text-anchor="middle" fill="white" font-size="11" font-weight="700">LM Head₁ (NTP)</text>
+      <line x1="190" y1="233" x2="190" y2="258" stroke="#4a7dff" stroke-width="1.2" marker-end="url(#ar4)"/>
+      <text x="190" y="275" text-anchor="middle" font-size="11" fill="#4a7dff" font-weight="700">预测 x_{t+1}</text>
+      <text x="190" y="295" text-anchor="middle" font-size="10" fill="#888">主损失 λ₁ = 1.0</text>
+
+      <!-- Head 2 -->
+      <line x1="310" y1="163" x2="310" y2="195" stroke="#2a9d8f" stroke-width="1.5" marker-end="url(#ar4)"/>
+      <rect x="240" y="198" width="140" height="35" rx="6" fill="#2a9d8f" opacity="0.85"/>
+      <text x="310" y="220" text-anchor="middle" fill="white" font-size="11" font-weight="700">LM Head₂</text>
+      <line x1="310" y1="233" x2="310" y2="258" stroke="#2a9d8f" stroke-width="1.2" marker-end="url(#ar4)"/>
+      <text x="310" y="275" text-anchor="middle" font-size="11" fill="#2a9d8f" font-weight="700">预测 x_{t+2}</text>
+      <text x="310" y="295" text-anchor="middle" font-size="10" fill="#888">辅助损失 λ₂</text>
+
+      <!-- Head 3 -->
+      <line x1="430" y1="163" x2="430" y2="195" stroke="#f0a500" stroke-width="1.5" marker-end="url(#ar4)"/>
+      <rect x="360" y="198" width="140" height="35" rx="6" fill="#f0a500" opacity="0.85"/>
+      <text x="430" y="220" text-anchor="middle" fill="white" font-size="11" font-weight="700">LM Head₃</text>
+      <line x1="430" y1="233" x2="430" y2="258" stroke="#f0a500" stroke-width="1.2" marker-end="url(#ar4)"/>
+      <text x="430" y="275" text-anchor="middle" font-size="11" fill="#c17900" font-weight="700">预测 x_{t+3}</text>
+      <text x="430" y="295" text-anchor="middle" font-size="10" fill="#888">辅助损失 λ₃</text>
+
+      <!-- Note -->
+      <rect x="570" y="195" width="220" height="80" rx="8" fill="white" stroke="#667eea" stroke-width="1.5"/>
+      <text x="680" y="218" text-anchor="middle" font-size="11" font-weight="700" fill="#1a1a2e">关键特点</text>
+      <text x="585" y="238" font-size="10" fill="#333">• 所有 Head 从同一 h_t 出发</text>
+      <text x="585" y="256" font-size="10" fill="#333">• Head 间无依赖（可并行）</text>
+      <text x="585" y="274" font-size="10" fill="#333">• 推理时可丢弃额外 Head</text>
+    </svg>
+    <div class="caption">图 5：Meta MTP 架构。共享 Backbone 产出隐藏表示 h_t，k 个独立的 LM Head 分别预测 x_{t+1}, x_{t+2}, ..., x_{t+k}。</div>
+  </div>
+
+  <h3>4.2 关键实验结论</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>模型越大收益越大</h4>
+      <p>在 7B 参数以下 MTP 收益有限；<strong>13B+ 模型中 MTP 显著提升下游任务表现</strong>——这可能因为大模型有足够容量编码多步信息。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>代码任务收益最大</h4>
+      <p>代码生成（HumanEval, MBPP）上 <strong>MTP-4 比 NTP 提升 12%+</strong>。代码的结构性和长程依赖使多步预测信号特别有价值。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>k=4 是最优平衡点</h4>
+      <p>k=2~4 收益递增，k>4 后边际收益递减甚至轻微下降。k=4 在训练效率和质量间达到最优。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>训练 FLOPs 开销适中</h4>
+      <p>额外 Head 只是线性层，增加约 <strong>~15% 训练 FLOPs</strong>（k=4），但无推理额外开销（Head 可丢弃）。</p>
+    </div>
+  </div>
+
+  <h3>4.3 Meta MTP 的内存优化：顺序预测+因果掩码</h3>
+  <p>
+    k 个独立 Head 都需要对完整词表做 softmax，显存开销为 k × (T × |V|)。
+    Meta 提出<strong>逐头顺序计算损失</strong>（而非同时 materialize 所有 logits）来减少峰值显存：
+  </p>
+  <div class="formula">
+    显存峰值 = max(T × |V|) 而非 k × T × |V|
+  </div>
+</div>
+
+<!-- ===== DeepSeek-V3 MTP ===== -->
+<div class="section">
+  <h2>五、DeepSeek-V3 MTP：级联式多步预测</h2>
+  <p>
+    DeepSeek-V3（2024.12）将 MTP 作为<strong>核心训练目标之一</strong>（与 MoE、MLA 并列），
+    并在架构上做了独特的创新——<strong>顺序级联预测（模式 B）</strong>。
+  </p>
+
+  <h3>5.1 架构详解</h3>
+  <div class="figure">
+    <svg viewBox="0 0 820 470" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar5" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+        <marker id="ar5o" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#f0a500"/></marker>
+        <marker id="ar5g" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2a9d8f"/></marker>
+      </defs>
+      <text x="410" y="25" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">DeepSeek-V3 MTP 架构（Depth = 1, k 步级联）</text>
+
+      <!-- Input embedding -->
+      <text x="80" y="55" font-size="10" fill="#888">Token Embedding:</text>
+      <rect x="60" y="62" width="55" height="26" rx="4" fill="#ddd"/><text x="87" y="80" text-anchor="middle" font-size="9">Emb(x₁)</text>
+      <rect x="125" y="62" width="55" height="26" rx="4" fill="#ddd"/><text x="152" y="80" text-anchor="middle" font-size="9">Emb(x₂)</text>
+      <rect x="190" y="62" width="55" height="26" rx="4" fill="#ddd"/><text x="217" y="80" text-anchor="middle" font-size="9">Emb(x₃)</text>
+      <rect x="255" y="62" width="55" height="26" rx="4" fill="#ddd"/><text x="282" y="80" text-anchor="middle" font-size="9">Emb(x₄)</text>
+      <rect x="320" y="62" width="55" height="26" rx="4" fill="#ddd"/><text x="347" y="80" text-anchor="middle" font-size="9">Emb(x₅)</text>
+      <rect x="385" y="62" width="55" height="26" rx="4" fill="#ddd"/><text x="412" y="80" text-anchor="middle" font-size="9">Emb(x₆)</text>
+
+      <!-- Main Backbone -->
+      <line x1="250" y1="88" x2="250" y2="108" stroke="#4a7dff" stroke-width="1.2" marker-end="url(#ar5)"/>
+      <rect x="40" y="112" width="420" height="55" rx="10" fill="#667eea" opacity="0.9"/>
+      <text x="250" y="136" text-anchor="middle" fill="white" font-size="13" font-weight="700">Main Transformer (N = 61 layers)</text>
+      <text x="250" y="156" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="10">输出 h₁⁰, h₂⁰, h₃⁰, h₄⁰, h₅⁰, h₆⁰</text>
+      <text x="600" y="143" text-anchor="middle" font-size="11" fill="#667eea" font-weight="600">共享 Backbone</text>
+
+      <!-- Main NTP Head -->
+      <line x1="250" y1="167" x2="250" y2="192" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar5)"/>
+      <rect x="170" y="195" width="160" height="32" rx="6" fill="#4a7dff" opacity="0.85"/>
+      <text x="250" y="216" text-anchor="middle" fill="white" font-size="11" font-weight="700">Shared LM Head</text>
+      <text x="250" y="245" text-anchor="middle" font-size="11" fill="#4a7dff" font-weight="600">预测 x_{t+1} (主损失)</text>
+
+      <!-- MTP Module 1 -->
+      <rect x="480" y="112" width="310" height="85" rx="10" fill="#f0a500" opacity="0.12" stroke="#f0a500" stroke-width="1.5"/>
+      <text x="635" y="134" text-anchor="middle" font-size="12" font-weight="700" fill="#c17900">MTP Module 1</text>
+      <!-- Concat -->
+      <rect x="500" y="148" width="90" height="28" rx="4" fill="#9b59b6" opacity="0.7"/>
+      <text x="545" y="167" text-anchor="middle" fill="white" font-size="9" font-weight="600">Concat+Proj</text>
+      <!-- Input arrows to concat -->
+      <path d="M 410 140 C 440 140, 470 156, 495 160" fill="none" stroke="#667eea" stroke-width="1.2" marker-end="url(#ar5)"/>
+      <text x="448" y="138" font-size="8" fill="#667eea">h_t⁰</text>
+      <path d="M 310 80 C 420 80, 450 130, 495 155" fill="none" stroke="#999" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#ar5)"/>
+      <text x="420" y="98" font-size="8" fill="#888">Emb(x_{t+1})</text>
+      <!-- TRM layer -->
+      <line x1="590" y1="162" x2="620" y2="162" stroke="#f0a500" stroke-width="1.5" marker-end="url(#ar5o)"/>
+      <rect x="625" y="148" width="80" height="28" rx="4" fill="#f0a500" opacity="0.7"/>
+      <text x="665" y="167" text-anchor="middle" fill="white" font-size="9" font-weight="600">TRM Layer</text>
+      <!-- LM Head (shared) -->
+      <line x1="705" y1="162" x2="730" y2="162" stroke="#f0a500" stroke-width="1.2" marker-end="url(#ar5o)"/>
+      <text x="770" y="167" text-anchor="middle" font-size="9" fill="#c17900" font-weight="600">h_t¹</text>
+      <text x="635" y="210" text-anchor="middle" font-size="10" fill="#c17900" font-weight="600">→ Shared LM Head → 预测 x_{t+2}</text>
+
+      <!-- MTP Module 2 -->
+      <rect x="480" y="232" width="310" height="85" rx="10" fill="#2a9d8f" opacity="0.1" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="635" y="254" text-anchor="middle" font-size="12" font-weight="700" fill="#1a6b61">MTP Module 2</text>
+      <rect x="500" y="268" width="90" height="28" rx="4" fill="#9b59b6" opacity="0.6"/>
+      <text x="545" y="287" text-anchor="middle" fill="white" font-size="9" font-weight="600">Concat+Proj</text>
+      <path d="M 770 170 C 790 170, 790 260, 500 277" fill="none" stroke="#f0a500" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#ar5g)"/>
+      <text x="792" y="220" font-size="8" fill="#f0a500">h_t¹</text>
+      <line x1="590" y1="282" x2="620" y2="282" stroke="#2a9d8f" stroke-width="1.5" marker-end="url(#ar5g)"/>
+      <rect x="625" y="268" width="80" height="28" rx="4" fill="#2a9d8f" opacity="0.7"/>
+      <text x="665" y="287" text-anchor="middle" fill="white" font-size="9" font-weight="600">TRM Layer</text>
+      <line x1="705" y1="282" x2="730" y2="282" stroke="#2a9d8f" stroke-width="1.2" marker-end="url(#ar5g)"/>
+      <text x="770" y="287" text-anchor="middle" font-size="9" fill="#1a6b61" font-weight="600">h_t²</text>
+      <text x="635" y="330" text-anchor="middle" font-size="10" fill="#1a6b61" font-weight="600">→ Shared LM Head → 预测 x_{t+3}</text>
+
+      <!-- Key design notes -->
+      <rect x="60" y="365" width="700" height="90" rx="10" fill="white" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="410" y="390" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1a2e">DeepSeek-V3 MTP 关键设计要素</text>
+      <text x="80" y="413" font-size="10" fill="#333">① <tspan font-weight="600">级联依赖</tspan>：MTP Module k 的输入 = Backbone 隐状态 h⁰ + 前一步隐状态 h^{k-1} + Emb(x_{t+k})</text>
+      <text x="80" y="433" font-size="10" fill="#333">② <tspan font-weight="600">共享 LM Head</tspan>：所有 MTP Module 和主模型共享同一个输出投影层，节省参数</text>
+      <text x="80" y="453" font-size="10" fill="#333">③ <tspan font-weight="600">Depth=1</tspan>：每个 MTP Module 只有 1 层 Transformer，参数极轻（~2% 的 Backbone）</text>
+    </svg>
+    <div class="caption">图 6：DeepSeek-V3 MTP 架构。Backbone 输出 h⁰，MTP Module 1 接收 [h⁰, Emb(x_{t+1})] 产出 h¹ 并预测 x_{t+2}；
+    MTP Module 2 接收 [h¹, Emb(x_{t+2})] 产出 h² 并预测 x_{t+3}。所有模块共享 LM Head。</div>
+  </div>
+
+  <h3>5.2 训练目标</h3>
+  <div class="formula">
+    L<sub>total</sub> = L<sub>NTP</sub> + λ · Σ<sub>j=1..k</sub> L<sub>MTP,j</sub>
+    <br><br>
+    DeepSeek-V3 使用 k = 1（即只额外预测 1 步），λ = 0.3
+  </div>
+  <div class="warning">
+    <strong>注意：</strong>虽然 DeepSeek-V3 的论文标题写的是"MTP"，但实际上它只预测额外 1 个 token（k=1），
+    相当于<strong>2-Token Prediction</strong>。这是为了在训练开销和收益之间取得平衡——
+    多 1 步的预测信号已经足以显著提升模型质量。
+  </div>
+
+  <h3>5.3 推理加速：MTP 作为推测解码的 Draft</h3>
+  <p>
+    DeepSeek-V3 的 MTP 模块在推理时有双重价值：训练好的 MTP Head 可以直接作为<strong>推测解码的 Draft 模型</strong>，
+    无需额外训练一个独立的小模型：
+  </p>
+  <div class="figure">
+    <svg viewBox="0 0 800 210" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs><marker id="ar6" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker></defs>
+      <text x="400" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">DeepSeek-V3 推理：MTP Head 作为 Draft</text>
+      <!-- Step 1: Main model -->
+      <rect x="30" y="45" width="200" height="55" rx="8" fill="#667eea" opacity="0.85"/>
+      <text x="130" y="70" text-anchor="middle" fill="white" font-size="11" font-weight="700">Main Model 前向</text>
+      <text x="130" y="87" text-anchor="middle" fill="white" font-size="10">生成 x₄ (确定)</text>
+      <line x1="230" y1="72" x2="260" y2="72" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar6)"/>
+      <!-- Step 2: MTP generates drafts -->
+      <rect x="265" y="40" width="230" height="65" rx="8" fill="#f0a500" opacity="0.15" stroke="#f0a500" stroke-width="1.5"/>
+      <text x="380" y="62" text-anchor="middle" fill="#c17900" font-size="11" font-weight="700">MTP Head 生成草稿</text>
+      <text x="380" y="82" text-anchor="middle" fill="#888" font-size="10">x̂₅, x̂₆ (候选，可能不准)</text>
+      <text x="380" y="97" text-anchor="middle" fill="#888" font-size="9">开销极小——仅 1 层 TRM</text>
+      <line x1="495" y1="72" x2="525" y2="72" stroke="#f0a500" stroke-width="2" marker-end="url(#ar6)"/>
+      <!-- Step 3: Verification -->
+      <rect x="530" y="40" width="240" height="65" rx="8" fill="#2a9d8f" opacity="0.15" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="650" y="62" text-anchor="middle" fill="#1a6b61" font-size="11" font-weight="700">Main Model 并行验证</text>
+      <text x="650" y="82" text-anchor="middle" fill="#888" font-size="10">一次前向传播验证 [x₄, x̂₅, x̂₆]</text>
+      <text x="650" y="97" text-anchor="middle" fill="#888" font-size="9">接受正确的、拒绝错误的</text>
+      <!-- Result -->
+      <rect x="180" y="130" width="440" height="55" rx="8" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="400" y="153" text-anchor="middle" fill="#1a1a2e" font-size="12" font-weight="700">结果：1 次主模型前向 → 产出 1~3 个 token</text>
+      <text x="400" y="173" text-anchor="middle" fill="#888" font-size="10">DeepSeek-V3 报告的 MTP 接受率约 85%~90%，TPS 提升 1.8 倍</text>
+    </svg>
+    <div class="caption">图 7：DeepSeek-V3 推理时 MTP Head 作为零成本 Draft。主模型生成 x₄ 的同时，MTP Head 生成 x̂₅, x̂₆ 草稿，再一次验证。</div>
+  </div>
+</div>
+
+<!-- ===== Medusa & EAGLE ===== -->
+<div class="section">
+  <h2>六、推理加速方案：Medusa 与 EAGLE</h2>
+  <p>
+    Medusa 和 EAGLE 是 MTP 在<strong>纯推理加速</strong>方向的代表方案。
+    它们给已训练好的 LLM 添加额外的预测头，通过推测解码实现无损加速。
+  </p>
+
+  <h3>6.1 Medusa</h3>
+  <div class="figure">
+    <svg viewBox="0 0 800 280" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs><marker id="ar7" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker></defs>
+      <text x="400" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">Medusa 架构：多头并行推测</text>
+      <!-- Frozen LLM -->
+      <rect x="130" y="45" width="540" height="50" rx="10" fill="#667eea" opacity="0.8"/>
+      <text x="400" y="75" text-anchor="middle" fill="white" font-size="13" font-weight="700">原始 LLM（冻结）→ 隐藏表示 h_t</text>
+      <!-- Original head -->
+      <line x1="230" y1="95" x2="230" y2="125" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar7)"/>
+      <rect x="180" y="128" width="100" height="30" rx="5" fill="#4a7dff" opacity="0.8"/>
+      <text x="230" y="148" text-anchor="middle" fill="white" font-size="10" font-weight="600">原始 Head</text>
+      <text x="230" y="180" text-anchor="middle" font-size="10" fill="#4a7dff" font-weight="600">x_{t+1}</text>
+      <!-- Medusa head 1 -->
+      <line x1="370" y1="95" x2="370" y2="125" stroke="#2a9d8f" stroke-width="1.5" marker-end="url(#ar7)"/>
+      <rect x="315" y="128" width="110" height="30" rx="5" fill="#2a9d8f" opacity="0.8"/>
+      <text x="370" y="148" text-anchor="middle" fill="white" font-size="10" font-weight="600">Medusa Head₁</text>
+      <text x="370" y="180" text-anchor="middle" font-size="10" fill="#2a9d8f" font-weight="600">x̂_{t+2}</text>
+      <!-- Medusa head 2 -->
+      <line x1="510" y1="95" x2="510" y2="125" stroke="#f0a500" stroke-width="1.5" marker-end="url(#ar7)"/>
+      <rect x="455" y="128" width="110" height="30" rx="5" fill="#f0a500" opacity="0.8"/>
+      <text x="510" y="148" text-anchor="middle" fill="white" font-size="10" font-weight="600">Medusa Head₂</text>
+      <text x="510" y="180" text-anchor="middle" font-size="10" fill="#c17900" font-weight="600">x̂_{t+3}</text>
+      <!-- Medusa head 3 -->
+      <line x1="650" y1="95" x2="650" y2="125" stroke="#9b59b6" stroke-width="1.5" marker-end="url(#ar7)"/>
+      <rect x="595" y="128" width="110" height="30" rx="5" fill="#9b59b6" opacity="0.8"/>
+      <text x="650" y="148" text-anchor="middle" fill="white" font-size="10" font-weight="600">Medusa Head₃</text>
+      <text x="650" y="180" text-anchor="middle" font-size="10" fill="#6c3baa" font-weight="600">x̂_{t+4}</text>
+      <!-- Structure detail -->
+      <rect x="180" y="200" width="440" height="60" rx="8" fill="white" stroke="#d8e0f0" stroke-width="1"/>
+      <text x="400" y="222" text-anchor="middle" font-size="11" fill="#1a1a2e" font-weight="700">每个 Medusa Head = 1 层 FFN + ReLU + Linear + Softmax</text>
+      <text x="400" y="244" text-anchor="middle" font-size="10" fill="#888">结构极简（~0.5% 原模型参数），在冻结 LLM 上微调 1~2 epoch 即可</text>
+    </svg>
+    <div class="caption">图 8：Medusa 在冻结 LLM 之上添加多个轻量 Head 并行预测后续 token。每个 Head 独立——命中率逐步递减。</div>
+  </div>
+  <p><strong>Medusa-2</strong> 进一步引入 <strong>Tree Attention</strong>——每个 Head 不只生成 top-1 候选，
+  而是生成 top-k 候选，构成一棵"候选树"，一次验证整棵树，大幅提升接受率。</p>
+
+  <h3>6.2 EAGLE（Extrapolation Algorithm for Greater Language-model Efficiency）</h3>
+  <div class="figure">
+    <svg viewBox="0 0 800 270" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs><marker id="ar8" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker></defs>
+      <text x="400" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">EAGLE：特征级自回归推测解码</text>
+      <!-- Frozen LLM -->
+      <rect x="30" y="50" width="350" height="50" rx="8" fill="#667eea" opacity="0.8"/>
+      <text x="205" y="80" text-anchor="middle" fill="white" font-size="12" font-weight="700">原始 LLM（冻结）→ h_t (特征)</text>
+      <!-- Concat -->
+      <line x1="205" y1="100" x2="205" y2="128" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar8)"/>
+      <rect x="140" y="130" width="130" height="32" rx="5" fill="#9b59b6" opacity="0.7"/>
+      <text x="205" y="150" text-anchor="middle" fill="white" font-size="10" font-weight="600">Concat(h_t, Emb(x_{t+1}))</text>
+      <!-- EAGLE Draft Head -->
+      <line x1="205" y1="162" x2="205" y2="185" stroke="#9b59b6" stroke-width="1.5" marker-end="url(#ar8)"/>
+      <rect x="100" y="188" width="210" height="45" rx="8" fill="#9b59b6" opacity="0.2" stroke="#9b59b6" stroke-width="1.5"/>
+      <text x="205" y="208" text-anchor="middle" fill="#6c3baa" font-size="11" font-weight="700">EAGLE Draft Head</text>
+      <text x="205" y="225" text-anchor="middle" fill="#888" font-size="9">1 层 Transformer → ĥ_{t+1} (特征)</text>
+      <!-- Autoregressive in feature space -->
+      <path d="M 310 210 C 370 210, 380 170, 380 150 S 380 130, 310 130" fill="none" stroke="#9b59b6" stroke-width="1.5" stroke-dasharray="4,3"/>
+      <text x="400" y="170" font-size="9" fill="#9b59b6" font-weight="600">特征空间</text>
+      <text x="400" y="183" font-size="9" fill="#9b59b6" font-weight="600">自回归循环</text>
+      <!-- Output -->
+      <line x1="310" y1="210" x2="440" y2="210" stroke="#2a9d8f" stroke-width="2" marker-end="url(#ar8)"/>
+      <rect x="445" y="195" width="320" height="45" rx="8" fill="#2a9d8f" opacity="0.15" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="605" y="215" text-anchor="middle" fill="#1a6b61" font-size="11" font-weight="700">产出多步草稿：ĥ_{t+1} → ĥ_{t+2} → ... → ĥ_{t+k}</text>
+      <text x="605" y="232" text-anchor="middle" fill="#888" font-size="9">然后过 LM Head 得到 token 候选 → 主模型验证</text>
+      <!-- Key insight -->
+      <rect x="445" y="80" width="320" height="70" rx="8" fill="white" stroke="#9b59b6" stroke-width="1.5"/>
+      <text x="605" y="102" text-anchor="middle" font-size="12" font-weight="700" fill="#1a1a2e">EAGLE 核心洞察</text>
+      <text x="465" y="122" font-size="10" fill="#333">特征 h_t 比 token x_t 更容易预测</text>
+      <text x="465" y="140" font-size="10" fill="#333">→ 在特征空间做自回归，命中率更高</text>
+    </svg>
+    <div class="caption">图 9：EAGLE 在特征空间（而非 token 空间）进行自回归草稿生成。特征比 token 分布更平滑、更可预测，因此命中率更高。</div>
+  </div>
+
+  <h3>6.3 推测解码通用流程</h3>
+  <div class="figure">
+    <svg viewBox="0 0 800 200" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs><marker id="ar9" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker></defs>
+      <text x="400" y="20" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">推测解码通用流程（Speculative Decoding）</text>
+      <!-- Draft -->
+      <rect x="30" y="40" width="170" height="50" rx="8" fill="#f0a500" opacity="0.8"/>
+      <text x="115" y="62" text-anchor="middle" fill="white" font-size="11" font-weight="700">① Draft 生成</text>
+      <text x="115" y="80" text-anchor="middle" fill="white" font-size="9">x̂₁, x̂₂, ..., x̂_k</text>
+      <line x1="200" y1="65" x2="235" y2="65" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar9)"/>
+      <!-- Verify -->
+      <rect x="240" y="40" width="210" height="50" rx="8" fill="#667eea" opacity="0.8"/>
+      <text x="345" y="62" text-anchor="middle" fill="white" font-size="11" font-weight="700">② 主模型并行验证</text>
+      <text x="345" y="80" text-anchor="middle" fill="white" font-size="9">一次前向传播验证所有 k 个</text>
+      <line x1="450" y1="65" x2="485" y2="65" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar9)"/>
+      <!-- Accept/Reject -->
+      <rect x="490" y="40" width="280" height="50" rx="8" fill="#2a9d8f" opacity="0.8"/>
+      <text x="630" y="62" text-anchor="middle" fill="white" font-size="11" font-weight="700">③ 接受/拒绝</text>
+      <text x="630" y="80" text-anchor="middle" fill="white" font-size="9">逐位验证：接受前 m 个正确的，拒绝 m+1 起</text>
+      <!-- Example -->
+      <rect x="30" y="110" width="740" height="70" rx="8" fill="white" stroke="#d8e0f0" stroke-width="1"/>
+      <text x="400" y="132" text-anchor="middle" font-size="12" font-weight="700" fill="#1a1a2e">示例：Draft 草稿 = [the, cat, sat, in]</text>
+      <text x="180" y="158" text-anchor="middle" font-size="11" fill="#2a9d8f" font-weight="600">✓ the</text>
+      <text x="300" y="158" text-anchor="middle" font-size="11" fill="#2a9d8f" font-weight="600">✓ cat</text>
+      <text x="420" y="158" text-anchor="middle" font-size="11" fill="#2a9d8f" font-weight="600">✓ sat</text>
+      <text x="540" y="158" text-anchor="middle" font-size="11" fill="#e74c3c" font-weight="600">✗ in (应为 on)</text>
+      <text x="660" y="158" text-anchor="middle" font-size="11" fill="#888">→ 接受 3 个 + 采样纠正 1 个 = 4 tokens!</text>
+    </svg>
+    <div class="caption">图 10：推测解码的通用三步流程。即使部分草稿被拒绝，最差情况也至少得到 1 个 token（等同普通解码），因此<strong>无损加速</strong>。</div>
+  </div>
+</div>
+
+<!-- ===== 验证接受原理 ===== -->
+<div class="section">
+  <h2>七、推测解码的 Token 验证与接受原理</h2>
+  <p>
+    推测解码（Speculative Decoding）能实现<strong>无损加速</strong>的核心保证在于：
+    它通过一个精心设计的<strong>拒绝采样（Rejection Sampling）</strong>算法，
+    确保最终输出的 token 序列<strong>严格服从大模型（Target Model）的原始分布</strong>——
+    数学上完全等价于逐 token 自回归解码，没有任何质量损失。
+    本节将深入推导这一机制的数学原理。
+  </p>
+
+  <h3>7.1 问题设定</h3>
+  <p>记：</p>
+  <ul>
+    <li><strong>p(x | prefix)</strong>：大模型（Target Model）在给定前缀下的 token 分布</li>
+    <li><strong>q(x | prefix)</strong>：小模型 / Draft Head 在给定前缀下的 token 分布</li>
+    <li><strong>目标</strong>：从 q 中采样 k 个草稿 token，再用一次 p 的前向传播并行验证它们，
+    最终输出的 token 必须<strong>精确服从 p 的分布</strong></li>
+  </ul>
+  <div class="highlight">
+    <strong>核心约束：</strong>无论 Draft 模型 q 的质量如何，最终输出必须在统计上等价于从 p 逐步采样。
+    q 越接近 p 则接受率越高、加速越明显，但<strong>即使 q 完全随机，输出也保证正确</strong>（只是退化为无加速）。
+  </div>
+
+  <h3>7.2 单步验证：修正拒绝采样</h3>
+  <p>
+    假设 Draft 模型已经采样了一个 token x̂ ~ q(·|prefix)。我们需要决定是否接受它，
+    并保证接受后的分布 = p(·|prefix)。算法如下：
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 420" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="arV" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+        <marker id="arVg" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2a9d8f"/></marker>
+        <marker id="arVr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#e74c3c"/></marker>
+      </defs>
+      <text x="410" y="25" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">单步 Token 验证算法（Modified Rejection Sampling）</text>
+
+      <!-- Step 1 -->
+      <rect x="30" y="50" width="240" height="55" rx="8" fill="#f0a500" opacity="0.15" stroke="#f0a500" stroke-width="1.5"/>
+      <text x="150" y="72" text-anchor="middle" fill="#c17900" font-size="12" font-weight="700">① Draft 采样</text>
+      <text x="150" y="92" text-anchor="middle" fill="#555" font-size="11">x̂ ~ q(·|prefix)</text>
+
+      <line x1="270" y1="77" x2="310" y2="77" stroke="#4a7dff" stroke-width="2" marker-end="url(#arV)"/>
+
+      <!-- Step 2 -->
+      <rect x="315" y="45" width="280" height="65" rx="8" fill="#667eea" opacity="0.12" stroke="#667eea" stroke-width="1.5"/>
+      <text x="455" y="68" text-anchor="middle" fill="#4040b0" font-size="12" font-weight="700">② 计算接受概率</text>
+      <text x="455" y="92" text-anchor="middle" fill="#555" font-size="11">α = min(1, p(x̂) / q(x̂))</text>
+
+      <line x1="595" y1="77" x2="635" y2="77" stroke="#4a7dff" stroke-width="2" marker-end="url(#arV)"/>
+
+      <!-- Step 3 -->
+      <rect x="640" y="45" width="155" height="65" rx="8" fill="#9b59b6" opacity="0.12" stroke="#9b59b6" stroke-width="1.5"/>
+      <text x="717" y="68" text-anchor="middle" fill="#6c3baa" font-size="12" font-weight="700">③ 掷硬币</text>
+      <text x="717" y="92" text-anchor="middle" fill="#555" font-size="11">r ~ Uniform(0,1)</text>
+
+      <!-- Branch: Accept -->
+      <line x1="717" y1="110" x2="500" y2="155" stroke="#2a9d8f" stroke-width="2" marker-end="url(#arVg)"/>
+      <text x="600" y="128" font-size="11" fill="#2a9d8f" font-weight="700">r ≤ α</text>
+      <rect x="350" y="160" width="300" height="60" rx="10" fill="#f0fff4" stroke="#2a9d8f" stroke-width="2"/>
+      <text x="500" y="183" text-anchor="middle" fill="#1a6b61" font-size="13" font-weight="700">✓ 接受 x̂</text>
+      <text x="500" y="205" text-anchor="middle" fill="#888" font-size="11">直接使用 Draft 的 token</text>
+
+      <!-- Branch: Reject -->
+      <line x1="717" y1="110" x2="717" y2="155" stroke="#e74c3c" stroke-width="2" marker-end="url(#arVr)"/>
+      <text x="755" y="138" font-size="11" fill="#e74c3c" font-weight="700">r > α</text>
+      <rect x="580" y="160" width="230" height="60" rx="10" fill="#fff0f0" stroke="#e74c3c" stroke-width="2"/>
+      <text x="695" y="183" text-anchor="middle" fill="#c0392b" font-size="13" font-weight="700">✗ 拒绝 x̂</text>
+      <text x="695" y="205" text-anchor="middle" fill="#888" font-size="11">从修正分布重新采样</text>
+
+      <!-- Correction distribution -->
+      <line x1="695" y1="220" x2="695" y2="255" stroke="#e74c3c" stroke-width="1.5" marker-end="url(#arVr)"/>
+      <rect x="490" y="260" width="410" height="65" rx="10" fill="#e74c3c" opacity="0.08" stroke="#e74c3c" stroke-width="1.5"/>
+      <text x="695" y="282" text-anchor="middle" fill="#c0392b" font-size="12" font-weight="700">④ 从修正分布采样替代 token</text>
+      <text x="695" y="305" text-anchor="middle" fill="#555" font-size="11">x' ~ norm( max(0, p(x) − q(x)) )</text>
+
+      <!-- Math proof box -->
+      <rect x="30" y="345" width="770" height="60" rx="8" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="415" y="370" text-anchor="middle" fill="#1a1a2e" font-size="12" font-weight="700">数学保证：无论走哪条分支，最终输出的 token 都精确服从 p(x|prefix) 分布</text>
+      <text x="415" y="392" text-anchor="middle" fill="#888" font-size="11">接受 x̂ 的概率 × q(x̂) + 拒绝后修正采样的概率 = p(x)（对所有 x 成立）</text>
+    </svg>
+    <div class="caption">图 11-A：单步 Token 验证算法。接受概率 α = min(1, p(x̂)/q(x̂))：Draft 给的概率比 Target 低时 α=1（必接受）；比 Target 高时按比例拒绝。</div>
+  </div>
+
+  <h3>7.3 数学证明：为什么输出分布等于 p</h3>
+  <p>我们需要证明：对任意 token x，最终输出 x 的概率 = p(x)。</p>
+  <div class="formula">
+    P(输出 = x) = P(Draft 采样到 x 且接受) + P(Draft 被拒绝后修正采样到 x)
+  </div>
+  <p><strong>第一项：Draft 采样到 x 且接受</strong></p>
+  <div class="formula">
+    P(x̂ = x, 接受) = q(x) · min(1, p(x)/q(x)) = min(q(x), p(x))
+  </div>
+  <p><strong>第二项：Draft 被拒绝后从修正分布采样到 x</strong></p>
+  <p>总拒绝概率为：</p>
+  <div class="formula">
+    P(拒绝) = Σ<sub>x'</sub> q(x') · (1 − min(1, p(x')/q(x'))) = Σ<sub>x'</sub> max(0, q(x') − p(x'))
+  </div>
+  <p>修正分布为：</p>
+  <div class="formula">
+    p<sub>修正</sub>(x) = max(0, p(x) − q(x)) / Σ<sub>x'</sub> max(0, p(x') − q(x'))
+  </div>
+  <p>因此第二项为：</p>
+  <div class="formula">
+    P(拒绝) · p<sub>修正</sub>(x) = max(0, p(x) − q(x))
+  </div>
+  <p>两项相加：</p>
+  <div class="formula">
+    <strong>P(输出 = x) = min(q(x), p(x)) + max(0, p(x) − q(x)) = p(x) &nbsp; ✓</strong>
+  </div>
+  <div class="success">
+    <strong>完美等价！</strong>这个等式对<strong>任意 q 和 p</strong> 都成立——无论 Draft 模型多差，
+    输出始终精确服从 Target 模型 p 的分布。q 的质量只影响<strong>接受率</strong>（速度），不影响<strong>正确性</strong>。
+  </div>
+
+  <h3>7.4 完整数值计算示例</h3>
+  <p>假设词表大小 |V|=5，某步的 Target 和 Draft 分布如下：</p>
+  <div class="figure">
+    <svg viewBox="0 0 820 530" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">Token 验证数值计算示例</text>
+
+      <!-- Table header -->
+      <rect x="30" y="40" width="760" height="28" rx="4" fill="#1a1a2e"/>
+      <text x="90" y="59" text-anchor="middle" fill="white" font-size="10" font-weight="600">Token x</text>
+      <text x="190" y="59" text-anchor="middle" fill="white" font-size="10" font-weight="600">p(x) Target</text>
+      <text x="300" y="59" text-anchor="middle" fill="white" font-size="10" font-weight="600">q(x) Draft</text>
+      <text x="420" y="59" text-anchor="middle" fill="white" font-size="10" font-weight="600">p/q 比值</text>
+      <text x="540" y="59" text-anchor="middle" fill="white" font-size="10" font-weight="600">α=min(1,p/q)</text>
+      <text x="680" y="59" text-anchor="middle" fill="white" font-size="10" font-weight="600">max(0, p−q)</text>
+      <!-- Row 1 -->
+      <rect x="30" y="68" width="760" height="28" fill="#f0fff4"/>
+      <text x="90" y="87" text-anchor="middle" font-size="11" fill="#333" font-weight="600">"the"</text>
+      <text x="190" y="87" text-anchor="middle" font-size="11" fill="#667eea" font-weight="600">0.50</text>
+      <text x="300" y="87" text-anchor="middle" font-size="11" fill="#f0a500" font-weight="600">0.40</text>
+      <text x="420" y="87" text-anchor="middle" font-size="11" fill="#333">1.25</text>
+      <text x="540" y="87" text-anchor="middle" font-size="11" fill="#2a9d8f" font-weight="700">1.0</text>
+      <text x="680" y="87" text-anchor="middle" font-size="11" fill="#333">0.10</text>
+      <!-- Row 2 -->
+      <rect x="30" y="96" width="760" height="28" fill="white"/>
+      <text x="90" y="115" text-anchor="middle" font-size="11" fill="#333" font-weight="600">"a"</text>
+      <text x="190" y="115" text-anchor="middle" font-size="11" fill="#667eea" font-weight="600">0.30</text>
+      <text x="300" y="115" text-anchor="middle" font-size="11" fill="#f0a500" font-weight="600">0.35</text>
+      <text x="420" y="115" text-anchor="middle" font-size="11" fill="#333">0.857</text>
+      <text x="540" y="115" text-anchor="middle" font-size="11" fill="#e74c3c" font-weight="700">0.857</text>
+      <text x="680" y="115" text-anchor="middle" font-size="11" fill="#333">0</text>
+      <!-- Row 3 -->
+      <rect x="30" y="124" width="760" height="28" fill="#f8f9ff"/>
+      <text x="90" y="143" text-anchor="middle" font-size="11" fill="#333" font-weight="600">"one"</text>
+      <text x="190" y="143" text-anchor="middle" font-size="11" fill="#667eea" font-weight="600">0.10</text>
+      <text x="300" y="143" text-anchor="middle" font-size="11" fill="#f0a500" font-weight="600">0.15</text>
+      <text x="420" y="143" text-anchor="middle" font-size="11" fill="#333">0.667</text>
+      <text x="540" y="143" text-anchor="middle" font-size="11" fill="#e74c3c" font-weight="700">0.667</text>
+      <text x="680" y="143" text-anchor="middle" font-size="11" fill="#333">0</text>
+      <!-- Row 4 -->
+      <rect x="30" y="152" width="760" height="28" fill="white"/>
+      <text x="90" y="171" text-anchor="middle" font-size="11" fill="#333" font-weight="600">"my"</text>
+      <text x="190" y="171" text-anchor="middle" font-size="11" fill="#667eea" font-weight="600">0.07</text>
+      <text x="300" y="171" text-anchor="middle" font-size="11" fill="#f0a500" font-weight="600">0.05</text>
+      <text x="420" y="171" text-anchor="middle" font-size="11" fill="#333">1.40</text>
+      <text x="540" y="171" text-anchor="middle" font-size="11" fill="#2a9d8f" font-weight="700">1.0</text>
+      <text x="680" y="171" text-anchor="middle" font-size="11" fill="#333">0.02</text>
+      <!-- Row 5 -->
+      <rect x="30" y="180" width="760" height="28" fill="#f8f9ff"/>
+      <text x="90" y="199" text-anchor="middle" font-size="11" fill="#333" font-weight="600">"that"</text>
+      <text x="190" y="199" text-anchor="middle" font-size="11" fill="#667eea" font-weight="600">0.03</text>
+      <text x="300" y="199" text-anchor="middle" font-size="11" fill="#f0a500" font-weight="600">0.05</text>
+      <text x="420" y="199" text-anchor="middle" font-size="11" fill="#333">0.60</text>
+      <text x="540" y="199" text-anchor="middle" font-size="11" fill="#e74c3c" font-weight="700">0.60</text>
+      <text x="680" y="199" text-anchor="middle" font-size="11" fill="#333">0</text>
+
+      <!-- Bar chart: p vs q -->
+      <rect x="30" y="225" width="370" height="180" rx="8" fill="white" stroke="#d8e0f0" stroke-width="1"/>
+      <text x="215" y="248" text-anchor="middle" font-size="12" font-weight="700" fill="#1a1a2e">p(x) vs q(x) 分布对比</text>
+      <!-- Bars p -->
+      <rect x="55" y="264" width="32" height="125" rx="2" fill="#667eea" opacity="0.6"/>
+      <rect x="120" y="289" width="32" height="100" rx="2" fill="#667eea" opacity="0.6"/>
+      <rect x="185" y="364" width="32" height="25" rx="2" fill="#667eea" opacity="0.6"/>
+      <rect x="250" y="371" width="32" height="18" rx="2" fill="#667eea" opacity="0.6"/>
+      <rect x="315" y="381" width="32" height="8" rx="2" fill="#667eea" opacity="0.6"/>
+      <!-- Bars q -->
+      <rect x="87" y="289" width="32" height="100" rx="2" fill="#f0a500" opacity="0.5"/>
+      <rect x="152" y="301" width="32" height="88" rx="2" fill="#f0a500" opacity="0.5"/>
+      <rect x="217" y="351" width="32" height="38" rx="2" fill="#f0a500" opacity="0.5"/>
+      <rect x="282" y="376" width="32" height="13" rx="2" fill="#f0a500" opacity="0.5"/>
+      <rect x="347" y="376" width="32" height="13" rx="2" fill="#f0a500" opacity="0.5"/>
+      <!-- Labels -->
+      <text x="75" y="400" text-anchor="middle" font-size="8" fill="#555">the</text>
+      <text x="145" y="400" text-anchor="middle" font-size="8" fill="#555">a</text>
+      <text x="210" y="400" text-anchor="middle" font-size="8" fill="#555">one</text>
+      <text x="278" y="400" text-anchor="middle" font-size="8" fill="#555">my</text>
+      <text x="348" y="400" text-anchor="middle" font-size="8" fill="#555">that</text>
+      <rect x="55" y="258" width="10" height="10" fill="#667eea" opacity="0.6"/>
+      <text x="72" y="267" font-size="8" fill="#667eea">p(x)</text>
+      <rect x="105" y="258" width="10" height="10" fill="#f0a500" opacity="0.5"/>
+      <text x="122" y="267" font-size="8" fill="#f0a500">q(x)</text>
+
+      <!-- Scenario walkthrough -->
+      <rect x="420" y="225" width="380" height="180" rx="8" fill="white" stroke="#d8e0f0" stroke-width="1"/>
+      <text x="610" y="248" text-anchor="middle" font-size="12" font-weight="700" fill="#1a1a2e">模拟验证过程</text>
+
+      <!-- Scenario: Draft samples "a" -->
+      <rect x="435" y="260" width="350" height="55" rx="6" fill="#fff8f0" stroke="#f0a500" stroke-width="1"/>
+      <text x="440" y="278" font-size="10" fill="#c17900" font-weight="700">假设 Draft 采样到 x̂ = "a"</text>
+      <text x="440" y="296" font-size="10" fill="#555">α = min(1, p("a")/q("a")) = min(1, 0.30/0.35) = <tspan fill="#e74c3c" font-weight="700">0.857</tspan></text>
+      <text x="440" y="310" font-size="9" fill="#888">Draft 过度"喜欢" "a"（q>p），所以有 14.3% 概率拒绝</text>
+
+      <!-- Accept case -->
+      <rect x="435" y="325" width="165" height="35" rx="4" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1"/>
+      <text x="517" y="342" text-anchor="middle" font-size="10" fill="#1a6b61" font-weight="600">r ≤ 0.857 → ✓ 接受 "a"</text>
+      <text x="517" y="356" text-anchor="middle" font-size="8" fill="#888">概率 85.7%</text>
+
+      <!-- Reject case -->
+      <rect x="620" y="325" width="165" height="35" rx="4" fill="#fff0f0" stroke="#e74c3c" stroke-width="1"/>
+      <text x="702" y="342" text-anchor="middle" font-size="10" fill="#c0392b" font-weight="600">r > 0.857 → ✗ 拒绝</text>
+      <text x="702" y="356" text-anchor="middle" font-size="8" fill="#888">从修正分布重采样</text>
+
+      <!-- Correction distribution -->
+      <rect x="30" y="425" width="760" height="90" rx="8" fill="#e74c3c" opacity="0.05" stroke="#e74c3c" stroke-width="1"/>
+      <text x="410" y="448" text-anchor="middle" font-size="12" font-weight="700" fill="#c0392b">拒绝后的修正分布 p_修正(x) = norm(max(0, p(x)−q(x)))</text>
+      <text x="140" y="475" text-anchor="middle" font-size="10" fill="#333">"the": max(0, 0.50−0.40) = <tspan font-weight="700">0.10</tspan></text>
+      <text x="310" y="475" text-anchor="middle" font-size="10" fill="#333">"a": max(0, 0.30−0.35) = <tspan font-weight="700">0</tspan></text>
+      <text x="470" y="475" text-anchor="middle" font-size="10" fill="#333">"one": max(0, 0.10−0.15) = <tspan font-weight="700">0</tspan></text>
+      <text x="610" y="475" text-anchor="middle" font-size="10" fill="#333">"my": max(0, 0.07−0.05) = <tspan font-weight="700">0.02</tspan></text>
+      <text x="410" y="500" text-anchor="middle" font-size="10" fill="#555">归一化: sum = 0.12 → p<tspan font-size="8" baseline-shift="sub">修正</tspan> = [0.833, 0, 0, 0.167, 0] → 大概率采样到 <tspan font-weight="700" fill="#2a9d8f">"the"</tspan></text>
+    </svg>
+    <div class="caption">图 11-B：完整数值示例。Draft 采样 "a"（q=0.35 > p=0.30），接受概率 α=0.857。若拒绝，从修正分布中采样——
+    修正分布集中在 p>q 的 token 上（"the" 和 "my"），恰好弥补了 Draft 的偏差。</div>
+  </div>
+
+  <h3>7.5 多步验证：逐位贪心验证</h3>
+  <p>
+    实际推测解码中 Draft 一次生成 k 个 token。验证是<strong>从前往后逐位进行</strong>的：
+    一旦某一位被拒绝，该位及其后续所有位都被丢弃。
+  </p>
+  <div class="figure">
+    <svg viewBox="0 0 820 380" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="arM" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="25" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">多步验证（k=4 草稿）完整流程</text>
+
+      <!-- Draft tokens -->
+      <text x="50" y="58" font-size="11" fill="#c17900" font-weight="700">Draft 草稿：</text>
+      <rect x="165" y="42" width="70" height="30" rx="5" fill="#f0a500" opacity="0.7"/><text x="200" y="62" text-anchor="middle" fill="white" font-size="10" font-weight="600">x̂₁="the"</text>
+      <rect x="250" y="42" width="70" height="30" rx="5" fill="#f0a500" opacity="0.6"/><text x="285" y="62" text-anchor="middle" fill="white" font-size="10" font-weight="600">x̂₂="cat"</text>
+      <rect x="335" y="42" width="65" height="30" rx="5" fill="#f0a500" opacity="0.5"/><text x="367" y="62" text-anchor="middle" fill="white" font-size="10" font-weight="600">x̂₃="in"</text>
+      <rect x="415" y="42" width="80" height="30" rx="5" fill="#f0a500" opacity="0.4"/><text x="455" y="62" text-anchor="middle" fill="white" font-size="10" font-weight="600">x̂₄="the"</text>
+
+      <!-- Target model parallel forward -->
+      <line x1="300" y1="72" x2="300" y2="95" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#arM)"/>
+      <rect x="100" y="100" width="500" height="45" rx="8" fill="#667eea" opacity="0.85"/>
+      <text x="350" y="128" text-anchor="middle" fill="white" font-size="12" font-weight="700">Target Model 一次并行前向传播 → p(·|prefix), p(·|prefix,x̂₁), p(·|prefix,x̂₁,x̂₂), ...</text>
+
+      <!-- Verification steps -->
+      <text x="50" y="175" font-size="11" fill="#1a1a2e" font-weight="700">逐位验证：</text>
+
+      <!-- Position 1: Accept -->
+      <rect x="50" y="190" width="160" height="70" rx="8" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="130" y="212" text-anchor="middle" fill="#1a6b61" font-size="11" font-weight="700">位置 1: x̂₁ = "the"</text>
+      <text x="130" y="230" text-anchor="middle" fill="#555" font-size="10">p=0.50, q=0.40</text>
+      <text x="130" y="248" text-anchor="middle" fill="#2a9d8f" font-size="10" font-weight="700">α=1.0 → ✓ 接受</text>
+
+      <line x1="210" y1="225" x2="240" y2="225" stroke="#2a9d8f" stroke-width="2" marker-end="url(#arM)"/>
+
+      <!-- Position 2: Accept -->
+      <rect x="245" y="190" width="160" height="70" rx="8" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="325" y="212" text-anchor="middle" fill="#1a6b61" font-size="11" font-weight="700">位置 2: x̂₂ = "cat"</text>
+      <text x="325" y="230" text-anchor="middle" fill="#555" font-size="10">p=0.45, q=0.42</text>
+      <text x="325" y="248" text-anchor="middle" fill="#2a9d8f" font-size="10" font-weight="700">α=1.0 → ✓ 接受</text>
+
+      <line x1="405" y1="225" x2="435" y2="225" stroke="#2a9d8f" stroke-width="2" marker-end="url(#arM)"/>
+
+      <!-- Position 3: REJECT -->
+      <rect x="440" y="190" width="160" height="70" rx="8" fill="#fff0f0" stroke="#e74c3c" stroke-width="2"/>
+      <text x="520" y="212" text-anchor="middle" fill="#c0392b" font-size="11" font-weight="700">位置 3: x̂₃ = "in"</text>
+      <text x="520" y="230" text-anchor="middle" fill="#555" font-size="10">p=0.08, q=0.25</text>
+      <text x="520" y="248" text-anchor="middle" fill="#e74c3c" font-size="10" font-weight="700">α=0.32 → ✗ 拒绝!</text>
+
+      <!-- Position 4: Discarded -->
+      <rect x="640" y="190" width="150" height="70" rx="8" fill="#f5f5f5" stroke="#ccc" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="715" y="215" text-anchor="middle" fill="#aaa" font-size="11" font-weight="700">位置 4: 直接丢弃</text>
+      <text x="715" y="240" text-anchor="middle" fill="#ccc" font-size="10">后续全部无效</text>
+
+      <!-- Result -->
+      <line x1="520" y1="260" x2="520" y2="285" stroke="#e74c3c" stroke-width="1.5" marker-end="url(#arM)"/>
+      <rect x="400" y="290" width="240" height="35" rx="6" fill="#9b59b6" opacity="0.15" stroke="#9b59b6" stroke-width="1.5"/>
+      <text x="520" y="312" text-anchor="middle" fill="#6c3baa" font-size="11" font-weight="600">从修正分布采样 x₃ = "on" ✓</text>
+
+      <!-- Final output -->
+      <rect x="100" y="342" width="620" height="30" rx="6" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="410" y="363" text-anchor="middle" fill="#1a1a2e" font-size="12" font-weight="700">最终输出：prefix + "the" + "cat" + "on" = 接受 2 个 + 修正 1 个 = 共 3 个 token</text>
+    </svg>
+    <div class="caption">图 11-C：k=4 多步验证。前 2 个 token 被接受，第 3 个被拒绝（Draft 把 "in" 的概率高估了 3 倍），第 4 个自动丢弃。最终本轮产出 3 个有效 token。</div>
+  </div>
+
+  <h3>7.6 接受率与加速比的关系</h3>
+  <p>设单步接受率为 α（Draft 与 Target 的吻合度），期望每轮接受的 token 数为：</p>
+  <div class="formula">
+    E[接受数] = Σ<sub>i=1..k</sub> α<sup>i</sup> = α(1 − α<sup>k</sup>) / (1 − α)
+    <br><br>
+    加上拒绝后修正采样的 1 个 token，每轮总产出 = E[接受数] + 1
+  </div>
+  <div class="figure">
+    <svg viewBox="0 0 800 270" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs><marker id="arAx2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#555"/></marker></defs>
+      <text x="400" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">接受率 α 与每轮产出 token 数 (k=5)</text>
+      <!-- Axes -->
+      <line x1="100" y1="230" x2="740" y2="230" stroke="#555" stroke-width="1.5" marker-end="url(#arAx2)"/>
+      <line x1="100" y1="240" x2="100" y2="40" stroke="#555" stroke-width="1.5" marker-end="url(#arAx2)"/>
+      <text x="750" y="235" font-size="10" fill="#555">α (接受率)</text>
+      <text x="70" y="38" font-size="10" fill="#555">E[产出]</text>
+      <!-- Y axis ticks -->
+      <text x="88" y="230" text-anchor="end" font-size="9" fill="#888">1</text>
+      <text x="88" y="192" text-anchor="end" font-size="9" fill="#888">2</text>
+      <text x="88" y="154" text-anchor="end" font-size="9" fill="#888">3</text>
+      <text x="88" y="116" text-anchor="end" font-size="9" fill="#888">4</text>
+      <text x="88" y="78" text-anchor="end" font-size="9" fill="#888">5</text>
+      <!-- X axis ticks -->
+      <text x="100" y="248" text-anchor="middle" font-size="9" fill="#888">0</text>
+      <text x="228" y="248" text-anchor="middle" font-size="9" fill="#888">0.2</text>
+      <text x="356" y="248" text-anchor="middle" font-size="9" fill="#888">0.4</text>
+      <text x="484" y="248" text-anchor="middle" font-size="9" fill="#888">0.6</text>
+      <text x="612" y="248" text-anchor="middle" font-size="9" fill="#888">0.8</text>
+      <text x="740" y="248" text-anchor="middle" font-size="9" fill="#888">1.0</text>
+      <!-- Grid -->
+      <line x1="100" y1="192" x2="740" y2="192" stroke="#eee" stroke-width="0.5"/>
+      <line x1="100" y1="154" x2="740" y2="154" stroke="#eee" stroke-width="0.5"/>
+      <line x1="100" y1="116" x2="740" y2="116" stroke="#eee" stroke-width="0.5"/>
+      <line x1="100" y1="78" x2="740" y2="78" stroke="#eee" stroke-width="0.5"/>
+
+      <!-- Curve: E[tokens] = alpha*(1-alpha^5)/(1-alpha) + 1 -->
+      <!-- alpha=0: 1, 0.2: 1.25, 0.4: 1.67+1=1.97, 0.6: 1.97+1=2.67, 0.7: 2.34+1=3.1, 0.8: 2.69+1=3.86, 0.9: 3.28+1=4.69, 0.95: 3.58+1=5.24 -->
+      <path d="M 100 230 C 200 228, 260 218, 356 195 S 484 148, 550 130 S 650 88, 710 65 L 740 55" fill="none" stroke="#4a7dff" stroke-width="2.5"/>
+
+      <!-- Annotations -->
+      <circle cx="484" cy="148" r="5" fill="#e74c3c"/>
+      <text x="500" y="142" font-size="10" fill="#e74c3c" font-weight="600">α=0.6 → ~2.7 tokens</text>
+      <circle cx="612" cy="100" r="5" fill="#2a9d8f"/>
+      <text x="628" y="94" font-size="10" fill="#2a9d8f" font-weight="600">α=0.8 → ~3.9 tokens</text>
+      <circle cx="676" cy="75" r="5" fill="#9b59b6"/>
+      <text x="610" y="68" font-size="10" fill="#9b59b6" font-weight="600">α=0.9 → ~4.7 tokens</text>
+
+      <!-- Reference line: max -->
+      <line x1="100" y1="40" x2="740" y2="40" stroke="#f0a500" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="745" y="44" font-size="9" fill="#f0a500">理论上限 k+1=6</text>
+    </svg>
+    <div class="caption">图 11-D：接受率 α 与每轮期望产出关系（k=5）。α=0.8 时每轮约 3.9 个 token，接近 4 倍加速。α=0.9+ 时接近理论上限 k+1=6。</div>
+  </div>
+
+  <h3>7.7 Tree-based 验证（Medusa-2 / EAGLE-2）</h3>
+  <p>
+    线性验证的问题是：<strong>一旦某位拒绝，后续全部丢弃</strong>——即使后面的草稿可能正确。
+    Tree-based 验证通过构建<strong>候选树</strong>解决这一问题：每位保留多个候选（top-k），形成一棵树，
+    一次验证覆盖多条路径。
+  </p>
+  <div class="figure">
+    <svg viewBox="0 0 800 310" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="400" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">线性验证 vs Tree-based 验证</text>
+
+      <!-- Linear -->
+      <rect x="20" y="42" width="370" height="250" rx="10" fill="#fff0f0" stroke="#e74c3c" stroke-width="1.2"/>
+      <text x="205" y="65" text-anchor="middle" font-size="12" font-weight="700" fill="#c0392b">线性验证（每位 top-1）</text>
+      <rect x="60" y="85" width="55" height="28" rx="4" fill="#2a9d8f" opacity="0.7"/><text x="87" y="104" text-anchor="middle" fill="white" font-size="9" font-weight="600">the ✓</text>
+      <line x1="115" y1="99" x2="148" y2="99" stroke="#2a9d8f" stroke-width="1.5"/>
+      <rect x="150" y="85" width="55" height="28" rx="4" fill="#2a9d8f" opacity="0.7"/><text x="177" y="104" text-anchor="middle" fill="white" font-size="9" font-weight="600">cat ✓</text>
+      <line x1="205" y1="99" x2="238" y2="99" stroke="#e74c3c" stroke-width="1.5"/>
+      <rect x="240" y="85" width="45" height="28" rx="4" fill="#e74c3c" opacity="0.6"/><text x="262" y="104" text-anchor="middle" fill="white" font-size="9" font-weight="600">in ✗</text>
+      <line x1="285" y1="99" x2="305" y2="99" stroke="#ccc" stroke-width="1" stroke-dasharray="3,2"/>
+      <rect x="307" y="85" width="55" height="28" rx="4" fill="#ddd" opacity="0.5"/><text x="334" y="104" text-anchor="middle" fill="#aaa" font-size="9">丢弃</text>
+
+      <text x="205" y="145" text-anchor="middle" font-size="11" fill="#c0392b" font-weight="600">只探索 1 条路径</text>
+      <text x="205" y="165" text-anchor="middle" font-size="10" fill="#888">一旦位置 3 拒绝，位置 4 也无效</text>
+      <text x="205" y="185" text-anchor="middle" font-size="11" fill="#c0392b" font-weight="600">产出 = 2 + 1(修正) = 3 tokens</text>
+
+      <!-- Tree -->
+      <rect x="410" y="42" width="380" height="250" rx="10" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.2"/>
+      <text x="600" y="65" text-anchor="middle" font-size="12" font-weight="700" fill="#1a6b61">Tree-based 验证（每位 top-2）</text>
+      <!-- Level 0 -->
+      <rect x="560" y="80" width="55" height="24" rx="4" fill="#2a9d8f" opacity="0.7"/><text x="587" y="97" text-anchor="middle" fill="white" font-size="9" font-weight="600">the ✓</text>
+      <!-- Level 1 branches -->
+      <line x1="587" y1="104" x2="520" y2="124" stroke="#2a9d8f" stroke-width="1.2"/>
+      <line x1="587" y1="104" x2="654" y2="124" stroke="#2a9d8f" stroke-width="1.2"/>
+      <rect x="493" y="126" width="50" height="22" rx="3" fill="#2a9d8f" opacity="0.6"/><text x="518" y="142" text-anchor="middle" fill="white" font-size="8" font-weight="600">cat ✓</text>
+      <rect x="630" y="126" width="50" height="22" rx="3" fill="#e74c3c" opacity="0.4"/><text x="655" y="142" text-anchor="middle" fill="white" font-size="8" font-weight="600">big ✗</text>
+      <!-- Level 2 branches from "cat" -->
+      <line x1="518" y1="148" x2="468" y2="168" stroke="#2a9d8f" stroke-width="1"/>
+      <line x1="518" y1="148" x2="568" y2="168" stroke="#e74c3c" stroke-width="1"/>
+      <rect x="440" y="170" width="50" height="22" rx="3" fill="#e74c3c" opacity="0.4"/><text x="465" y="186" text-anchor="middle" fill="white" font-size="8" font-weight="600">in ✗</text>
+      <rect x="545" y="170" width="50" height="22" rx="3" fill="#2a9d8f" opacity="0.6"/><text x="570" y="186" text-anchor="middle" fill="white" font-size="8" font-weight="600">on ✓</text>
+      <!-- Level 3 from "on" -->
+      <line x1="570" y1="192" x2="540" y2="210" stroke="#2a9d8f" stroke-width="1"/>
+      <line x1="570" y1="192" x2="600" y2="210" stroke="#888" stroke-width="1"/>
+      <rect x="514" y="212" width="50" height="22" rx="3" fill="#2a9d8f" opacity="0.5"/><text x="539" y="228" text-anchor="middle" fill="white" font-size="8" font-weight="600">the ✓</text>
+      <rect x="578" y="212" width="50" height="22" rx="3" fill="#888" opacity="0.3"/><text x="603" y="228" text-anchor="middle" fill="#fff" font-size="8" font-weight="600">a ✗</text>
+
+      <!-- Winning path highlight -->
+      <text x="600" y="258" text-anchor="middle" font-size="11" fill="#1a6b61" font-weight="600">最优路径: the→cat→on→the</text>
+      <text x="600" y="278" text-anchor="middle" font-size="11" fill="#1a6b61" font-weight="600">产出 = 4 tokens（多 1 个！）</text>
+    </svg>
+    <div class="caption">图 11-E：线性验证只看 1 条路径，遇到 "in" 就截断；Tree 验证同时探索多条分支，发现 "on" 路径可以走更远——最终多接受 1 个 token。</div>
+  </div>
+
+  <p>Tree-based 验证通过 <strong>Tree Attention</strong>（特殊的因果掩码）在一次前向传播中同时验证所有候选路径：</p>
+  <div class="formula">
+    Tree Attention Mask: &nbsp; M[i][j] = 1 当且仅当节点 j 是节点 i 在树中的祖先
+  </div>
+  <div class="highlight">
+    <strong>Tree 验证的代价：</strong>候选树有 N 个节点，则验证需要处理 N 个 token 的前向传播（而非 k 个）。
+    关键是 N 不能太大——通常控制在 60~120 个节点。<strong>EAGLE-2</strong> 引入了动态树结构：
+    根据 Draft Head 的置信度自适应调整树的宽度和深度，在接受率和验证开销之间取得最优平衡。
+  </div>
+
+  <h3>7.8 验证机制总结</h3>
+  <table>
+    <tr><th>验证方式</th><th>每位候选数</th><th>验证开销</th><th>接受率</th><th>实现复杂度</th><th>代表</th></tr>
+    <tr>
+      <td><strong>线性 Top-1</strong></td>
+      <td>1</td>
+      <td>k 个 token 的前向</td>
+      <td>基准</td>
+      <td>低</td>
+      <td>原始 SpecDec</td>
+    </tr>
+    <tr>
+      <td><strong>Tree Top-k</strong></td>
+      <td>2~5</td>
+      <td>N 个节点的前向 (N≫k)</td>
+      <td>比线性高 20-50%</td>
+      <td>中</td>
+      <td>Medusa-2</td>
+    </tr>
+    <tr>
+      <td><strong>动态 Tree</strong></td>
+      <td>自适应</td>
+      <td>自适应 N</td>
+      <td>最高</td>
+      <td>高</td>
+      <td>EAGLE-2</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ===== 全景对比 ===== -->
+<div class="section">
+  <h2>八、MTP 方案全景对比</h2>
+
+  <h3>8.1 核心方案对比表</h3>
+  <table>
+    <tr>
+      <th>方案</th>
+      <th>类型</th>
+      <th>预测头结构</th>
+      <th>训练方式</th>
+      <th>推理加速</th>
+      <th>额外参数</th>
+      <th>代表模型</th>
+    </tr>
+    <tr>
+      <td><strong>Meta MTP</strong></td>
+      <td>训练辅助</td>
+      <td>k 个独立 LM Head</td>
+      <td>从零预训练</td>
+      <td>可选（丢弃 Head）</td>
+      <td>~k × d×|V|</td>
+      <td>Meta 研究</td>
+    </tr>
+    <tr>
+      <td><strong>DeepSeek-V3</strong></td>
+      <td>训练+推理</td>
+      <td>级联 TRM+共享 Head</td>
+      <td>从零预训练</td>
+      <td>1.8× TPS</td>
+      <td>~2% Backbone</td>
+      <td>DeepSeek-V3</td>
+    </tr>
+    <tr>
+      <td><strong>Medusa</strong></td>
+      <td>推理加速</td>
+      <td>k 个独立 FFN Head</td>
+      <td>冻结 LLM 微调</td>
+      <td>2.2-2.5×</td>
+      <td>~0.5% LLM</td>
+      <td>Medusa-1/2</td>
+    </tr>
+    <tr>
+      <td><strong>EAGLE</strong></td>
+      <td>推理加速</td>
+      <td>1 层 TRM 自回归</td>
+      <td>冻结 LLM 微调</td>
+      <td>2.5-3.0×</td>
+      <td>~1% LLM</td>
+      <td>EAGLE / EAGLE-2</td>
+    </tr>
+    <tr>
+      <td><strong>Spec. Decoding</strong></td>
+      <td>推理加速</td>
+      <td>独立小 LLM</td>
+      <td>独立训练</td>
+      <td>2.0-2.5×</td>
+      <td>完整小模型</td>
+      <td>Google SpecDec</td>
+    </tr>
+    <tr>
+      <td><strong>Lookahead</strong></td>
+      <td>推理加速</td>
+      <td>无额外 Head</td>
+      <td>无需训练</td>
+      <td>1.5-2.0×</td>
+      <td>0</td>
+      <td>Lookahead Dec.</td>
+    </tr>
+  </table>
+
+  <h3>8.2 关键维度深度对比</h3>
+  <div class="figure">
+    <svg viewBox="0 0 820 350" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">MTP 方案多维度对比</text>
+
+      <!-- Axis labels -->
+      <text x="410" y="50" text-anchor="middle" font-size="11" fill="#888">训练质量收益</text>
+      <text x="60" y="200" text-anchor="middle" font-size="11" fill="#888" transform="rotate(-90,60,200)">推理加速倍率</text>
+
+      <!-- Grid -->
+      <line x1="120" y1="70" x2="120" y2="310" stroke="#eee" stroke-width="1"/>
+      <line x1="280" y1="70" x2="280" y2="310" stroke="#eee" stroke-width="1"/>
+      <line x1="440" y1="70" x2="440" y2="310" stroke="#eee" stroke-width="1"/>
+      <line x1="600" y1="70" x2="600" y2="310" stroke="#eee" stroke-width="1"/>
+      <line x1="760" y1="70" x2="760" y2="310" stroke="#eee" stroke-width="1"/>
+      <line x1="100" y1="310" x2="770" y2="310" stroke="#ccc" stroke-width="1"/>
+      <line x1="100" y1="230" x2="770" y2="230" stroke="#eee" stroke-width="0.5"/>
+      <line x1="100" y1="150" x2="770" y2="150" stroke="#eee" stroke-width="0.5"/>
+      <line x1="100" y1="70" x2="770" y2="70" stroke="#eee" stroke-width="0.5"/>
+      <text x="100" y="325" font-size="9" fill="#888">无</text>
+      <text x="440" y="325" font-size="9" fill="#888" text-anchor="middle">中等</text>
+      <text x="760" y="325" font-size="9" fill="#888" text-anchor="end">高</text>
+      <text x="95" y="310" text-anchor="end" font-size="9" fill="#888">1.0×</text>
+      <text x="95" y="230" text-anchor="end" font-size="9" fill="#888">2.0×</text>
+      <text x="95" y="150" text-anchor="end" font-size="9" fill="#888">3.0×</text>
+
+      <!-- Bubbles -->
+      <!-- Speculative Decoding -->
+      <circle cx="150" cy="220" r="30" fill="#888" opacity="0.25" stroke="#888" stroke-width="1.5"/>
+      <text x="150" y="217" text-anchor="middle" font-size="9" fill="#555" font-weight="600">Speculative</text>
+      <text x="150" y="230" text-anchor="middle" font-size="9" fill="#555" font-weight="600">Decoding</text>
+
+      <!-- Lookahead -->
+      <circle cx="130" cy="265" r="24" fill="#f0a500" opacity="0.25" stroke="#f0a500" stroke-width="1.5"/>
+      <text x="130" y="268" text-anchor="middle" font-size="9" fill="#c17900" font-weight="600">Lookahead</text>
+
+      <!-- Medusa -->
+      <circle cx="240" cy="210" r="33" fill="#2a9d8f" opacity="0.25" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="240" y="213" text-anchor="middle" font-size="10" fill="#1a6b61" font-weight="600">Medusa</text>
+
+      <!-- EAGLE -->
+      <circle cx="310" cy="160" r="35" fill="#9b59b6" opacity="0.25" stroke="#9b59b6" stroke-width="1.5"/>
+      <text x="310" y="163" text-anchor="middle" font-size="10" fill="#6c3baa" font-weight="600">EAGLE</text>
+
+      <!-- Meta MTP -->
+      <circle cx="620" cy="280" r="38" fill="#667eea" opacity="0.25" stroke="#667eea" stroke-width="1.5"/>
+      <text x="620" y="278" text-anchor="middle" font-size="10" fill="#4040b0" font-weight="600">Meta MTP</text>
+      <text x="620" y="292" text-anchor="middle" font-size="8" fill="#888">(可丢弃 Head)</text>
+
+      <!-- DeepSeek-V3 -->
+      <circle cx="570" cy="200" r="42" fill="#e74c3c" opacity="0.2" stroke="#e74c3c" stroke-width="2"/>
+      <text x="570" y="196" text-anchor="middle" font-size="11" fill="#c0392b" font-weight="700">DeepSeek-V3</text>
+      <text x="570" y="212" text-anchor="middle" font-size="9" fill="#c0392b">训练+推理双收益</text>
+    </svg>
+    <div class="caption">图 11：MTP 方案气泡图。横轴 = 训练质量收益，纵轴 = 推理加速倍率。DeepSeek-V3 同时覆盖训练和推理两个维度。</div>
+  </div>
+
+  <h3>8.3 独立并行头 vs 顺序级联头：深度对比</h3>
+  <table>
+    <tr><th>对比维度</th><th>独立并行头 (Meta)</th><th>顺序级联头 (DeepSeek-V3)</th></tr>
+    <tr><td><strong>头间信息传递</strong></td><td>无——各头只看 Backbone h_t</td><td>有——前一步的 h^{k-1} 传给下一步</td></tr>
+    <tr><td><strong>预测精度</strong></td><td>越远的 Head 精度下降越快</td><td>级联传递信息，远步预测更准</td></tr>
+    <tr><td><strong>训练并行性</strong></td><td>k 个 Head 可完全并行计算</td><td>k 步需要顺序执行</td></tr>
+    <tr><td><strong>推理作为 Draft</strong></td><td>并行出 k 个独立候选</td><td>级联出 k 个相互依赖的候选</td></tr>
+    <tr><td><strong>额外参数量</strong></td><td>k 个 Linear Head ≈ k×d×|V|</td><td>k 个 TRM 层 + 共享 Head ≈ k×TRM</td></tr>
+    <tr><td><strong>实现复杂度</strong></td><td>极简——加几个 Linear 即可</td><td>中等——需要级联管理和因果掩码</td></tr>
+  </table>
+
+  <div class="highlight">
+    <strong>选型建议：</strong>如果只需要 MTP 作为<strong>训练辅助损失</strong>（推理时丢弃），Meta 的独立并行头更简洁。
+    如果需要<strong>训练 + 推理双收益</strong>（MTP Head 直接作为 Draft），DeepSeek-V3 的级联设计更优——
+    级联传递上下文信息使得后续 token 的预测精度更高，直接提升推测解码的接受率。
+  </div>
+</div>
+
+<!-- ===== 训练细节 ===== -->
+<div class="section">
+  <h2>九、MTP 训练细节与数学推导</h2>
+
+  <h3>9.1 损失函数设计</h3>
+  <p>MTP 的训练损失是主 NTP 损失和 k−1 个辅助 MTP 损失的加权和：</p>
+  <div class="formula">
+    L<sub>total</sub> = L<sub>NTP</sub> + λ · Σ<sub>j=2..k</sub> L<sub>MTP,j</sub>
+    <br><br>
+    L<sub>NTP</sub> = − (1/T) Σ<sub>t</sub> log P<sub>θ</sub>(x<sub>t+1</sub> | x<sub>≤t</sub>)
+    <br>
+    L<sub>MTP,j</sub> = − (1/T) Σ<sub>t</sub> log P<sub>θ,j</sub>(x<sub>t+j</sub> | x<sub>≤t</sub>)
+  </div>
+
+  <h3>9.2 梯度回传分析</h3>
+  <div class="figure">
+    <svg viewBox="0 0 800 230" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="arG" markerWidth="8" markerHeight="6" refX="0" refY="3" orient="auto"><polygon points="8 0,0 3,8 6" fill="#e74c3c"/></marker>
+        <marker id="arGb" markerWidth="8" markerHeight="6" refX="0" refY="3" orient="auto"><polygon points="8 0,0 3,8 6" fill="#2a9d8f"/></marker>
+      </defs>
+      <text x="400" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">MTP 梯度回传路径</text>
+      <!-- Backbone -->
+      <rect x="100" y="50" width="350" height="45" rx="8" fill="#667eea" opacity="0.8"/>
+      <text x="275" y="78" text-anchor="middle" fill="white" font-size="12" font-weight="700">Shared Backbone (h_t)</text>
+      <!-- Heads -->
+      <rect x="120" y="120" width="90" height="30" rx="5" fill="#4a7dff" opacity="0.7"/>
+      <text x="165" y="140" text-anchor="middle" fill="white" font-size="10" font-weight="600">Head₁ NTP</text>
+      <rect x="230" y="120" width="90" height="30" rx="5" fill="#2a9d8f" opacity="0.7"/>
+      <text x="275" y="140" text-anchor="middle" fill="white" font-size="10" font-weight="600">Head₂</text>
+      <rect x="340" y="120" width="90" height="30" rx="5" fill="#f0a500" opacity="0.7"/>
+      <text x="385" y="140" text-anchor="middle" fill="white" font-size="10" font-weight="600">Head₃</text>
+      <!-- Forward arrows -->
+      <line x1="165" y1="95" x2="165" y2="117" stroke="#667eea" stroke-width="1.5"/>
+      <line x1="275" y1="95" x2="275" y2="117" stroke="#667eea" stroke-width="1.5"/>
+      <line x1="385" y1="95" x2="385" y2="117" stroke="#667eea" stroke-width="1.5"/>
+      <!-- Backward arrows -->
+      <line x1="175" y1="117" x2="175" y2="98" stroke="#e74c3c" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#arG)"/>
+      <line x1="285" y1="117" x2="285" y2="98" stroke="#e74c3c" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#arG)"/>
+      <line x1="395" y1="117" x2="395" y2="98" stroke="#e74c3c" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#arG)"/>
+      <text x="175" y="175" text-anchor="middle" font-size="10" fill="#c0392b">∂L₁/∂h_t</text>
+      <text x="285" y="175" text-anchor="middle" font-size="10" fill="#c0392b">∂L₂/∂h_t</text>
+      <text x="395" y="175" text-anchor="middle" font-size="10" fill="#c0392b">∂L₃/∂h_t</text>
+      <!-- Summary -->
+      <rect x="490" y="60" width="280" height="120" rx="10" fill="white" stroke="#e74c3c" stroke-width="1.5"/>
+      <text x="630" y="85" text-anchor="middle" font-size="12" font-weight="700" fill="#1a1a2e">多头梯度叠加</text>
+      <text x="510" y="110" font-size="10" fill="#333">∂L_total/∂h_t = ∂L₁/∂h_t</text>
+      <text x="510" y="130" font-size="10" fill="#333">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ λ · ∂L₂/∂h_t</text>
+      <text x="510" y="150" font-size="10" fill="#333">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ λ · ∂L₃/∂h_t</text>
+      <text x="510" y="172" font-size="10" fill="#2a9d8f" font-weight="600">→ Backbone 获得更丰富的梯度信号</text>
+    </svg>
+    <div class="caption">图 12：MTP 的梯度回传。k 个 Head 的梯度叠加回传到共享 Backbone，使其隐藏表示编码更丰富的未来信息。</div>
+  </div>
+
+  <h3>9.3 关键超参数</h3>
+  <table>
+    <tr><th>超参数</th><th>含义</th><th>Meta MTP</th><th>DeepSeek-V3</th><th>Medusa</th><th>EAGLE</th></tr>
+    <tr><td><strong>k</strong></td><td>预测步数</td><td>4</td><td>1 (额外1步)</td><td>3~5</td><td>动态</td></tr>
+    <tr><td><strong>λ</strong></td><td>MTP 损失权重</td><td>1.0 (等权)</td><td>0.3</td><td>N/A</td><td>N/A</td></tr>
+    <tr><td><strong>Head 结构</strong></td><td>额外参数类型</td><td>Linear</td><td>1-layer TRM</td><td>FFN+Linear</td><td>1-layer TRM</td></tr>
+    <tr><td><strong>训练数据</strong></td><td>需要什么数据</td><td>预训练语料</td><td>预训练语料</td><td>SFT/对话数据</td><td>SFT/对话数据</td></tr>
+    <tr><td><strong>训练开销</strong></td><td>额外 FLOPs</td><td>~15%</td><td>~5%</td><td>微调 1-2 epoch</td><td>微调 1-2 epoch</td></tr>
+  </table>
+</div>
+
+<!-- ===== 实践指南 ===== -->
+<div class="section">
+  <h2>十、实践选型指南</h2>
+
+  <h3>10.1 根据场景选择 MTP 方案</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">A</span><h4>从零预训练</h4>
+      <p>选 <strong>Meta MTP 或 DeepSeek-V3 级联</strong>。如果模型 &ge;13B 且训练语料充足，
+      MTP 辅助损失可显著提升代码和推理能力。推荐 k=2~4，λ=0.3~1.0。</p>
+    </div>
+    <div class="card">
+      <span class="num">B</span><h4>已有模型加速推理</h4>
+      <p>选 <strong>EAGLE &gt; Medusa &gt; Speculative Decoding</strong>。EAGLE 在大多数场景命中率最高（~85-90%），
+      Medusa 实现最简单。无需重新训练主模型。</p>
+    </div>
+    <div class="card">
+      <span class="num">C</span><h4>训练+推理一体化</h4>
+      <p>选 <strong>DeepSeek-V3 级联 MTP</strong>。训练时作为辅助损失提升质量，推理时 MTP Head 直接作为 Draft，一箭双雕。</p>
+    </div>
+    <div class="card">
+      <span class="num">D</span><h4>零额外训练成本</h4>
+      <p>选 <strong>Lookahead Decoding</strong>。利用 Jacobi 迭代在不修改模型的前提下实现并行解码，加速约 1.5-2 倍。</p>
+    </div>
+  </div>
+
+  <h3>10.2 常见问题与陷阱</h3>
+  <div class="warning">
+    <strong>实践注意事项：</strong>
+    <ul>
+      <li><strong>MTP 不等于更好的 NTP：</strong>额外 Head 的预测质量通常低于主 Head——第 k 步预测的准确率可能只有第 1 步的 60-70%。MTP 的价值在于<strong>梯度信号对 Backbone 的改善</strong>，而非额外 Head 自身的精度。</li>
+      <li><strong>小模型收益有限：</strong>Meta 发现 7B 以下模型 MTP 收益不显著——小模型的容量不足以同时编码多步信息。</li>
+      <li><strong>推测解码有接受率上限：</strong>Draft 质量不够时，接受率低反而比普通解码更慢（验证开销 > 节省的步数）。</li>
+      <li><strong>Batch 推理时加速比降低：</strong>推测解码在 batch_size=1 时加速最明显；大 batch 时主模型已 Compute-Bound，加速比下降。</li>
+      <li><strong>KV Cache 管理：</strong>推测解码需要管理"临时"KV Cache（草稿 token 的缓存），被拒绝后需回滚——这增加工程复杂度。</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===== 总结 ===== -->
+<div class="section">
+  <h2>十一、总结与展望</h2>
+  <p>
+    Multi-Token Prediction 正在从"实验性技术"走向"预训练标配"。DeepSeek-V3 的实践证明，
+    即使只额外预测 1 个 token（k=1），也能在保持训练效率的同时显著提升模型质量和推理速度。
+  </p>
+
+  <div class="highlight">
+    <strong>MTP 的未来方向：</strong>
+    <ul>
+      <li><strong>更大的 k 值探索：</strong>当前 k=2~4 是主流，未来可能结合更长的预测步数和更好的课程学习策略</li>
+      <li><strong>与 MoE 的深度集成：</strong>DeepSeek-V3 已将 MTP + MoE 结合，未来可能出现"专家级 MTP Head"</li>
+      <li><strong>Process-level MTP：</strong>不只预测 token，而是预测推理步骤（与 PRM 结合）</li>
+      <li><strong>自适应 k：</strong>根据生成内容的不确定性动态调整预测步数——简单续写多预测几步，复杂推理少预测</li>
+      <li><strong>与 RLHF 对齐的交互：</strong>MTP 训练出的 Draft Head 在 RLHF 阶段如何协同优化仍是开放问题</li>
+    </ul>
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 800 140" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <linearGradient id="gfin" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#667eea"/><stop offset="50%" stop-color="#2a9d8f"/><stop offset="100%" stop-color="#f0a500"/>
+        </linearGradient>
+      </defs>
+      <rect x="50" y="15" width="700" height="110" rx="16" fill="url(#gfin)" opacity="0.1" stroke="url(#gfin)" stroke-width="2"/>
+      <text x="400" y="48" text-anchor="middle" font-size="16" font-weight="700" fill="#1a1a2e">一句话总结</text>
+      <text x="400" y="78" text-anchor="middle" font-size="13" fill="#444">NTP 让模型学会了"说话"，MTP 让模型学会了"想着说"。</text>
+      <text x="400" y="103" text-anchor="middle" font-size="13" fill="#444">一次前向传播预测多步，训练时收获更好的表示，推理时收获更快的速度。</text>
+    </svg>
+  </div>
+</div>
+
+<div class="footer">
+  Multi-Token Prediction 详解 &nbsp;|&nbsp; 涵盖 NTP 背景 · Meta MTP · DeepSeek-V3 MTP · Medusa · EAGLE · Speculative Decoding 全景对比
+</div>
+
+</div>
+</body>
+</html>

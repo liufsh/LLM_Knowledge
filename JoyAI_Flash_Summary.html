@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JoyAI-LLM Flash 技术报告总结</title>
+<style>
+  :root{--primary:#1a1a2e;--accent:#0f3460;--highlight-bg:#f0f4ff;--highlight-border:#4a7dff;--text:#222;--border:#e0e0e0}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text);line-height:1.8;background:#fafafa}
+  .container{max-width:920px;margin:0 auto;padding:20px}
+  .cover{text-align:center;padding:70px 20px 50px;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);color:white;border-radius:12px;margin-bottom:40px}
+  .cover h1{font-size:2em;margin-bottom:12px;font-weight:700}
+  .cover .subtitle{font-size:1em;color:#aab;margin-bottom:24px}
+  .cover .tags{display:flex;justify-content:center;gap:10px;flex-wrap:wrap}
+  .cover .tag{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:20px;padding:6px 16px;font-size:.85em;color:#dde}
+  .section{background:white;border-radius:10px;padding:36px 40px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid var(--border)}
+  h2{font-size:1.5em;color:var(--primary);margin-bottom:6px;padding-bottom:10px;border-bottom:2px solid var(--highlight-border)}
+  h3{font-size:1.15em;color:var(--accent);margin:22px 0 10px}
+  h4{font-size:1em;color:var(--accent);margin:14px 0 8px}
+  p{margin:12px 0;text-align:justify}
+  .highlight{background:var(--highlight-bg);border-left:4px solid var(--highlight-border);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .highlight strong{color:var(--accent)}
+  .warning{background:#fff8f0;border-left:4px solid #f0a500;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .success{background:#f0fff4;border-left:4px solid #2a9d8f;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  ul,ol{padding-left:24px;margin:10px 0} li{margin:6px 0}
+  .formula{text-align:center;padding:18px 20px;margin:18px 0;background:#f8f9ff;border-radius:8px;border:1px solid #e8eaf0;font-size:1.05em;font-family:"Times New Roman","STIX",serif;overflow-x:auto}
+  .figure{text-align:center;margin:24px 0;padding:16px;background:#fafafa;border-radius:8px;border:1px solid #eee}
+  .figure img{max-width:100%;height:auto;border-radius:4px}
+  .figure .caption{font-size:.88em;color:#666;margin-top:10px;font-style:italic}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.9em}
+  th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #eee}
+  th{background:var(--primary);color:white;font-weight:600} tr:hover{background:#f8f9ff}
+  td code{background:#f0f0f5;padding:2px 6px;border-radius:3px;font-size:.9em}
+  .card-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .card{background:linear-gradient(135deg,#f8f9ff,#f0f4ff);border:1px solid #d8e0f0;border-radius:10px;padding:20px 24px}
+  .card .num{display:inline-block;background:var(--highlight-border);color:white;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-size:.85em;font-weight:700;margin-right:8px}
+  .card h4{display:inline;color:var(--accent);font-size:1.05em;margin:0}
+  .card p{margin-top:8px;font-size:.93em}
+  .stats-row{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}
+  .stat-pill{background:#f0f4ff;border:1px solid #d8e0f0;border-radius:20px;padding:8px 18px;font-size:.9em;font-weight:600;color:var(--accent)}
+  .footer{text-align:center;color:#999;font-size:.85em;padding:30px 0;border-top:1px solid #eee;margin-top:20px}
+  @media(max-width:640px){.section{padding:24px 20px}.cover h1{font-size:1.5em}.card-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ===== Cover ===== -->
+<div class="cover">
+  <h1>JoyAI-LLM Flash</h1>
+  <div class="subtitle">
+    Advancing Mid-Scale LLMs with Token Efficiency<br>
+    JD.com &nbsp;|&nbsp; arXiv:2604.03044v2 &nbsp;|&nbsp; 2026.04.08
+  </div>
+  <div class="tags">
+    <span class="tag">48B-A3B MoE</span>
+    <span class="tag">20T tokens</span>
+    <span class="tag">MLA + SwiGLU</span>
+    <span class="tag">FiberPO RL</span>
+    <span class="tag">Thinking / Non-thinking</span>
+    <span class="tag">MTP + QAT</span>
+    <span class="tag">Token Efficiency</span>
+  </div>
+</div>
+
+<!-- ===== 一、概述 ===== -->
+<div class="section">
+  <h2>一、工作概述</h2>
+  <p>
+    <strong>JoyAI-LLM Flash</strong> 是 JD.com 发布的一个中等规模 MoE 大语言模型，
+    核心目标是<strong>重新定义 sub-50B 参数区间内"性能"与"token 效率"的权衡</strong>。
+    其独特之处在于不只追求 benchmark 分数高，而是追求
+    <strong>用更少的输出 token 达到相当或更高的准确率</strong>——
+    这直接对应推理成本和用户等待时间。
+  </p>
+
+  <div class="stats-row">
+    <div class="stat-pill">总参数：48.9B</div>
+    <div class="stat-pill">激活参数：3.28B</div>
+    <div class="stat-pill">MoE：256 专家 + 1 共享</div>
+    <div class="stat-pill">Top-K = 8</div>
+    <div class="stat-pill">上下文：128K</div>
+    <div class="stat-pill">预训练：20.7T tokens</div>
+  </div>
+
+  <div class="figure">
+    <img src="joyai_figures/fig1_token_efficiency.png" alt="Token efficiency bubble chart">
+    <div class="caption">图 1：模型性能 vs token 消耗对比。横轴为 18 个后训练 benchmark 的平均输出 token 数（越右越少），纵轴为平均准确率。
+    右上角 = 更 token-efficient。JoyAI-LLM Flash（红色）位于右上角，在准确率和 token 消耗的联合维度上建立了新的 Pareto 前沿。</div>
+  </div>
+
+  <div class="highlight">
+    <strong>核心结论：</strong>
+    <ul>
+      <li>8K 输入 / 16K 输出设置下，相对 GLM-4.7-Flash 和 Qwen3-30B-A3B 实现
+      <strong>1.45× 和 1.07× 加速</strong></li>
+      <li>MTP 带来 <strong>1.87× 推理加速</strong>，超越 Qwen3.5-35B-A3B (1.61×)、GLM-5-Flash (1.82×)</li>
+      <li>LiveCodeBench 上<strong>超越 GLM-4.7-Flash-Thinking 1.6% 准确率</strong>，同时 token 使用量降低 85%</li>
+      <li>开源 BF16 / FP8 / INT8 / INT4 / GGUF 多种量化版本</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===== 二、架构 ===== -->
+<div class="section">
+  <h2>二、模型架构</h2>
+
+  <h3>2.1 总体设计</h3>
+  <p>
+    JoyAI-LLM Flash 的架构灵感来自 <strong>DeepSeek-V3 和 Kimi-K2</strong>，
+    采用细粒度 MoE + MLA 的组合。这是当前 sub-50B 规模最高效的架构配置之一。
+  </p>
+
+  <div class="figure">
+    <img src="joyai_figures/tab1_architecture.png" alt="Architecture config">
+    <div class="caption">表 1：JoyAI-LLM Flash 48B-A3B 的详细架构配置。40 层 Transformer（1 层 Dense + 39 层 MoE），
+    MLA 注意力机制 (32 头，QK-RoPE=128, QK-NoPE=64, V=128)，256 个细粒度专家 + 1 共享专家，Top-8 路由，专家中间维度 768。</div>
+  </div>
+
+  <h3>2.2 关键架构选择</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>Multi-head Latent Attention (MLA)</h4>
+      <p>与 DeepSeek-V3 一致，使用低秩联合压缩 KV Cache，解耦 RoPE（NoPE 部分 + RoPE 部分）。
+      128K 长上下文下 KV Cache 显著小于标准 MHA。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>细粒度 MoE (256 专家)</h4>
+      <p>每层 256 个路由专家 + 1 个始终激活的共享专家，每 token 激活 Top-8 + 共享专家（共 9 个）。
+      门控分数用 <strong>sigmoid + FP32</strong> 计算保证稳定性，使用<strong>无辅助损失</strong>的负载均衡策略。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>Muon 优化器</h4>
+      <p>不用 Adam 而用 Muon——通过矩阵正交化执行 Newton 风格的谱范数更新。
+      实验显示 Adam 训练多次出现 loss spike 需要人工干预，而 Muon 全程稳定无异常。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>Multi-Token Prediction (MTP)</h4>
+      <p>附加单层 dense MTP 头，训练时丰富学习信号，推理时原生支持投机解码加速，
+      <strong>无需外部 draft 模型</strong>。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 三、预训练 ===== -->
+<div class="section">
+  <h2>三、预训练：20.7T tokens 的四阶段课程</h2>
+
+  <h3>3.1 数据来源</h3>
+  <p>
+    训练语料来自四类源：<strong>Web 数据</strong>（Common Crawl 到 2025.10）、
+    <strong>代码仓库</strong>（The Stack v2 + GitHub）、<strong>高质量 PDF 文档</strong>（数千万篇学术/专业 PDF）、
+    <strong>大规模合成数据</strong>。
+  </p>
+
+  <h4>数据处理关键技术</h4>
+  <ul>
+    <li><strong>Web 清洗：</strong>Trafilatura 抽正文 → Datatrove rule-based 过滤 → fastText 语言识别 →
+    PII 去识别 → MinHash-LSH 去重（128-perm, Jaccard≥0.9）→ 模型化质量评分</li>
+    <li><strong>代码清洗：</strong>多阶段 AST-aware 规则 + Qwen2.5-Coder-32B 作为 judge 打质量分 ≥6</li>
+    <li><strong>PDF 解析：</strong>用 <strong>MinerU + DeepSeek-OCR</strong> 高保真恢复公式、表格、层次结构</li>
+    <li><strong>合成数据：</strong>
+      <ul>
+        <li><strong>MAGA</strong> 风格重写 + <strong>Nemotron-CC 风格 QA 重写</strong></li>
+        <li>用 DeepSeek V3.2 生成 STEM 题的完整"Thinking QA"（多步推导）</li>
+        <li>Agentic 轨迹合成：Banking / Rental / IT Service 三大域 → 多 agent rollout → LLM judge 过滤</li>
+      </ul>
+    </li>
+  </ul>
+
+  <h3>3.2 四阶段课程</h3>
+  <div class="formula">
+    Stage 1 (Foundational) → Stage 2 (Code-Math Enhancement) → Stage 3 (Mid-training) → Stage 4 (Context Extension)
+  </div>
+  <table>
+    <tr><th>阶段</th><th>重点数据</th><th>学习率</th><th>上下文</th></tr>
+    <tr><td><strong>Stage 1 Foundational</strong></td><td>多样通用语料，100B warmup tokens</td><td>warmup→4.2e-4</td><td>4K</td></tr>
+    <tr><td><strong>Stage 2 Code-Math</strong></td><td>重加权代码+数学数据</td><td>4.2e-4 → 1.4e-4 (cosine)</td><td>4K</td></tr>
+    <tr><td><strong>Stage 3 Mid-training</strong></td><td>超高质量 token，&gt;60% 合成推理数据</td><td>1.4e-4 → 4.2e-5</td><td>4K</td></tr>
+    <tr><td><strong>Stage 4 Context Ext</strong></td><td>长上下文 token</td><td>4.2e-5 → 2.0e-5</td><td>64K → <strong>128K</strong></td></tr>
+  </table>
+
+  <h3>3.3 基础设施</h3>
+  <div class="stats-row">
+    <div class="stat-pill">Megatron-Core 扩展</div>
+    <div class="stat-pill">2-way PP</div>
+    <div class="stat-pill">8-way EP (2 节点)</div>
+    <div class="stat-pill">ZeRO-1 DP</div>
+    <div class="stat-pill">FlashAttention-3</div>
+    <div class="stat-pill">DeepEP (MoE 通信)</div>
+    <div class="stat-pill">分布式异步 checkpoint</div>
+  </div>
+  <ul>
+    <li><strong>Checkpoint 加载 15min → 30s</strong>：重训恢复时间在 1 分钟内完成</li>
+    <li><strong>Packing 训练 + 块对角掩码</strong>：前向/反向注意力各加速 50% / 20%</li>
+  </ul>
+
+  <h3>3.4 Scaling Law 验证</h3>
+  <div class="figure">
+    <img src="joyai_figures/fig3_scaling_laws.png" alt="Scaling laws">
+    <div class="caption">图 2：训练 Scaling Law。左：训练损失 Bits-per-Byte vs FLOPs 的幂律拟合精确吻合实测点；
+    右：MMLU/CMMLU/GSM8K/HumanEval 随训练 FLOPs 的演化符合预测趋势。
+    <strong>模型融合（Model Merging）</strong>被发现可以模拟学习率衰减，稳定子域性能提升。</div>
+  </div>
+
+  <h3>3.5 基座模型评估</h3>
+  <div class="figure">
+    <img src="joyai_figures/tab2_base_comparison.png" alt="Base model comparison">
+    <div class="caption">表 2：与 Qwen3-30B-A3B-Base 和 Qwen3.5-35B-A3B-Base 的对比。
+    JoyAI-LLM Flash Base 在 <strong>MMLU-Pro (73.1)、MATH (78.1)、MATH-500 (77.0)</strong> 上领先，
+    在通用知识和 coding 上略有差距——说明更强的数学推理是基座的核心优势。</div>
+  </div>
+</div>
+
+<!-- ===== 四、后训练 ===== -->
+<div class="section">
+  <h2>四、后训练：SFT → DPO → RL 三阶段</h2>
+  <p>
+    JoyAI-LLM Flash <strong>将更大比例的计算预算投入到后训练</strong>，
+    使用 <strong>SFT → DPO → RL</strong> 三阶段流水线。
+    DPO 放在 RL 之前用于快速收敛惩罚负样本，也为 RL 提供稳定起点。
+  </p>
+
+  <h3>4.1 SFT：三类数据混合</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">A</span>
+      <h4>General SFT</h4>
+      <p>数学/代码/工具/指令/安全/Lean 定理证明/创作/角色扮演/多语言等。
+      用 Qwen3-30B-A3B 作为 filter 去除低质量 query。
+      <strong>故意混合 thinking 和 non-thinking 两种认知模式</strong>——
+      实验证实 hybrid 训练显著增强了非 thinking 模型的性能。</p>
+    </div>
+    <div class="card">
+      <span class="num">B</span>
+      <h4>Environment &amp; Agent Learning</h4>
+      <p>SWE 任务通过"漏斗式训练"：GitHub Issue 挖掘 → 可验证环境构建 → 轨迹生成冷启动。
+      构建可验证 Docker 环境，Agent 自动构建镜像、运行测试、生成 P2P/P2F 标签。
+      12 种编程语言。</p>
+    </div>
+    <div class="card">
+      <span class="num">C</span>
+      <h4>Tool-Integrated Reasoning (TIR)</h4>
+      <p>4 种专门 TIR 数据集：Code-Centric（Python 解释器，≤20 次调用）、
+      Search-Centric（平均 8.64 次搜索调用）、Hybrid（代码+搜索协同）、
+      Terminal-Centric（Docker 环境命令）。<strong>引入 summary agent</strong>作为搜索唯一接口，避免长上下文。</p>
+    </div>
+    <div class="card">
+      <span class="num">D</span>
+      <h4>打包训练</h4>
+      <p>Best-fit packing 到 128K 上下文，padding 比率降至 <strong>0.01%</strong>，
+      使用块对角注意力掩码保持严格因果边界。整体训练吞吐<strong>提升 1.5×</strong>。</p>
+    </div>
+  </div>
+
+  <div class="figure">
+    <img src="joyai_figures/fig4_verifiable_env.png" alt="Verifiable environment pipeline">
+    <div class="caption">图 3：SWE 任务的可验证环境构建流水线。从 GitHub 仓库（多语言/活跃项目）→ Agent 迭代构建 Docker 镜像 →
+    运行测试套件 → 失败样例进 Skills Library → SWE 轨迹 + 原子能力数据。</div>
+  </div>
+
+  <h3>4.2 DPO：RL 之前的负样本惩罚</h3>
+  <ul>
+    <li>训练 1000 步，lr=1e-6（cosine 衰减至 1e-7），global batch=256</li>
+    <li>数据来自 STEM/对话/安全 query，与 SFT 数据分离</li>
+    <li>从 SFT 拒绝采样构造负样本，针对幻觉、指令遵循偏差</li>
+    <li><strong>快速收敛</strong>，为 RL 提供稳定起点</li>
+  </ul>
+</div>
+
+<!-- ===== 五、FiberPO 核心创新 ===== -->
+<div class="section">
+  <h2>五、FiberPO：基于纤维化理论的 RL 算法（核心创新）</h2>
+
+  <h3>5.1 问题：PPO/GRPO/GSPO 的结构性缺陷</h3>
+  <p>
+    现代 LLM 是异构系统——agentic pipelines、MoE 条件路由、
+    分布式异步训练——在这种场景下 RLHF 的 <strong>PPO-style "proximal" 目标只提供粗粒度的局部控制</strong>
+    （主要是 per-token clipping），当问题来自全局结构（如轨迹漂移、专家分片）时无能为力。
+  </p>
+  <div class="warning">
+    <strong>具体失败模式：</strong>
+    <ul>
+      <li><strong>Token-wise (PPO/GRPO)：</strong>对每个 token 的 ratio r_i 独立 clip。
+      一旦轨迹级漂移超过 clip bound，<strong>该轨迹中大部分 token 会同时饱和</strong>，
+      破坏 token-level 梯度区分，梯度坍缩到粗粒度的 trajectory-level 信号。</li>
+      <li><strong>Sequence-wise (GSPO)：</strong>每个轨迹聚合为单一 ratio，
+      <strong>压制了轨迹内变化</strong>，优化器无法区分同一轨迹内 token 的质量差异，
+      导致概率质量分散到低效路径。</li>
+    </ul>
+  </div>
+
+  <h3>5.2 FiberPO 核心思想：纤维化解耦 (Fiber Bundle Gating)</h3>
+  <p>
+    FiberPO 建立在 Fibration Policy Optimization 的理论基础上——
+    把采样的 RLHF 数据视作一个<strong>纤维丛（fiber bundle）</strong>结构：
+    <em>base space</em> = 轨迹集合，<em>fiber</em> = 同一轨迹内的 token。
+    每个 token 的 log-ratio 被分解为两部分：
+  </p>
+  <div class="formula">
+    log r<sub>i</sub> = log r̄<sub>τ</sub> &nbsp; + &nbsp; (log r<sub>i</sub> − log r̄<sub>τ</sub>)
+    <br>
+    = 轨迹均值（base level） &nbsp; + &nbsp; token 偏差（fiber level）
+  </div>
+
+  <p>FiberPO 的目标函数采用<strong>乘法因式分解</strong>：</p>
+  <div class="formula">
+    G(r)<sub>i</sub> = w<sub>τ</sub><sup>base</sup> &nbsp;·&nbsp; r̃<sub>i</sub><sup>fiber</sup>
+    <br><br>
+    base weight：w<sub>τ</sub><sup>base</sup> = exp(g<sup>agg</sup>(log s<sub>τ</sub><sup>+</sup>, C<sup>+</sup>, T<sub>τ</sub>)) / exp(g<sup>agg</sup>(log s<sub>τ</sub><sup>-</sup>, C<sup>-</sup>, T<sub>τ</sub>))
+    <br>
+    gated residual：r̃<sub>i</sub><sup>fiber</sup> = logclip((s<sub>τ</sub><sup>(l<sub>i</sub>)</sup>)<sup>−l<sub>i</sub></sup> r<sub>i</sub>, ε) / logclip((s<sub>τ</sub><sup>(−l<sub>i</sub>)</sup>)<sup>−l<sub>i</sub></sup>, ε)
+  </div>
+
+  <p>关键设计：</p>
+  <ul>
+    <li><strong>Sign-channel 分解</strong>：根据 log r<sub>i</sub> 的符号，把轨迹分成"上漂"和"下漂"两个正负 channel，
+    分别追踪 s<sub>τ</sub><sup>+</sup> 和 s<sub>τ</sub><sup>−</sup>，避免两者相互抵消</li>
+    <li><strong>Piecewise-linear aggregate gate g<sup>agg</sup></strong>：三段式线性门控——
+    pass-through（|x|≤C，原样通过） → rollback（C&lt;|x|&lt;(1+T<sub>τ</sub><sup>−1</sup>)C，反向斜率 −T<sub>τ</sub>，产生回拉梯度） → zeroed（|x|≥阈值，完全冻结梯度）</li>
+    <li><strong>fiber-level logclip on u<sub>i</sub> = l<sub>i</sub>·log r<sub>i</sub> − log s<sub>τ</sub><sup>(l<sub>i</sub>)</sup></strong>：
+    clip 作用在 token 相对轨迹均值的<strong>偏差</strong>上，而非 log r<sub>i</sub> 本身</li>
+  </ul>
+
+  <div class="highlight">
+    <strong>Token-Efficiency 优势（关键）：</strong>
+    因为 logclip 作用在 u<sub>i</sub>（token 相对轨迹均值的偏差），只有当 token
+    <em>与轨迹均值方向相反偏离 &gt; ε</em> 时才会被 clip——
+    <strong>与轨迹级漂移 log s<sub>τ</sub><sup>(l<sub>i</sub>)</sup> 本身的大小无关</strong>。
+    同方向漂移的 token 保留完整梯度信号，提供精细的 per-token 更新方向。
+    这是 PPO/GRPO 缺失的关键特性——它们直接对 log r<sub>i</sub> clip，
+    轨迹漂移一旦大于阈值，多数 token 同时饱和，token-level 区分能力崩溃。
+  </div>
+
+  <div class="figure">
+    <img src="joyai_figures/fig5_fiberpo_gating.png" alt="FiberPO gating visualization">
+    <div class="caption">图 4：FiberPO 门控行为可视化。<br>
+    (a) 聚合门 g<sup>agg</sup> 的三段式：pass-through（|x|≤C）、rollback（C&lt;|x|&lt;C*，斜率 −T<sub>τ</sub>）、zeroed（|x|≥C*）。<br>
+    (b) 在 (log s<sup>+</sup>, log s<sup>−</sup>) 平面上的 base weight 热力图。
+    五个全局区域 (G-I 到 G-III) 对应不同 channel 的激活状态：双通道通透 → 单通道 rollback → 单通道全 gate → 双通道 rollback → 完全坍缩。
+    <strong>restorative rollback 是 PPO/GRPO/GSPO 中缺失的关键特性</strong>。</div>
+  </div>
+
+  <h3>5.3 单域（数学 RL）实验结果</h3>
+  <div class="figure">
+    <img src="joyai_figures/fig6_rlvr_results.png" alt="FiberPO single domain RLVR">
+    <div class="caption">图 5：在 DAPO-Math-17k 上训练 100 步、AIME 2024 评测。<br>
+    <strong>GRPO 在 step 60 后坍缩</strong>（验证准确率从 60% 掉到 22%）；
+    <strong>GSPO 停滞</strong>不前；
+    <strong>FiberPO（红色）在两个指标上单调上升</strong>，最终达到训练奖励 0.78、验证准确率 0.76，
+    两者都大幅领先。</div>
+  </div>
+
+  <div class="figure">
+    <img src="joyai_figures/fig7_training_diagnostics.png" alt="FiberPO training diagnostics">
+    <div class="caption">图 6：训练诊断。<br>
+    (a) <strong>Policy 熵</strong>：GRPO 坍缩到 0.038 nats（初始 91% 损失）；GSPO 发散到 1.99 nats；FiberPO 保持 0.43 nats（健康）<br>
+    (b) <strong>mean ratio r</strong>：GRPO 超过 10³ 漂移；FiberPO 保持在 1.13 附近<br>
+    (c) <strong>mean response length</strong>：FiberPO 从 7902 降至 4543 token（<strong>保持准确率同时减少 42% tokens</strong>）<br>
+    (d) <strong>gradient norm</strong>：FiberPO 100 步内只增加 1.5×（0.033→0.049），GRPO 12×、GSPO 7.5×<br>
+    (e) FiberPO 特有：fiber residual &amp; clip fraction 始终在 safe zone，大多数 token 满足 |u<sub>i</sub>|&lt;ε</div>
+  </div>
+
+  <h3>5.4 多域扩展</h3>
+  <p>
+    单域 RL 常导致 out-of-domain 能力退化（数学 RL 可能丢失指令跟随）。
+    FiberPO 通过 <strong>Gaussian curriculum</strong> 策略在多域上扩展：
+  </p>
+  <div class="formula">
+    μ<sub>t</sub> = μ<sub>0</sub> + (μ<sub>T</sub> − μ<sub>0</sub>) · t/T &nbsp;&nbsp; (μ<sub>0</sub>=0.8 easy, μ<sub>T</sub>=0.2 hard)
+    <br>
+    w<sub>i</sub><sup>(t)</sup> = exp(−½ · ((p<sub>i</sub> − μ<sub>t</sub>)/σ)²), &nbsp; σ=0.15
+  </div>
+  <p>每个 prompt 预先用 K=10 次 rollout 估计通过率 p<sub>i</sub>，然后训练期间动态聚焦当前目标难度。
+  Domain balanced 权重 α<sub>g</sub> ∝ √N<sub>g</sub> 保持多域平衡。
+  FiberPO 的 per-trajectory 信任域天然泛化到异质 reward 分布——<strong>无需任何多域特殊调整</strong>即可实现跨域稳定增益。</p>
+</div>
+
+<!-- ===== 六、Instruct 评估 ===== -->
+<div class="section">
+  <h2>六、Instruct 模型评估：Token 效率优势全面显现</h2>
+
+  <div class="figure">
+    <img src="joyai_figures/tab3_instruct_comparison.png" alt="Instruct comparison">
+    <div class="caption">表 3：与 Qwen3-Next-80B-A3B、Qwen3.5-35B-A3B、Qwen3-30B-A3B、GLM-4.7-Flash-T 的全面对比。
+    每个 benchmark 同时报告 Acc 和 #Token。
+    <strong>JoyAI-LLM Flash 在同等或更高准确率下，token 消耗显著低于 GLM-4.7-Flash-T</strong>
+    （如 LiveCodeBench: 65.6 vs 64.0，7300 vs 53600 tokens）。</div>
+  </div>
+
+  <div class="figure">
+    <img src="joyai_figures/fig8_token_efficiency_benches.png" alt="Token efficiency benchmarks">
+    <div class="caption">图 7：六个 benchmark 上的准确率（左柱）和 token 消耗（右柱）对比。
+    红色箭头线显示从 Qwen3.5-35B-A3B → GLM-4.7-Flash-T → JoyAI-LLM Flash 的效率演化。
+    JoyAI-LLM Flash 在所有 6 个 benchmark 上都显示出显著的 token 效率提升。</div>
+  </div>
+
+  <div class="success">
+    <strong>Benchmark 亮点（vs GLM-4.7-Flash-T）：</strong>
+    <ul>
+      <li><strong>MMLU-Pro</strong>: 81.6 vs 75.8（准确率领先 5.8%），900 vs 6200 tokens（<strong>token 减少 85%</strong>）</li>
+      <li><strong>LiveCodeBench v6</strong>: 65.6 vs 64.0（+1.6%），7300 vs 53600 tokens（<strong>减少 86%</strong>）</li>
+      <li><strong>SWE-bench Verified</strong>: 62.6 vs 59.4，24400 vs 51400 tokens（<strong>减少 53%</strong>）</li>
+      <li><strong>HumanEval</strong>: 94.5 vs 88.2，900 vs 2000 tokens</li>
+      <li><strong>IFEval</strong>: 82.9 vs 85.4（略低），400 vs 1900 tokens（<strong>减少 79%</strong>）</li>
+      <li><strong>τ²-Bench (agent)</strong>: 74.1 vs 69.9，3000 vs 3400 tokens</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===== 七、推理优化 ===== -->
+<div class="section">
+  <h2>七、推理优化：QAT + MTP + PD 分离</h2>
+
+  <h3>7.1 Quantization-Aware Training (QAT)</h3>
+  <p>
+    JoyAI-LLM Flash 同时采用 <strong>QAT 和 PTQ</strong>。QAT 阶段在训练中插入 fake-quantization
+    (Quantize → DeQuantize → Quantize) 模拟 INT4 量化，用 <strong>Straight-Through Estimator (STE)</strong>
+    处理不可微的 rounding/clamping。
+  </p>
+  <div class="success">
+    <strong>意外发现：</strong>INT4 量化在 RL 阶段起到<strong>稳定器</strong>的作用——
+    数值空间收窄使得模型 rollout 更鲁棒、减少噪声多样性。
+    JoyAI-LLM Flash 因此在低比特简单 RTN (Round-To-Nearest) 量化下仍保持高精度。
+  </div>
+
+  <div class="figure">
+    <img src="joyai_figures/fig9_quantization.png" alt="Quantization results">
+    <div class="caption">图 8：不同量化格式的准确率-吞吐量权衡。JoyAI-LLM Flash 的 <strong>FP8 版本提升 17% 吞吐，几乎无精度损失</strong>；
+    <strong>W4AFP8 版本提升 28% 吞吐，仅下降 1.2% 精度</strong>。
+    Qwen3-30B-A3B FP8 吞吐只提升 10% 且有明显精度下降——JoyAI-LLM Flash 的量化鲁棒性显著更好，
+    尽管模型权重大 1.63×。</div>
+  </div>
+
+  <h3>7.2 Multi-Token Prediction (MTP)</h3>
+  <div class="figure">
+    <img src="joyai_figures/tab4_mtp_speculative.png" alt="MTP speculative decoding">
+    <div class="caption">表 4：SpecBench MTP-3 投机解码性能对比。
+    JoyAI-LLM Flash 达到 <strong>1.87× 加速</strong>，超越 GLM-5 (1.82×)、DeepSeek-V3.2 (1.79×)、
+    Qwen3.5-35B-A3B (1.61×) 等，是对照表中最快的。</div>
+  </div>
+
+  <div class="figure">
+    <img src="joyai_figures/fig10_mtp_joint.png" alt="MTP + quantization joint">
+    <div class="caption">图 9：MTP 与量化的联合优化（ISL/OSL = 1K/2K, concurrency=64）。
+    BF16 和 FP8 最优 next-n=3，分别达到 1.57×、1.81× 加速；
+    <strong>W4AFP8 在 next-n=2 达到最优 1.96× 加速</strong>。
+    next-n&gt;3 因为额外预测开销产生收益递减。</div>
+  </div>
+
+  <h3>7.3 推理服务调度</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>Short-context (Chat)</h4>
+      <p>关心 TTFT + TPOT。建议 <strong>intra-node PD colocation</strong>
+      减少小模型的通信开销。AIConfigurator 动态调整 PD 实例比例匹配 SLA。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>Long-context (RAG / Agent)</h4>
+      <p>使用 <strong>PD disaggregation + Mooncake 集中 KV 缓存</strong>。
+      选择 P2P CPU 共享或 remote KV pooling 基于硬件；<strong>强烈不推荐 TCP 传输</strong>（延迟高）。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>KV Cache 写策略</h4>
+      <p>带宽充足时立即写到分布式 cache 层最大化命中；
+      I/O 受限时减少写频率，使用 eviction policy 保留 hot data。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>重计算 vs 传输</h4>
+      <p>小模型对数据传输开销更敏感；<strong>即使 P2P RDMA 传输，延迟也可能超过重计算成本</strong>，
+      使集中 KV 管理成为负优化。需针对硬件做 crossover 分析。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 八、创新点总结 ===== -->
+<div class="section">
+  <h2>八、核心创新点总结</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>Token Efficiency 作为第一目标</h4>
+      <p>首个将"token 消耗"与"准确率"作为联合 Pareto 前沿优化的中等规模 LLM。
+      所有训练决策（thinking/non-thinking 混合、FiberPO、MTP）都服务于这个目标。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>FiberPO RL 算法</h4>
+      <p>基于 fibration 理论的新 RL 目标。把 token log-ratio 分解为 trajectory-level base weight
+      和 fiber-level gated residual，分别提供独立的 trust region。
+      严格解决 PPO/GRPO 在大漂移时的 token-level 区分崩溃问题。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>Thinking / Non-thinking SFT 混合</h4>
+      <p>故意在 SFT 中混合两种认知模式的数据。实验证明这种 hybrid 训练
+      <strong>显著增强了 non-thinking 模型的性能</strong>，而非期望的只对 thinking 模式有效。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>MTP + QAT 联合优化</h4>
+      <p>训练-推理协同设计：MTP 头在预训练丰富学习信号，推理时天然支持投机解码。
+      <strong>W4AFP8 + next-n=2 实现 1.96× 加速</strong>，达到同规模最优。</p>
+    </div>
+    <div class="card">
+      <span class="num">5</span>
+      <h4>INT4 QAT 的意外 RL 稳定效果</h4>
+      <p>发现 INT4 量化在 RL 阶段起到<strong>稳定器</strong>作用——
+      收窄数值空间减少 rollout 噪声，提高鲁棒性。这是量化研究中少见的"量化反而有益"的发现。</p>
+    </div>
+    <div class="card">
+      <span class="num">6</span>
+      <h4>细粒度 MoE + 强数学基座</h4>
+      <p>256 细粒度专家 + Muon 优化器 + 20T tokens 四阶段课程，
+      在 MMLU-Pro / MATH / MATH-500 上超过 Qwen3.5-35B-A3B 等同规模模型。
+      基座 + 后训练共同驱动。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 九、结论 ===== -->
+<div class="section">
+  <h2>九、结论与意义</h2>
+  <p>
+    JoyAI-LLM Flash 在 sub-50B 参数区间重新定义了"性能"与"效率"的权衡：
+    <strong>不是更大的模型、不是更多的 token，而是更聪明的训练与推理协同</strong>。
+  </p>
+  <div class="highlight">
+    <strong>三大核心突破：</strong>
+    <ol>
+      <li><strong>训练方法论</strong>：FiberPO 是 RL for LLM 领域近年最具理论深度的进展之一，
+      首次把 token-level 和 trajectory-level 的 trust region 严格解耦，避免了 PPO/GRPO/GSPO 的结构性失败模式。</li>
+      <li><strong>数据方法论</strong>：Thinking/Non-thinking 混合、Gaussian curriculum、
+      Agentic 可验证环境漏斗——这些系统化的数据工程是可复用的最佳实践。</li>
+      <li><strong>工程方法论</strong>：QAT + MTP + PD 分离的训推一体设计，
+      为中等规模 MoE 模型在生产场景的部署提供了参考蓝图。</li>
+    </ol>
+  </div>
+  <p>
+    <strong>未来方向：</strong>团队计划引入 <strong>continual learning</strong> 和
+    <strong>persistent memory</strong>，使模型能够动态适应并持续累积知识。
+  </p>
+</div>
+
+<div class="footer">
+  论文总结报告 &middot; JoyAI-LLM Flash (JD.com, 2026.04)
+</div>
+
+</div>
+</body>
+</html>

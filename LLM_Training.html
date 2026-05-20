@@ -1,0 +1,2187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大模型训练策略、流程与原理详解</title>
+<style>
+  :root { --primary:#1a1a2e; --accent:#0f3460; --highlight-bg:#f0f4ff; --highlight-border:#4a7dff; --text:#222; --text-light:#555; --border:#e0e0e0; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif; color:var(--text); line-height:1.8; background:#fafafa; }
+  .container { max-width:920px; margin:0 auto; padding:20px; }
+  .cover { text-align:center; padding:70px 20px 50px; background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%); color:white; border-radius:12px; margin-bottom:40px; }
+  .cover h1 { font-size:2.1em; margin-bottom:12px; font-weight:700; letter-spacing:1px; }
+  .cover .subtitle { font-size:1.05em; color:#aab; margin-bottom:24px; }
+  .cover .tags { display:flex; justify-content:center; gap:12px; flex-wrap:wrap; }
+  .cover .tag { background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.2); border-radius:20px; padding:6px 18px; font-size:0.9em; color:#dde; }
+  .section { background:white; border-radius:10px; padding:36px 40px; margin-bottom:24px; box-shadow:0 1px 4px rgba(0,0,0,0.06); border:1px solid var(--border); }
+  h2 { font-size:1.5em; color:var(--primary); margin-bottom:6px; padding-bottom:10px; border-bottom:2px solid var(--highlight-border); }
+  h3 { font-size:1.15em; color:var(--accent); margin:22px 0 10px; }
+  h4 { font-size:1.0em; color:#333; margin:14px 0 6px; }
+  p { margin:12px 0; text-align:justify; }
+  .highlight { background:var(--highlight-bg); border-left:4px solid var(--highlight-border); padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .highlight strong { color:var(--accent); }
+  .warning { background:#fff8f0; border-left:4px solid #f0a500; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .success { background:#f0fff4; border-left:4px solid #2a9d8f; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  ul,ol { padding-left:24px; margin:10px 0; }
+  li { margin:6px 0; }
+  .formula { text-align:center; padding:18px 20px; margin:18px 0; background:#f8f9ff; border-radius:8px; border:1px solid #e8eaf0; font-size:1.12em; font-family:"Times New Roman","STIX",serif; letter-spacing:0.5px; overflow-x:auto; }
+  .figure { text-align:center; margin:24px 0; padding:16px; background:#fafafa; border-radius:8px; border:1px solid #eee; }
+  .figure img { max-width:100%; height:auto; border-radius:4px; }
+  .figure .caption { font-size:0.88em; color:#666; margin-top:10px; font-style:italic; }
+  table { width:100%; border-collapse:collapse; margin:16px 0; font-size:0.92em; }
+  th,td { padding:10px 14px; text-align:left; border-bottom:1px solid #eee; }
+  th { background:var(--primary); color:white; font-weight:600; }
+  tr:hover { background:#f8f9ff; }
+  td code { background:#f0f0f5; padding:2px 6px; border-radius:3px; font-size:0.9em; }
+  .card-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0; }
+  .card { background:linear-gradient(135deg,#f8f9ff,#f0f4ff); border:1px solid #d8e0f0; border-radius:10px; padding:20px 24px; }
+  .card .num { display:inline-block; background:var(--highlight-border); color:white; width:28px; height:28px; border-radius:50%; text-align:center; line-height:28px; font-size:0.85em; font-weight:700; margin-right:8px; }
+  .card h4 { display:inline; color:var(--accent); font-size:1.05em; }
+  .card p { margin-top:8px; font-size:0.93em; }
+  .pros-cons { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0; }
+  .pros,.cons { padding:16px; border-radius:8px; }
+  .pros { background:#f0fff4; border:1px solid #c8e6c9; }
+  .cons { background:#fff8f0; border:1px solid #ffe0b2; }
+  .pros h4 { color:#2e7d32; margin-bottom:8px; }
+  .cons h4 { color:#e65100; margin-bottom:8px; }
+  .pros li,.cons li { font-size:0.93em; }
+  .step-flow { display:flex; align-items:center; justify-content:center; gap:8px; margin:20px 0; flex-wrap:wrap; }
+  .step-box { background:var(--highlight-bg); border:1px solid var(--highlight-border); border-radius:8px; padding:10px 16px; font-size:0.92em; font-weight:600; color:var(--accent); text-align:center; min-width:100px; }
+  .step-arrow { font-size:1.4em; color:#aaa; }
+  .footer { text-align:center; color:#999; font-size:0.85em; padding:30px 0; border-top:1px solid #eee; margin-top:20px; }
+  @media(max-width:640px) { .section{padding:24px 20px;} .cover h1{font-size:1.6em;} .pros-cons,.card-grid{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ===== 封面 ===== -->
+<div class="cover">
+  <h1>大模型训练策略、流程与原理详解</h1>
+  <div class="subtitle">从数据工程到 Scaling Laws —— 万亿参数模型是如何炼成的</div>
+  <div class="tags">
+    <span class="tag">预训练</span>
+    <span class="tag">SFT 微调</span>
+    <span class="tag">RLHF / DPO</span>
+    <span class="tag">Scaling Laws</span>
+    <span class="tag">数据工程</span>
+    <span class="tag">分布式训练</span>
+    <span class="tag">训练稳定性</span>
+  </div>
+</div>
+
+<!-- ===== 引言 ===== -->
+<div class="section">
+  <h2>引言：大模型训练的全貌</h2>
+  <p>
+    训练一个大语言模型是一项涉及<strong>数据、算法、工程、算力</strong>的系统工程。
+    一个典型的 LLM 从空白参数到可以流畅对话，需要经历多个阶段，每个阶段都有其独特的目标、数据和方法论。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 260" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar0" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+        <marker id="ar0g" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2a9d8f"/></marker>
+      </defs>
+      <text x="410" y="25" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">大模型训练全景流程</text>
+
+      <!-- Phase 1: 预训练 -->
+      <rect x="20" y="50" width="250" height="90" rx="10" fill="#667eea" opacity="0.9"/>
+      <text x="145" y="78" text-anchor="middle" fill="white" font-size="14" font-weight="700">阶段一：预训练</text>
+      <text x="145" y="98" text-anchor="middle" fill="white" font-size="10">Pre-training</text>
+      <text x="145" y="118" text-anchor="middle" fill="white" font-size="9">数万亿 Token · 数千 GPU · 数月</text>
+      <text x="145" y="132" text-anchor="middle" fill="white" font-size="9">目标：学习语言和世界知识</text>
+      <line x1="272" y1="95" x2="292" y2="95" stroke="#4a7dff" stroke-width="2.5" marker-end="url(#ar0)"/>
+
+      <!-- Phase 2: SFT -->
+      <rect x="296" y="50" width="230" height="90" rx="10" fill="#2a9d8f" opacity="0.9"/>
+      <text x="411" y="78" text-anchor="middle" fill="white" font-size="14" font-weight="700">阶段二：监督微调</text>
+      <text x="411" y="98" text-anchor="middle" fill="white" font-size="10">Supervised Fine-Tuning</text>
+      <text x="411" y="118" text-anchor="middle" fill="white" font-size="9">数百万条指令数据 · 数天</text>
+      <text x="411" y="132" text-anchor="middle" fill="white" font-size="9">目标：学习指令遵循和格式</text>
+      <line x1="528" y1="95" x2="548" y2="95" stroke="#2a9d8f" stroke-width="2.5" marker-end="url(#ar0g)"/>
+
+      <!-- Phase 3: RLHF -->
+      <rect x="552" y="50" width="245" height="90" rx="10" fill="#e74c3c" opacity="0.85"/>
+      <text x="674" y="78" text-anchor="middle" fill="white" font-size="14" font-weight="700">阶段三：对齐训练</text>
+      <text x="674" y="98" text-anchor="middle" fill="white" font-size="10">RLHF / DPO / GRPO</text>
+      <text x="674" y="118" text-anchor="middle" fill="white" font-size="9">人类偏好数据 · 数天</text>
+      <text x="674" y="132" text-anchor="middle" fill="white" font-size="9">目标：安全、有用、诚实</text>
+
+      <!-- 产出标签 -->
+      <rect x="48" y="155" width="195" height="30" rx="5" fill="#f0f4ff" stroke="#667eea" stroke-width="1"/>
+      <text x="145" y="175" text-anchor="middle" font-size="10" fill="#667eea" font-weight="600">Base Model（基座模型）</text>
+      <rect x="313" y="155" width="195" height="30" rx="5" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1"/>
+      <text x="411" y="175" text-anchor="middle" font-size="10" fill="#2a9d8f" font-weight="600">SFT Model（指令模型）</text>
+      <rect x="580" y="155" width="195" height="30" rx="5" fill="#fff0f0" stroke="#e74c3c" stroke-width="1"/>
+      <text x="677" y="175" text-anchor="middle" font-size="10" fill="#e74c3c" font-weight="600">Chat Model（对话模型）</text>
+
+      <!-- 底部资源注释 -->
+      <rect x="50" y="200" width="720" height="44" rx="6" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="410" y="218" text-anchor="middle" font-size="10" fill="#0f3460" font-weight="600">资源分布：预训练 ≈ 总计算量的 99%+ · SFT ≈ &lt;0.5% · 对齐 ≈ &lt;0.5%</text>
+      <text x="410" y="235" text-anchor="middle" font-size="10" fill="#888">预训练是大模型训练中最关键、最昂贵、最不可逆的阶段</text>
+    </svg>
+    <div class="caption">图 1：大模型训练的三大阶段。预训练消耗 99%+ 的计算资源，是决定模型能力上限的关键阶段。</div>
+  </div>
+
+  <div class="highlight">
+    <strong>本文聚焦：</strong>
+    本文将系统介绍大模型训练的完整流程，重点覆盖预训练的数据工程、训练目标、超参数策略、
+    分布式训练技术、Scaling Laws，以及 SFT 和对齐训练的核心方法，并以主流模型的实际训练配置为案例。
+  </div>
+</div>
+
+<!-- ===== 一、预训练目标 ===== -->
+<div class="section">
+  <h2>一、预训练目标与损失函数</h2>
+
+  <h3>1.1 Next Token Prediction（NTP）</h3>
+  <p>
+    几乎所有 Decoder-only 的大语言模型（GPT、LLaMA、Qwen、DeepSeek 等）都采用相同的预训练目标：
+    <strong>给定前文，预测下一个 token</strong>。这个看似简单的目标，在足够大的数据和模型规模下，
+    能涌现出推理、翻译、编程等多种能力。
+  </p>
+
+  <div class="formula">
+    L(θ) = − (1/T) &sum;<sub>t=1</sub><sup>T</sup> log P<sub>θ</sub>(x<sub>t</sub> | x<sub>1</sub>, x<sub>2</sub>, ..., x<sub>t−1</sub>)
+  </div>
+  <p>
+    其中 T 是序列长度，θ 是模型参数，x<sub>t</sub> 是第 t 个 token。
+    训练的目标是最小化整个训练语料上的<strong>交叉熵损失</strong>。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 200" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">Next Token Prediction 训练过程</text>
+
+      <!-- 输入序列 -->
+      <text x="40" y="58" font-size="11" fill="#888" font-weight="600">输入 (x)：</text>
+      <rect x="120" y="42" width="60" height="30" rx="4" fill="#667eea" opacity="0.8"/><text x="150" y="62" text-anchor="middle" fill="white" font-size="10">&lt;s&gt;</text>
+      <rect x="185" y="42" width="60" height="30" rx="4" fill="#667eea" opacity="0.8"/><text x="215" y="62" text-anchor="middle" fill="white" font-size="10">大</text>
+      <rect x="250" y="42" width="60" height="30" rx="4" fill="#667eea" opacity="0.8"/><text x="280" y="62" text-anchor="middle" fill="white" font-size="10">模</text>
+      <rect x="315" y="42" width="60" height="30" rx="4" fill="#667eea" opacity="0.8"/><text x="345" y="62" text-anchor="middle" fill="white" font-size="10">型</text>
+      <rect x="380" y="42" width="60" height="30" rx="4" fill="#667eea" opacity="0.8"/><text x="410" y="62" text-anchor="middle" fill="white" font-size="10">正</text>
+      <rect x="445" y="42" width="60" height="30" rx="4" fill="#667eea" opacity="0.8"/><text x="475" y="62" text-anchor="middle" fill="white" font-size="10">在</text>
+      <rect x="510" y="42" width="60" height="30" rx="4" fill="#667eea" opacity="0.8"/><text x="540" y="62" text-anchor="middle" fill="white" font-size="10">改</text>
+
+      <!-- 箭头 -->
+      <text x="330" y="95" text-anchor="middle" font-size="11" fill="#4a7dff" font-weight="600">Transformer (Causal Mask) → Softmax</text>
+
+      <!-- 目标序列 -->
+      <text x="40" y="132" font-size="11" fill="#888" font-weight="600">目标 (y)：</text>
+      <rect x="120" y="116" width="60" height="30" rx="4" fill="#2a9d8f" opacity="0.8"/><text x="150" y="136" text-anchor="middle" fill="white" font-size="10">大</text>
+      <rect x="185" y="116" width="60" height="30" rx="4" fill="#2a9d8f" opacity="0.8"/><text x="215" y="136" text-anchor="middle" fill="white" font-size="10">模</text>
+      <rect x="250" y="116" width="60" height="30" rx="4" fill="#2a9d8f" opacity="0.8"/><text x="280" y="136" text-anchor="middle" fill="white" font-size="10">型</text>
+      <rect x="315" y="116" width="60" height="30" rx="4" fill="#2a9d8f" opacity="0.8"/><text x="345" y="136" text-anchor="middle" fill="white" font-size="10">正</text>
+      <rect x="380" y="116" width="60" height="30" rx="4" fill="#2a9d8f" opacity="0.8"/><text x="410" y="136" text-anchor="middle" fill="white" font-size="10">在</text>
+      <rect x="445" y="116" width="60" height="30" rx="4" fill="#2a9d8f" opacity="0.8"/><text x="475" y="136" text-anchor="middle" fill="white" font-size="10">改</text>
+      <rect x="510" y="116" width="60" height="30" rx="4" fill="#2a9d8f" opacity="0.8"/><text x="540" y="136" text-anchor="middle" fill="white" font-size="10">变</text>
+
+      <!-- 损失标注 -->
+      <line x1="150" y1="75" x2="150" y2="113" stroke="#e74c3c" stroke-width="1" stroke-dasharray="3 3"/>
+      <line x1="215" y1="75" x2="215" y2="113" stroke="#e74c3c" stroke-width="1" stroke-dasharray="3 3"/>
+      <line x1="280" y1="75" x2="280" y2="113" stroke="#e74c3c" stroke-width="1" stroke-dasharray="3 3"/>
+      <line x1="345" y1="75" x2="345" y2="113" stroke="#e74c3c" stroke-width="1" stroke-dasharray="3 3"/>
+      <line x1="410" y1="75" x2="410" y2="113" stroke="#e74c3c" stroke-width="1" stroke-dasharray="3 3"/>
+      <line x1="475" y1="75" x2="475" y2="113" stroke="#e74c3c" stroke-width="1" stroke-dasharray="3 3"/>
+      <line x1="540" y1="75" x2="540" y2="113" stroke="#e74c3c" stroke-width="1" stroke-dasharray="3 3"/>
+      <text x="620" y="95" font-size="10" fill="#e74c3c" font-weight="600">每个位置都计算</text>
+      <text x="620" y="112" font-size="10" fill="#e74c3c" font-weight="600">交叉熵损失</text>
+
+      <text x="410" y="175" text-anchor="middle" font-size="10" fill="#888">目标序列 = 输入序列右移一位。Causal Mask 确保每个位置只能看到前面的 token（自回归）。</text>
+      <text x="410" y="192" text-anchor="middle" font-size="10" fill="#888">每个 token 都是一个训练样本——一条 4096 token 的序列产生 4096 个预测任务。</text>
+    </svg>
+    <div class="caption">图 2：Next Token Prediction 训练原理。输入和目标错位一个 token，每个位置独立计算损失。</div>
+  </div>
+
+  <h3>1.2 为什么 NTP 如此有效？</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>隐式多任务学习</h4>
+      <p>预测下一个 token 要求模型同时理解语法、语义、逻辑、世界知识——一个目标隐式地训练了无数能力。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>数据效率极高</h4>
+      <p>每条长度为 T 的序列产生 T 个训练样本，无需人工标注。互联网上有几乎无限的无标注文本。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>与推理天然一致</h4>
+      <p>训练目标（预测下一 token）和推理过程（自回归生成）完全一致，无 train/test mismatch。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>可扩展性强</h4>
+      <p>Scaling Laws 证明：增加数据和参数，NTP 损失可以持续、可预测地下降，带来能力跃迁。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 二、数据工程 ===== -->
+<div class="section">
+  <h2>二、预训练数据工程</h2>
+
+  <p>
+    数据是预训练的燃料。<strong>数据的质量、规模和配比</strong>对最终模型能力的影响，往往超过模型架构本身。
+    现代 LLM 的预训练数据量通常在 <strong>1T ~ 15T+ tokens</strong> 之间。
+  </p>
+
+  <h3>2.1 数据处理流水线</h3>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 300" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">预训练数据处理流水线</text>
+
+      <!-- 采集 -->
+      <rect x="30" y="50" width="140" height="60" rx="8" fill="#667eea" opacity="0.85"/>
+      <text x="100" y="76" text-anchor="middle" fill="white" font-size="11" font-weight="600">数据采集</text>
+      <text x="100" y="96" text-anchor="middle" fill="white" font-size="8">Web / 书籍 / 代码 / 论文</text>
+      <line x1="172" y1="80" x2="192" y2="80" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar2)"/>
+
+      <!-- 清洗 -->
+      <rect x="196" y="50" width="120" height="60" rx="8" fill="#4a7dff" opacity="0.85"/>
+      <text x="256" y="76" text-anchor="middle" fill="white" font-size="11" font-weight="600">规则清洗</text>
+      <text x="256" y="96" text-anchor="middle" fill="white" font-size="8">去 HTML / 乱码 / 短文</text>
+      <line x1="318" y1="80" x2="338" y2="80" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar2)"/>
+
+      <!-- 去重 -->
+      <rect x="342" y="50" width="120" height="60" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="402" y="76" text-anchor="middle" fill="white" font-size="11" font-weight="600">去重</text>
+      <text x="402" y="96" text-anchor="middle" fill="white" font-size="8">MinHash / 精确去重</text>
+      <line x1="464" y1="80" x2="484" y2="80" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar2)"/>
+
+      <!-- 质量过滤 -->
+      <rect x="488" y="50" width="130" height="60" rx="8" fill="#f0a500" opacity="0.85"/>
+      <text x="553" y="76" text-anchor="middle" fill="white" font-size="11" font-weight="600">质量过滤</text>
+      <text x="553" y="96" text-anchor="middle" fill="white" font-size="8">分类器 / PPL / 启发规则</text>
+      <line x1="620" y1="80" x2="640" y2="80" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar2)"/>
+
+      <!-- 配比 -->
+      <rect x="644" y="50" width="150" height="60" rx="8" fill="#e74c3c" opacity="0.85"/>
+      <text x="719" y="76" text-anchor="middle" fill="white" font-size="11" font-weight="600">数据配比 & 采样</text>
+      <text x="719" y="96" text-anchor="middle" fill="white" font-size="8">按领域 / 语言加权</text>
+
+      <!-- 详细步骤 -->
+      <rect x="30" y="130" width="764" height="150" rx="8" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="50" y="155" font-size="12" font-weight="700" fill="#0f3460">各步骤详解：</text>
+
+      <text x="50" y="178" font-size="11" fill="#555"><tspan font-weight="600" fill="#667eea">采集：</tspan>Common Crawl（网页）、The Stack（代码）、arXiv/PubMed（学术）、Wikipedia、书籍语料等</text>
+      <text x="50" y="200" font-size="11" fill="#555"><tspan font-weight="600" fill="#4a7dff">清洗：</tspan>去除 HTML 标签、广告、导航栏、乱码、过短文本（&lt;50 字）；语言识别过滤非目标语言</text>
+      <text x="50" y="222" font-size="11" fill="#555"><tspan font-weight="600" fill="#2a9d8f">去重：</tspan>文档级精确去重（URL / SHA256）+ 模糊去重（MinHash LSH, n-gram 重叠率）；可去除 30~50% 数据</text>
+      <text x="50" y="244" font-size="11" fill="#555"><tspan font-weight="600" fill="#f0a500">质量过滤：</tspan>训练 fastText 二分类器区分"高质量/低质量"；PPL 过滤（用小 LM 打分，PPL 极高的丢弃）</text>
+      <text x="50" y="266" font-size="11" fill="#555"><tspan font-weight="600" fill="#e74c3c">配比：</tspan>不同领域数据的采样权重直接影响模型能力分布（如增加代码占比提升推理能力）</text>
+    </svg>
+    <div class="caption">图 3：预训练数据处理流水线。从 PB 级原始网页到高质量训练数据，通常经过采集→清洗→去重→过滤→配比五个阶段。</div>
+  </div>
+
+  <h3>2.2 主流模型的训练数据量</h3>
+  <table>
+    <tr>
+      <th>模型</th>
+      <th>训练数据量</th>
+      <th>语言分布</th>
+      <th>关键数据特点</th>
+    </tr>
+    <tr>
+      <td><strong>LLaMA-1 (65B)</strong></td>
+      <td>1.4T tokens</td>
+      <td>英文为主</td>
+      <td>仅公开数据，首次证明开源也能媲美 GPT-3</td>
+    </tr>
+    <tr>
+      <td><strong>LLaMA-2 (70B)</strong></td>
+      <td>2.0T tokens</td>
+      <td>英文为主</td>
+      <td>数据量增加 40%，质量筛选更严格</td>
+    </tr>
+    <tr>
+      <td><strong>LLaMA-3 (70B)</strong></td>
+      <td>15T tokens</td>
+      <td>多语言 (30+)</td>
+      <td>数据量大幅跃升，支持多语言和代码</td>
+    </tr>
+    <tr>
+      <td><strong>Qwen-2.5 (72B)</strong></td>
+      <td>18T tokens</td>
+      <td>中英双语为主</td>
+      <td>高比例中文+代码+数学数据</td>
+    </tr>
+    <tr>
+      <td><strong>DeepSeek-V3</strong></td>
+      <td>14.8T tokens</td>
+      <td>多语言</td>
+      <td>671B MoE 参数，极致训练效率</td>
+    </tr>
+    <tr>
+      <td><strong>GPT-4</strong></td>
+      <td>~13T tokens（推测）</td>
+      <td>多语言</td>
+      <td>大量人工标注和质量筛选数据</td>
+    </tr>
+  </table>
+
+  <h3>2.3 数据配比策略</h3>
+  <div class="figure">
+    <svg viewBox="0 0 820 230" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">典型预训练数据配比（以 LLaMA-3 为参考）</text>
+
+      <!-- 网页 -->
+      <rect x="50" y="50" width="300" height="40" rx="4" fill="#667eea" opacity="0.8"/>
+      <text x="200" y="75" text-anchor="middle" fill="white" font-size="11" font-weight="600">网页文本（~50%）</text>
+
+      <!-- 代码 -->
+      <rect x="50" y="95" width="150" height="40" rx="4" fill="#2a9d8f" opacity="0.8"/>
+      <text x="125" y="120" text-anchor="middle" fill="white" font-size="11" font-weight="600">代码（~25%）</text>
+
+      <!-- 书籍/学术 -->
+      <rect x="50" y="140" width="72" height="40" rx="4" fill="#f0a500" opacity="0.8"/>
+      <text x="86" y="165" text-anchor="middle" fill="white" font-size="10" font-weight="600">书籍 10%</text>
+
+      <!-- 学术 -->
+      <rect x="127" y="140" width="48" height="40" rx="4" fill="#e74c3c" opacity="0.8"/>
+      <text x="151" y="165" text-anchor="middle" fill="white" font-size="9" font-weight="600">学术 8%</text>
+
+      <!-- 百科/对话 -->
+      <rect x="180" y="140" width="48" height="40" rx="4" fill="#9b59b6" opacity="0.8"/>
+      <text x="204" y="165" text-anchor="middle" fill="white" font-size="9" font-weight="600">百科 4%</text>
+
+      <!-- 其他 -->
+      <rect x="233" y="140" width="38" height="40" rx="4" fill="#888" opacity="0.6"/>
+      <text x="252" y="165" text-anchor="middle" fill="white" font-size="9" font-weight="600">3%</text>
+
+      <!-- 右侧说明 -->
+      <rect x="430" y="50" width="360" height="140" rx="8" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="450" y="75" font-size="12" font-weight="700" fill="#0f3460">数据配比的关键原则：</text>
+      <text x="450" y="100" font-size="10" fill="#555">1. 网页文本是知识的主要来源，但质量参差不齐</text>
+      <text x="450" y="120" font-size="10" fill="#555">2. 高比例代码数据显著提升推理和逻辑能力</text>
+      <text x="450" y="140" font-size="10" fill="#555">3. 学术/数学数据虽少但对专业能力至关重要</text>
+      <text x="450" y="160" font-size="10" fill="#555">4. 多语言数据比例决定跨语言迁移能力</text>
+      <text x="450" y="180" font-size="10" fill="#555">5. 数据配比通常需要实验搜索最优组合</text>
+
+      <text x="200" y="210" text-anchor="middle" font-size="10" fill="#888">注：以上比例为典型值，不同模型差异较大</text>
+    </svg>
+    <div class="caption">图 4：典型的预训练数据配比。网页约占一半，代码约占四分之一，高代码比例是提升推理能力的关键策略。</div>
+  </div>
+</div>
+
+<!-- ===== 三、各阶段训练数据详解 ===== -->
+<div class="section">
+  <h2>三、各阶段训练数据详解</h2>
+
+  <p>
+    大模型的训练分为<strong>预训练、监督微调（SFT）、对齐训练（RLHF/DPO）</strong>三大阶段，
+    每个阶段对数据的<strong>数量、质量、格式、来源</strong>有截然不同的需求。
+    数据设计直接决定了模型的知识广度、指令遵循能力和安全性。本节将系统介绍各阶段的训练数据。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 340" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ard1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">三大阶段训练数据全景对比</text>
+
+      <!-- 预训练 -->
+      <rect x="20" y="50" width="250" height="260" rx="10" fill="#f0f4ff" stroke="#667eea" stroke-width="2"/>
+      <rect x="20" y="50" width="250" height="36" rx="10" fill="#667eea"/>
+      <rect x="20" y="70" width="250" height="16" fill="#667eea"/>
+      <text x="145" y="74" text-anchor="middle" fill="white" font-size="13" font-weight="700">预训练数据</text>
+      <text x="40" y="108" font-size="11" fill="#333" font-weight="600">规模：1T ~ 20T+ tokens</text>
+      <text x="40" y="130" font-size="10" fill="#555">来源：网页、书籍、代码、学术论文</text>
+      <text x="40" y="150" font-size="10" fill="#555">百科全书、多语言文本</text>
+      <text x="40" y="175" font-size="10" fill="#555">获取：公开爬取 + 授权采购</text>
+      <text x="40" y="195" font-size="10" fill="#555">处理：清洗→去重→过滤→配比</text>
+      <text x="40" y="220" font-size="10" fill="#555">质量：参差不齐，依赖流水线</text>
+      <text x="40" y="248" font-size="10" fill="#e74c3c" font-weight="600">核心目标：</text>
+      <text x="40" y="268" font-size="10" fill="#555">学习语言模式、世界知识、</text>
+      <text x="40" y="288" font-size="10" fill="#555">推理能力、代码能力</text>
+
+      <line x1="272" y1="180" x2="292" y2="180" stroke="#4a7dff" stroke-width="2" marker-end="url(#ard1)"/>
+
+      <!-- SFT -->
+      <rect x="296" y="50" width="230" height="260" rx="10" fill="#f0fff4" stroke="#2a9d8f" stroke-width="2"/>
+      <rect x="296" y="50" width="230" height="36" rx="10" fill="#2a9d8f"/>
+      <rect x="296" y="70" width="230" height="16" fill="#2a9d8f"/>
+      <text x="411" y="74" text-anchor="middle" fill="white" font-size="13" font-weight="700">SFT 微调数据</text>
+      <text x="316" y="108" font-size="11" fill="#333" font-weight="600">规模：10K ~ 10M 条</text>
+      <text x="316" y="130" font-size="10" fill="#555">来源：人工标注 + 强模型合成</text>
+      <text x="316" y="150" font-size="10" fill="#555">开源指令集 + 自有标注团队</text>
+      <text x="316" y="175" font-size="10" fill="#555">格式：(System, User, Assistant)</text>
+      <text x="316" y="195" font-size="10" fill="#555">处理：质量审核→去重→多样性均衡</text>
+      <text x="316" y="220" font-size="10" fill="#555">质量：极高要求，逐条审核</text>
+      <text x="316" y="248" font-size="10" fill="#e74c3c" font-weight="600">核心目标：</text>
+      <text x="316" y="268" font-size="10" fill="#555">学习指令遵循、对话格式、</text>
+      <text x="316" y="288" font-size="10" fill="#555">任务泛化、拒绝有害指令</text>
+
+      <line x1="528" y1="180" x2="548" y2="180" stroke="#4a7dff" stroke-width="2" marker-end="url(#ard1)"/>
+
+      <!-- 对齐 -->
+      <rect x="552" y="50" width="248" height="260" rx="10" fill="#fff8f0" stroke="#f0a500" stroke-width="2"/>
+      <rect x="552" y="50" width="248" height="36" rx="10" fill="#f0a500"/>
+      <rect x="552" y="70" width="248" height="16" fill="#f0a500"/>
+      <text x="676" y="74" text-anchor="middle" fill="white" font-size="13" font-weight="700">对齐训练数据</text>
+      <text x="572" y="108" font-size="11" fill="#333" font-weight="600">规模：100K ~ 2M+ 对</text>
+      <text x="572" y="130" font-size="10" fill="#555">来源：人类偏好标注 + AI 辅助</text>
+      <text x="572" y="150" font-size="10" fill="#555">红队攻击数据 + 安全标注</text>
+      <text x="572" y="175" font-size="10" fill="#555">格式：(prompt, chosen, rejected)</text>
+      <text x="572" y="195" font-size="10" fill="#555">处理：标注一致性校验→质量过滤</text>
+      <text x="572" y="220" font-size="10" fill="#555">质量：标注者间一致性(IAA)要求高</text>
+      <text x="572" y="248" font-size="10" fill="#e74c3c" font-weight="600">核心目标：</text>
+      <text x="572" y="268" font-size="10" fill="#555">安全、有用、诚实对齐、</text>
+      <text x="572" y="288" font-size="10" fill="#555">减少幻觉、遵循人类价值观</text>
+
+      <text x="410" y="335" text-anchor="middle" font-size="10" fill="#888">数据规模从预训练到对齐递减 3~5 个数量级，但单条数据价值和标注成本递增</text>
+    </svg>
+    <div class="caption">图 5：三大训练阶段的数据全景对比。预训练注重规模和多样性，SFT 注重格式和质量，对齐训练注重偏好一致性和安全性。</div>
+  </div>
+
+  <!-- ===== 3.1 预训练数据 ===== -->
+  <h3>3.1 预训练数据详解</h3>
+
+  <h4>3.1.1 数据来源与获取方式</h4>
+  <p>预训练数据是模型知识的根基，来源广泛且规模庞大。以下是主要的数据来源及其获取方式：</p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 430" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">预训练数据来源全景图</text>
+
+      <!-- 网页文本 -->
+      <rect x="20" y="45" width="380" height="110" rx="8" fill="#667eea" opacity="0.12" stroke="#667eea" stroke-width="1.5"/>
+      <text x="40" y="68" font-size="12" font-weight="700" fill="#667eea">网页文本（占比 40%~60%）</text>
+      <text x="40" y="88" font-size="10" fill="#555">· Common Crawl：月度爬取全网网页，PB 级原始 WARC 文件</text>
+      <text x="40" y="106" font-size="10" fill="#555">· 衍生数据集：RefinedWeb、FineWeb、C4、OSCAR、CC-100</text>
+      <text x="40" y="124" font-size="10" fill="#555">· 获取方式：公开下载 + 自建爬虫 + 质量分类器筛选</text>
+      <text x="40" y="142" font-size="10" fill="#888">典型规模：数十万亿 token 原始 → 清洗后 2T~10T token</text>
+
+      <!-- 代码 -->
+      <rect x="420" y="45" width="380" height="110" rx="8" fill="#2a9d8f" opacity="0.12" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="440" y="68" font-size="12" font-weight="700" fill="#2a9d8f">代码数据（占比 15%~30%）</text>
+      <text x="440" y="88" font-size="10" fill="#555">· GitHub 公开仓库：The Stack v2（67 亿文件，4TB+）</text>
+      <text x="440" y="106" font-size="10" fill="#555">· 语言覆盖：Python/JS/Java/C++/Go/Rust 等 300+ 语言</text>
+      <text x="440" y="124" font-size="10" fill="#555">· 获取方式：GitHub Archive + Google BigQuery + 许可证过滤</text>
+      <text x="440" y="142" font-size="10" fill="#888">典型规模：去重后 0.5T~4T token，含 README/文档/issue</text>
+
+      <!-- 书籍 -->
+      <rect x="20" y="170" width="380" height="110" rx="8" fill="#f0a500" opacity="0.12" stroke="#f0a500" stroke-width="1.5"/>
+      <text x="40" y="193" font-size="12" font-weight="700" fill="#e65100">书籍与长文本（占比 5%~15%）</text>
+      <text x="40" y="213" font-size="10" fill="#555">· Project Gutenberg：7 万+公版书籍（英文为主）</text>
+      <text x="40" y="231" font-size="10" fill="#555">· Books3 / Bibliotik：大规模书籍语料（存在版权争议）</text>
+      <text x="40" y="249" font-size="10" fill="#555">· 出版社授权：部分模型采购学术/教材类书籍授权</text>
+      <text x="40" y="267" font-size="10" fill="#888">典型规模：0.1T~0.5T token，长文连贯性优于网页</text>
+
+      <!-- 学术 -->
+      <rect x="420" y="170" width="380" height="110" rx="8" fill="#9b59b6" opacity="0.12" stroke="#9b59b6" stroke-width="1.5"/>
+      <text x="440" y="193" font-size="12" font-weight="700" fill="#7b1fa2">学术与科学文献（占比 3%~10%）</text>
+      <text x="440" y="213" font-size="10" fill="#555">· arXiv：240 万+论文 LaTeX/PDF（数学、CS、物理等）</text>
+      <text x="440" y="231" font-size="10" fill="#555">· PubMed / PMC：3000 万+生物医学摘要与全文</text>
+      <text x="440" y="249" font-size="10" fill="#555">· Semantic Scholar / S2ORC：大规模开放学术语料</text>
+      <text x="440" y="267" font-size="10" fill="#888">典型规模：0.1T~0.5T token，专业知识密度高</text>
+
+      <!-- 百科与结构化 -->
+      <rect x="20" y="295" width="380" height="95" rx="8" fill="#e74c3c" opacity="0.10" stroke="#e74c3c" stroke-width="1.5"/>
+      <text x="40" y="318" font-size="12" font-weight="700" fill="#c62828">百科与结构化知识（占比 2%~5%）</text>
+      <text x="40" y="338" font-size="10" fill="#555">· Wikipedia：全语种约 6000 万篇条目（定期 dump）</text>
+      <text x="40" y="356" font-size="10" fill="#555">· StackExchange：4000 万+技术问答（高质量 Q&amp;A）</text>
+      <text x="40" y="374" font-size="10" fill="#888">典型规模：50B~200B token，事实准确度高</text>
+
+      <!-- 多语言与专项 -->
+      <rect x="420" y="295" width="380" height="95" rx="8" fill="#00796b" opacity="0.10" stroke="#00796b" stroke-width="1.5"/>
+      <text x="440" y="318" font-size="12" font-weight="700" fill="#00796b">多语言与专项数据（占比 5%~20%）</text>
+      <text x="440" y="338" font-size="10" fill="#555">· CulturaX / mC4：100+语言的多语言网页语料</text>
+      <text x="440" y="356" font-size="10" fill="#555">· 数学：OpenWebMath、Proof-Pile、GSM8K 训练集</text>
+      <text x="440" y="374" font-size="10" fill="#555">· 对话/社交：Reddit（Pushshift）、论坛、新闻评论</text>
+
+      <text x="410" y="420" text-anchor="middle" font-size="10" fill="#888">注：各类数据的占比因模型、目标语言和版本不同差异较大，以上为典型范围</text>
+    </svg>
+    <div class="caption">图 6：预训练数据来源全景图。网页文本是最大来源，代码数据对推理能力至关重要，书籍和学术数据提供高质量长文本。</div>
+  </div>
+
+  <h4>3.1.2 数据质量控制与设计细节</h4>
+  <div class="highlight">
+    <strong>预训练数据的核心设计原则：</strong>
+    <ul>
+      <li><strong>多样性优先：</strong>覆盖尽可能多的领域、语言、格式，避免能力偏科</li>
+      <li><strong>去重是关键：</strong>重复数据会导致模型记忆特定文本，降低泛化能力。MinHash 去重通常可去除 30%~50% 数据</li>
+      <li><strong>质量与规模的平衡：</strong>不是越多越好——低质量数据（SEO 垃圾、广告、乱码）会"污染"模型</li>
+      <li><strong>数据配比需要实验搜索：</strong>代码比例增加可提升推理能力，但过高会降低自然语言流畅度</li>
+      <li><strong>安全过滤：</strong>移除有毒内容（仇恨言论、个人信息、CSAM），部分模型使用分类器自动过滤</li>
+      <li><strong>数据新鲜度：</strong>Web 数据有时效性，通常采用多个时间段的 Common Crawl 快照混合</li>
+    </ul>
+  </div>
+
+  <p>以下是影响预训练数据质量的关键清洗规则（以 RefinedWeb / FineWeb 的最佳实践为代表）：</p>
+  <table>
+    <tr>
+      <th>清洗规则</th>
+      <th>目的</th>
+      <th>典型阈值</th>
+    </tr>
+    <tr>
+      <td><strong>文本长度过滤</strong></td>
+      <td>去除无意义短文</td>
+      <td>最少 50~200 字符</td>
+    </tr>
+    <tr>
+      <td><strong>语言识别</strong></td>
+      <td>保留目标语言</td>
+      <td>fastText lid 置信度 > 0.65</td>
+    </tr>
+    <tr>
+      <td><strong>重复行/段落比例</strong></td>
+      <td>去除模板化页面</td>
+      <td>重复比例 > 30% 的文档丢弃</td>
+    </tr>
+    <tr>
+      <td><strong>特殊字符比例</strong></td>
+      <td>去除乱码/非文本</td>
+      <td>非字母数字 > 50% 丢弃</td>
+    </tr>
+    <tr>
+      <td><strong>PPL 过滤</strong></td>
+      <td>去除不通顺文本</td>
+      <td>用 KenLM 打分，PPL 极高的丢弃</td>
+    </tr>
+    <tr>
+      <td><strong>URL/域名黑名单</strong></td>
+      <td>去除低质量站点</td>
+      <td>广告站、SEO 农场、成人站点</td>
+    </tr>
+    <tr>
+      <td><strong>PII 脱敏</strong></td>
+      <td>保护个人隐私</td>
+      <td>正则匹配邮箱、电话、身份证号</td>
+    </tr>
+    <tr>
+      <td><strong>精确去重</strong></td>
+      <td>去除完全重复文档</td>
+      <td>URL 去重 + 内容 SHA256 去重</td>
+    </tr>
+    <tr>
+      <td><strong>模糊去重</strong></td>
+      <td>去除近似重复文档</td>
+      <td>MinHash LSH（Jaccard > 0.8 判定重复）</td>
+    </tr>
+  </table>
+
+  <h4>3.1.3 主流模型预训练数据详解</h4>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 380" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">主流模型预训练数据配比对比</text>
+
+      <!-- Y axis labels -->
+      <text x="90" y="70" text-anchor="end" font-size="10" fill="#333" font-weight="600">LLaMA-1</text>
+      <text x="90" y="115" text-anchor="end" font-size="10" fill="#333" font-weight="600">LLaMA-2</text>
+      <text x="90" y="160" text-anchor="end" font-size="10" fill="#333" font-weight="600">LLaMA-3</text>
+      <text x="90" y="205" text-anchor="end" font-size="10" fill="#333" font-weight="600">Qwen-2.5</text>
+      <text x="90" y="250" text-anchor="end" font-size="10" fill="#333" font-weight="600">DeepSeek-V3</text>
+      <text x="90" y="295" text-anchor="end" font-size="10" fill="#333" font-weight="600">Mistral</text>
+
+      <!-- 数据量标注 -->
+      <text x="92" y="82" font-size="8" fill="#888">1.4T tok</text>
+      <text x="92" y="127" font-size="8" fill="#888">2.0T tok</text>
+      <text x="92" y="172" font-size="8" fill="#888">15T tok</text>
+      <text x="92" y="217" font-size="8" fill="#888">18T tok</text>
+      <text x="92" y="262" font-size="8" fill="#888">14.8T tok</text>
+      <text x="92" y="307" font-size="8" fill="#888">未公开</text>
+
+      <!-- LLaMA-1 bars: 网页67% 代码4.5% 书籍4.5% 学术4.5% 百科4.5% 其他15% -->
+      <rect x="150" y="55" width="302" height="22" rx="3" fill="#667eea" opacity="0.8"/>
+      <rect x="454" y="55" width="27" height="22" rx="3" fill="#2a9d8f" opacity="0.8"/>
+      <rect x="483" y="55" width="49" height="22" rx="3" fill="#f0a500" opacity="0.8"/>
+      <rect x="534" y="55" width="45" height="22" rx="3" fill="#9b59b6" opacity="0.8"/>
+      <rect x="581" y="55" width="29" height="22" rx="3" fill="#e74c3c" opacity="0.8"/>
+      <text x="290" y="70" text-anchor="middle" fill="white" font-size="8" font-weight="600">网页 67% (CCNet+C4)</text>
+      <text x="500" y="70" fill="white" font-size="7">代码5%</text>
+      <text x="554" y="70" fill="white" font-size="7">书籍</text>
+      <text x="592" y="70" fill="white" font-size="7">Wiki</text>
+
+      <!-- LLaMA-2 bars -->
+      <rect x="150" y="100" width="330" height="22" rx="3" fill="#667eea" opacity="0.8"/>
+      <rect x="482" y="100" width="50" height="22" rx="3" fill="#2a9d8f" opacity="0.8"/>
+      <rect x="534" y="100" width="40" height="22" rx="3" fill="#f0a500" opacity="0.8"/>
+      <rect x="576" y="100" width="34" height="22" rx="3" fill="#e74c3c" opacity="0.8"/>
+      <text x="300" y="115" text-anchor="middle" fill="white" font-size="8" font-weight="600">网页 ~70% (更严格质量过滤)</text>
+      <text x="508" y="115" fill="white" font-size="7">代码</text>
+      <text x="548" y="115" fill="white" font-size="7">书籍</text>
+
+      <!-- LLaMA-3 bars: 网页50% 代码25% 多语言10% 数学/推理5% 书籍/学术10% -->
+      <rect x="150" y="145" width="225" height="22" rx="3" fill="#667eea" opacity="0.8"/>
+      <rect x="377" y="145" width="112" height="22" rx="3" fill="#2a9d8f" opacity="0.8"/>
+      <rect x="491" y="145" width="45" height="22" rx="3" fill="#00796b" opacity="0.8"/>
+      <rect x="538" y="145" width="22" height="22" rx="3" fill="#f0a500" opacity="0.8"/>
+      <rect x="562" y="145" width="48" height="22" rx="3" fill="#9b59b6" opacity="0.8"/>
+      <text x="260" y="160" text-anchor="middle" fill="white" font-size="8" font-weight="600">网页 50%</text>
+      <text x="432" y="160" text-anchor="middle" fill="white" font-size="8" font-weight="600">代码 25%</text>
+      <text x="510" y="160" fill="white" font-size="7">多语言</text>
+      <text x="585" y="160" fill="white" font-size="7">学术</text>
+
+      <!-- Qwen-2.5 bars: 网页40% 代码25% 中文15% 数学/推理8% 学术7% 其他5% -->
+      <rect x="150" y="190" width="180" height="22" rx="3" fill="#667eea" opacity="0.8"/>
+      <rect x="332" y="190" width="112" height="22" rx="3" fill="#2a9d8f" opacity="0.8"/>
+      <rect x="446" y="190" width="68" height="22" rx="3" fill="#e74c3c" opacity="0.8"/>
+      <rect x="516" y="190" width="36" height="22" rx="3" fill="#f0a500" opacity="0.8"/>
+      <rect x="554" y="190" width="32" height="22" rx="3" fill="#9b59b6" opacity="0.8"/>
+      <rect x="588" y="190" width="22" height="22" rx="3" fill="#888" opacity="0.5"/>
+      <text x="240" y="205" text-anchor="middle" fill="white" font-size="8" font-weight="600">网页 40%</text>
+      <text x="388" y="205" text-anchor="middle" fill="white" font-size="8" font-weight="600">代码 25%</text>
+      <text x="478" y="205" text-anchor="middle" fill="white" font-size="8">中文 15%</text>
+      <text x="535" y="205" fill="white" font-size="7">数学</text>
+      <text x="569" y="205" fill="white" font-size="7">学术</text>
+
+      <!-- DeepSeek-V3 bars: 网页35% 代码30% 数学10% 多语言10% 学术8% 其他7% -->
+      <rect x="150" y="235" width="157" height="22" rx="3" fill="#667eea" opacity="0.8"/>
+      <rect x="309" y="235" width="135" height="22" rx="3" fill="#2a9d8f" opacity="0.8"/>
+      <rect x="446" y="235" width="45" height="22" rx="3" fill="#f0a500" opacity="0.8"/>
+      <rect x="493" y="235" width="45" height="22" rx="3" fill="#00796b" opacity="0.8"/>
+      <rect x="540" y="235" width="36" height="22" rx="3" fill="#9b59b6" opacity="0.8"/>
+      <rect x="578" y="235" width="32" height="22" rx="3" fill="#888" opacity="0.5"/>
+      <text x="225" y="250" text-anchor="middle" fill="white" font-size="8" font-weight="600">网页 35%</text>
+      <text x="375" y="250" text-anchor="middle" fill="white" font-size="8" font-weight="600">代码 30%</text>
+      <text x="467" y="250" fill="white" font-size="7">数学</text>
+      <text x="514" y="250" fill="white" font-size="7">多语言</text>
+      <text x="556" y="250" fill="white" font-size="7">学术</text>
+
+      <!-- Mistral bars -->
+      <rect x="150" y="280" width="220" height="22" rx="3" fill="#667eea" opacity="0.8"/>
+      <rect x="372" y="280" width="100" height="22" rx="3" fill="#2a9d8f" opacity="0.8"/>
+      <rect x="474" y="280" width="68" height="22" rx="3" fill="#00796b" opacity="0.8"/>
+      <rect x="544" y="280" width="36" height="22" rx="3" fill="#f0a500" opacity="0.8"/>
+      <rect x="582" y="280" width="28" height="22" rx="3" fill="#9b59b6" opacity="0.8"/>
+      <text x="258" y="295" text-anchor="middle" fill="white" font-size="8" font-weight="600">网页 ~48%</text>
+      <text x="420" y="295" text-anchor="middle" fill="white" font-size="8" font-weight="600">代码 ~22%</text>
+      <text x="506" y="295" fill="white" font-size="7">多语言</text>
+
+      <!-- 图例 -->
+      <rect x="150" y="320" width="14" height="12" rx="2" fill="#667eea" opacity="0.8"/>
+      <text x="168" y="331" font-size="9" fill="#555">网页</text>
+      <rect x="210" y="320" width="14" height="12" rx="2" fill="#2a9d8f" opacity="0.8"/>
+      <text x="228" y="331" font-size="9" fill="#555">代码</text>
+      <rect x="270" y="320" width="14" height="12" rx="2" fill="#f0a500" opacity="0.8"/>
+      <text x="288" y="331" font-size="9" fill="#555">书籍/数学</text>
+      <rect x="360" y="320" width="14" height="12" rx="2" fill="#9b59b6" opacity="0.8"/>
+      <text x="378" y="331" font-size="9" fill="#555">学术</text>
+      <rect x="420" y="320" width="14" height="12" rx="2" fill="#e74c3c" opacity="0.8"/>
+      <text x="438" y="331" font-size="9" fill="#555">中文/百科</text>
+      <rect x="510" y="320" width="14" height="12" rx="2" fill="#00796b" opacity="0.8"/>
+      <text x="528" y="331" font-size="9" fill="#555">多语言</text>
+
+      <text x="410" y="365" text-anchor="middle" font-size="10" fill="#888">注：配比为根据公开技术报告的估算值，部分模型未公开完整配比细节</text>
+    </svg>
+    <div class="caption">图 7：主流模型预训练数据配比对比。趋势：代码和数学数据的比例持续提升，多语言覆盖也在扩大。</div>
+  </div>
+
+  <table>
+    <tr>
+      <th>模型</th>
+      <th>预训练数据量</th>
+      <th>数据来源</th>
+      <th>数据处理特点</th>
+      <th>关键数据设计</th>
+    </tr>
+    <tr>
+      <td><strong>LLaMA-1</strong></td>
+      <td>1.4T tokens</td>
+      <td>CCNet、C4、GitHub、Wikipedia、Gutenberg、ArXiv、StackExchange</td>
+      <td>仅使用公开数据，严格去重（CCNet 流水线），每个数据源独立采样比例</td>
+      <td>英文为主；Wikipedia 和 Gutenberg 上采样 ~2 epochs；代码仅占 ~4.5%，限制了代码能力</td>
+    </tr>
+    <tr>
+      <td><strong>LLaMA-2</strong></td>
+      <td>2.0T tokens</td>
+      <td>与 LLaMA-1 类似但增加 40% 数据量</td>
+      <td>更激进的质量过滤：使用基于 LLaMA-1 的分类器过滤低质量网页</td>
+      <td>数据量提升但架构不变，验证了"更多数据"可以持续提升性能；上采样事实性来源</td>
+    </tr>
+    <tr>
+      <td><strong>LLaMA-3</strong></td>
+      <td>15T tokens</td>
+      <td>网页（自建爬虫+CC）、GitHub 代码、学术论文、书籍、30+语言多语言数据</td>
+      <td>自建数据处理流水线：URL 去重→文档去重→行级去重→启发式过滤→模型质量打分→安全过滤</td>
+      <td>代码比例大幅提升至 ~25%；引入 Annealing 阶段上采样高质量数据；多语言从 0→30+语言；128K Tiktoken 词表</td>
+    </tr>
+    <tr>
+      <td><strong>Qwen-2.5</strong></td>
+      <td>18T tokens</td>
+      <td>中英双语网页、代码、数学语料、学术、百科、合成数据</td>
+      <td>自研多语言质量分类器；中英平行语料增强；数学和代码数据自建采集与合成</td>
+      <td>中文数据比例 ~15%（远高于其他模型）；大量数学/代码合成数据提升推理；多阶段训练数据配比动态调整</td>
+    </tr>
+    <tr>
+      <td><strong>DeepSeek-V3</strong></td>
+      <td>14.8T tokens</td>
+      <td>网页、代码（30+语言）、数学语料、学术、多语言</td>
+      <td>高比例代码 ~30%；数学和推理数据特别加强；自研去重和质量过滤流水线</td>
+      <td>代码和数学配比高于同行；使用 Fill-in-Middle (FIM) 策略增强代码补全能力；2 阶段训练：通用→长上下文</td>
+    </tr>
+    <tr>
+      <td><strong>Mistral / Mixtral</strong></td>
+      <td>未公开（推测 &gt;8T）</td>
+      <td>多语言网页、代码、学术（具体未披露）</td>
+      <td>数据处理细节未公开；但从模型能力推断数据质量极高</td>
+      <td>多语言能力突出（尤其欧洲语言）；代码和推理能力超过同参数量模型，暗示高质量配比</td>
+    </tr>
+    <tr>
+      <td><strong>GPT-4</strong></td>
+      <td>~13T tokens（推测）</td>
+      <td>网页、书籍、代码、专有数据（细节未公开）</td>
+      <td>大量人工标注和质量筛选；可能使用自有数据许可协议获取高质量数据</td>
+      <td>推测使用了大量合成数据和专有数据源；数据质量控制最为严格</td>
+    </tr>
+  </table>
+
+  <div class="warning">
+    <strong>数据合成（Synthetic Data）的兴起：</strong>
+    LLaMA-3、Qwen-2.5、DeepSeek-V3 等新一代模型开始大量使用<strong>由强模型生成的合成数据</strong>来补充特定领域的训练数据。
+    例如 Qwen-2.5 使用 Qwen-2 生成大量数学推理步骤作为训练数据。这种"自我进化"策略在数学和代码领域效果显著，
+    但需注意合成数据的质量控制，防止"模型塌缩"（model collapse）—— 即用低质量合成数据训练导致能力退化。
+  </div>
+
+  <!-- ===== 3.2 SFT 微调数据 ===== -->
+  <h3>3.2 SFT 微调数据详解</h3>
+
+  <h4>3.2.1 SFT 数据的格式与构建</h4>
+  <p>
+    SFT 数据是结构化的<strong>（指令, 回答）</strong>对，通常以多轮对话格式组织。
+    数据质量直接决定模型的指令遵循能力和回答质量。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 370" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ard2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2a9d8f"/></marker>
+        <marker id="ard2b" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">SFT 数据构建流程与来源</text>
+
+      <!-- 来源层 -->
+      <text x="40" y="55" font-size="12" font-weight="700" fill="#0f3460">数据来源</text>
+
+      <rect x="40" y="65" width="150" height="55" rx="6" fill="#667eea" opacity="0.85"/>
+      <text x="115" y="86" text-anchor="middle" fill="white" font-size="10" font-weight="600">人工标注</text>
+      <text x="115" y="104" text-anchor="middle" fill="white" font-size="8">专业标注团队编写</text>
+
+      <rect x="210" y="65" width="150" height="55" rx="6" fill="#2a9d8f" opacity="0.85"/>
+      <text x="285" y="86" text-anchor="middle" fill="white" font-size="10" font-weight="600">强模型蒸馏</text>
+      <text x="285" y="104" text-anchor="middle" fill="white" font-size="8">GPT-4 / Claude 生成</text>
+
+      <rect x="380" y="65" width="150" height="55" rx="6" fill="#f0a500" opacity="0.85"/>
+      <text x="455" y="86" text-anchor="middle" fill="white" font-size="10" font-weight="600">开源数据集</text>
+      <text x="455" y="104" text-anchor="middle" fill="white" font-size="8">FLAN / Alpaca / ShareGPT</text>
+
+      <rect x="550" y="65" width="150" height="55" rx="6" fill="#9b59b6" opacity="0.85"/>
+      <text x="625" y="86" text-anchor="middle" fill="white" font-size="10" font-weight="600">自我迭代进化</text>
+      <text x="625" y="104" text-anchor="middle" fill="white" font-size="8">Self-Instruct / Evol-Instruct</text>
+
+      <rect x="720" y="65" width="80" height="55" rx="6" fill="#e74c3c" opacity="0.85"/>
+      <text x="760" y="86" text-anchor="middle" fill="white" font-size="9" font-weight="600">用户反馈</text>
+      <text x="760" y="104" text-anchor="middle" fill="white" font-size="8">真实交互日志</text>
+
+      <!-- 箭头汇聚 -->
+      <line x1="115" y1="122" x2="410" y2="152" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ard2b)"/>
+      <line x1="285" y1="122" x2="410" y2="152" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ard2b)"/>
+      <line x1="455" y1="122" x2="410" y2="152" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ard2b)"/>
+      <line x1="625" y1="122" x2="410" y2="152" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ard2b)"/>
+      <line x1="760" y1="122" x2="410" y2="152" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ard2b)"/>
+
+      <!-- 处理层 -->
+      <rect x="250" y="155" width="320" height="40" rx="8" fill="#4a7dff" opacity="0.9"/>
+      <text x="410" y="180" text-anchor="middle" fill="white" font-size="12" font-weight="700">质量审核与过滤流水线</text>
+      <line x1="410" y1="197" x2="410" y2="217" stroke="#2a9d8f" stroke-width="2" marker-end="url(#ard2)"/>
+
+      <!-- 过滤步骤 -->
+      <rect x="60" y="220" width="145" height="45" rx="6" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.2"/>
+      <text x="132" y="238" text-anchor="middle" font-size="10" fill="#0f3460" font-weight="600">格式校验</text>
+      <text x="132" y="254" text-anchor="middle" font-size="8" fill="#888">JSON 解析 + 角色完整性</text>
+
+      <rect x="225" y="220" width="145" height="45" rx="6" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.2"/>
+      <text x="297" y="238" text-anchor="middle" font-size="10" fill="#0f3460" font-weight="600">质量打分</text>
+      <text x="297" y="254" text-anchor="middle" font-size="8" fill="#888">准确性 · 详细度 · 安全性</text>
+
+      <rect x="390" y="220" width="145" height="45" rx="6" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.2"/>
+      <text x="462" y="238" text-anchor="middle" font-size="10" fill="#0f3460" font-weight="600">去重 + 多样性</text>
+      <text x="462" y="254" text-anchor="middle" font-size="8" fill="#888">语义去重 · 任务均衡采样</text>
+
+      <rect x="555" y="220" width="145" height="45" rx="6" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.2"/>
+      <text x="627" y="238" text-anchor="middle" font-size="10" fill="#0f3460" font-weight="600">安全过滤</text>
+      <text x="627" y="254" text-anchor="middle" font-size="8" fill="#888">有害/偏见/隐私检测</text>
+
+      <line x1="410" y1="267" x2="410" y2="287" stroke="#2a9d8f" stroke-width="2" marker-end="url(#ard2)"/>
+
+      <!-- 分类 -->
+      <rect x="100" y="290" width="620" height="65" rx="8" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="120" y="312" font-size="11" font-weight="700" fill="#0f3460">SFT 数据的核心能力覆盖：</text>
+      <text x="120" y="332" font-size="10" fill="#555">通用对话 · 知识问答 · 代码生成 · 数学推理 · 创意写作 · 多语言翻译 · 格式遵循 · 长文本理解 · 多轮对话 · 拒绝有害指令 · 工具使用/函数调用</text>
+      <text x="120" y="349" font-size="9" fill="#888">关键原则：<tspan font-weight="600" fill="#e74c3c">质量 >> 数量</tspan>。1 万条高质量 SFT 数据的效果可能优于 100 万条低质量数据（LIMA 论文验证）</text>
+    </svg>
+    <div class="caption">图 8：SFT 数据构建流程。数据来源包括人工标注、强模型蒸馏、开源数据集和自我迭代，经过严格质量审核后覆盖多种任务能力。</div>
+  </div>
+
+  <h4>3.2.2 SFT 数据的关键设计原则</h4>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>多样性 > 数量</h4>
+      <p>LIMA（2023）证明仅 1000 条精选数据即可获得强 SFT 效果。覆盖尽可能多的任务类型和难度等级，比堆积数量更重要。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>回答质量标准化</h4>
+      <p>建立统一的回答质量标准：准确性、详细度、格式规范、安全性。标注员间一致性（IAA）通常要求 Cohen's κ > 0.7。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>难度梯度设计</h4>
+      <p>数据应涵盖从简单（"什么是 Python？"）到复杂（"设计一个分布式缓存系统"）的任务梯度，避免模型只会回答简单问题。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>拒绝样本 (Refusal)</h4>
+      <p>~5%~10% 的数据应为"安全拒绝"样本：模型对有害请求礼貌拒绝。这是模型安全的第一道防线。</p>
+    </div>
+  </div>
+
+  <h4>3.2.3 主流模型 SFT 数据详解</h4>
+  <table>
+    <tr>
+      <th>模型</th>
+      <th>SFT 数据量</th>
+      <th>数据来源</th>
+      <th>数据特点</th>
+    </tr>
+    <tr>
+      <td><strong>LLaMA-2-Chat</strong></td>
+      <td>~27,540 条</td>
+      <td>Meta 内部标注团队（自有标注员）</td>
+      <td>强调质量极致——"少量但精心编写的数据优于大量嘈杂数据"。标注员经过严格筛选和培训；包含安全拒绝样本</td>
+    </tr>
+    <tr>
+      <td><strong>LLaMA-3-Instruct</strong></td>
+      <td>~1000 万条</td>
+      <td>人工标注 + 合成数据 + 拒绝采样（Rejection Sampling）</td>
+      <td>多轮合成对话；引入<strong>拒绝采样</strong>：让模型生成多个回答，用 RM 选最佳作为训练数据；覆盖代码、数学、多语言等</td>
+    </tr>
+    <tr>
+      <td><strong>Qwen-2.5-Instruct</strong></td>
+      <td>数百万条</td>
+      <td>自有标注 + 合成数据 + 开源数据筛选</td>
+      <td>中英双语高质量指令数据；大量数学/代码 Chain-of-Thought（CoT）数据；工具使用/函数调用专项数据</td>
+    </tr>
+    <tr>
+      <td><strong>DeepSeek-V3-Chat</strong></td>
+      <td>150 万条</td>
+      <td>自有标注 + DeepSeek-R1 蒸馏</td>
+      <td>用 DeepSeek-R1 生成长链推理数据蒸馏回 V3；数学和代码的 CoT 数据占比高；两阶段 SFT</td>
+    </tr>
+    <tr>
+      <td><strong>Mistral-Instruct</strong></td>
+      <td>未公开</td>
+      <td>未公开（推测：人工标注 + 合成数据）</td>
+      <td>SFT 细节未公开；但从效果推断数据覆盖多语言和推理任务</td>
+    </tr>
+    <tr>
+      <td><strong>GPT-4-Turbo</strong></td>
+      <td>未公开（推测数百万条）</td>
+      <td>OpenAI 标注团队 + Scale AI 外包标注 + 用户反馈数据</td>
+      <td>业内最大规模的专业标注团队；持续从用户交互中收集反馈迭代；细粒度质量评分体系</td>
+    </tr>
+    <tr>
+      <td><strong>Claude 系列</strong></td>
+      <td>未公开</td>
+      <td>Anthropic 内部标注 + Constitutional AI 合成</td>
+      <td>独特的 Constitutional AI 方法：用一组原则指导 AI 自我修正，减少对人工标注的依赖</td>
+    </tr>
+  </table>
+
+  <div class="success">
+    <strong>SFT 数据趋势——从人工标注到合成与蒸馏：</strong>
+    早期 SFT 完全依赖人工标注（成本高、规模有限）。
+    现在主流做法是：<strong>用人工标注的种子数据 + 强模型蒸馏 + 拒绝采样</strong>的组合策略。
+    例如 LLaMA-3 的 SFT 数据中，合成和拒绝采样数据占比超过 80%。
+    DeepSeek-V3 则开创了"用推理模型 R1 蒸馏通用模型"的范式。
+  </div>
+
+  <!-- ===== 3.3 对齐训练数据 ===== -->
+  <h3>3.3 对齐训练（RLHF/DPO）数据详解</h3>
+
+  <h4>3.3.1 偏好数据的格式与标注</h4>
+  <p>
+    对齐训练的核心数据格式为<strong>偏好对（Preference Pair）</strong>：
+    给定同一提示（prompt），标注者在两个（或多个）回答中选择更好的一个。
+    标注的维度通常包括：有用性（helpfulness）、诚实性（honesty）、安全性（harmlessness）。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 390" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ard3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+        <marker id="ard3g" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2a9d8f"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">偏好数据标注与对齐训练数据流</text>
+
+      <!-- Step 1: 收集 prompt -->
+      <rect x="20" y="50" width="180" height="80" rx="8" fill="#667eea" opacity="0.85"/>
+      <text x="110" y="74" text-anchor="middle" fill="white" font-size="11" font-weight="700">Step 1: 收集 Prompt</text>
+      <text x="110" y="94" text-anchor="middle" fill="white" font-size="9">来源：标注团队编写</text>
+      <text x="110" y="110" text-anchor="middle" fill="white" font-size="9">用户真实查询 + 红队攻击</text>
+      <line x1="202" y1="90" x2="222" y2="90" stroke="#4a7dff" stroke-width="2" marker-end="url(#ard3)"/>
+
+      <!-- Step 2: 生成回答 -->
+      <rect x="226" y="50" width="180" height="80" rx="8" fill="#4a7dff" opacity="0.85"/>
+      <text x="316" y="74" text-anchor="middle" fill="white" font-size="11" font-weight="700">Step 2: 生成多个回答</text>
+      <text x="316" y="94" text-anchor="middle" fill="white" font-size="9">SFT 模型采样 2~8 个回答</text>
+      <text x="316" y="110" text-anchor="middle" fill="white" font-size="9">不同温度 / 不同模型版本</text>
+      <line x1="408" y1="90" x2="428" y2="90" stroke="#4a7dff" stroke-width="2" marker-end="url(#ard3)"/>
+
+      <!-- Step 3: 人工偏好标注 -->
+      <rect x="432" y="50" width="180" height="80" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="522" y="74" text-anchor="middle" fill="white" font-size="11" font-weight="700">Step 3: 偏好标注</text>
+      <text x="522" y="94" text-anchor="middle" fill="white" font-size="9">标注员选择：A 更好 / B 更好</text>
+      <text x="522" y="110" text-anchor="middle" fill="white" font-size="9">多维度评分（有用/安全/诚实）</text>
+      <line x1="614" y1="90" x2="634" y2="90" stroke="#4a7dff" stroke-width="2" marker-end="url(#ard3)"/>
+
+      <!-- Step 4: 质量校验 -->
+      <rect x="638" y="50" width="160" height="80" rx="8" fill="#f0a500" opacity="0.85"/>
+      <text x="718" y="74" text-anchor="middle" fill="white" font-size="11" font-weight="700">Step 4: 一致性校验</text>
+      <text x="718" y="94" text-anchor="middle" fill="white" font-size="9">多标注员交叉验证</text>
+      <text x="718" y="110" text-anchor="middle" fill="white" font-size="9">丢弃分歧大的样本</text>
+
+      <!-- 数据格式展示 -->
+      <rect x="40" y="155" width="350" height="180" rx="8" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="215" y="178" text-anchor="middle" font-size="12" font-weight="700" fill="#0f3460">偏好数据格式示例</text>
+      <text x="60" y="200" font-size="10" fill="#888" font-weight="600">Prompt:</text>
+      <text x="60" y="218" font-size="10" fill="#555">"解释什么是黑洞"</text>
+      <rect x="60" y="228" width="310" height="1" fill="#e8eaf0"/>
+      <text x="60" y="246" font-size="10" fill="#2a9d8f" font-weight="600">Chosen (更好):</text>
+      <text x="60" y="264" font-size="9" fill="#555">"黑洞是时空中引力极强的区域，甚至光也无法</text>
+      <text x="60" y="280" font-size="9" fill="#555"> 逃逸。它由大质量恒星坍缩形成..."（详细准确）</text>
+      <rect x="60" y="290" width="310" height="1" fill="#e8eaf0"/>
+      <text x="60" y="308" font-size="10" fill="#e74c3c" font-weight="600">Rejected (较差):</text>
+      <text x="60" y="325" font-size="9" fill="#555">"黑洞就是宇宙中的一个洞"（过于简略不准确）</text>
+
+      <!-- 标注维度 -->
+      <rect x="430" y="155" width="370" height="180" rx="8" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="450" y="178" font-size="12" font-weight="700" fill="#0f3460">偏好标注的评估维度</text>
+
+      <rect x="450" y="195" width="100" height="30" rx="4" fill="#2a9d8f" opacity="0.15" stroke="#2a9d8f"/>
+      <text x="500" y="215" text-anchor="middle" font-size="10" fill="#2a9d8f" font-weight="600">有用性</text>
+      <rect x="565" y="195" width="100" height="30" rx="4" fill="#4a7dff" opacity="0.15" stroke="#4a7dff"/>
+      <text x="615" y="215" text-anchor="middle" font-size="10" fill="#4a7dff" font-weight="600">诚实性</text>
+      <rect x="680" y="195" width="100" height="30" rx="4" fill="#e74c3c" opacity="0.15" stroke="#e74c3c"/>
+      <text x="730" y="215" text-anchor="middle" font-size="10" fill="#e74c3c" font-weight="600">安全性</text>
+
+      <text x="450" y="250" font-size="10" fill="#555">· 回答是否完整、准确、有深度</text>
+      <text x="450" y="268" font-size="10" fill="#555">· 是否承认不确定性（不编造）</text>
+      <text x="450" y="286" font-size="10" fill="#555">· 是否拒绝危险请求（不妥协）</text>
+      <text x="450" y="304" font-size="10" fill="#555">· 格式是否清晰、语言是否流畅</text>
+      <text x="450" y="322" font-size="10" fill="#555">· 是否存在偏见或刻板印象</text>
+
+      <!-- 底部说明 -->
+      <rect x="80" y="350" width="660" height="30" rx="6" fill="#fff8f0" stroke="#f0a500" stroke-width="1"/>
+      <text x="410" y="370" text-anchor="middle" font-size="10" fill="#e65100" font-weight="600">标注一致性要求：同一样本至少 2~3 名标注员独立标注，Inter-Annotator Agreement (IAA) &gt; 70% 才保留</text>
+    </svg>
+    <div class="caption">图 9：偏好数据标注与对齐训练数据流。从 prompt 收集、多回答生成、人工偏好标注到质量校验，形成 (prompt, chosen, rejected) 三元组。</div>
+  </div>
+
+  <h4>3.3.2 对齐数据的类型与构建方式</h4>
+  <table>
+    <tr>
+      <th>数据类型</th>
+      <th>格式</th>
+      <th>用途</th>
+      <th>规模</th>
+      <th>获取方式</th>
+    </tr>
+    <tr>
+      <td><strong>偏好对</strong></td>
+      <td>(prompt, chosen, rejected)</td>
+      <td>训练 RM / DPO</td>
+      <td>100K~2M 对</td>
+      <td>标注员从模型输出中选择偏好</td>
+    </tr>
+    <tr>
+      <td><strong>多维评分</strong></td>
+      <td>(prompt, response, score<sub>1..n</sub>)</td>
+      <td>训练多维度 RM</td>
+      <td>50K~500K 条</td>
+      <td>标注员对每个维度独立打分</td>
+    </tr>
+    <tr>
+      <td><strong>红队攻击数据</strong></td>
+      <td>(attack_prompt, safe_response)</td>
+      <td>安全对齐</td>
+      <td>10K~100K 条</td>
+      <td>红队人员构造攻击 + 标注安全回复</td>
+    </tr>
+    <tr>
+      <td><strong>规则验证数据</strong></td>
+      <td>(problem, response, reward)</td>
+      <td>RLVR / GRPO</td>
+      <td>100K~1M 条</td>
+      <td>用规则/代码自动验证（如数学答案是否正确）</td>
+    </tr>
+    <tr>
+      <td><strong>AI 反馈数据</strong></td>
+      <td>(prompt, response, AI_score)</td>
+      <td>RLAIF（AI 替代人类反馈）</td>
+      <td>100K~5M 条</td>
+      <td>强模型作为评判者对回答打分</td>
+    </tr>
+  </table>
+
+  <h4>3.3.3 主流模型对齐数据详解</h4>
+  <table>
+    <tr>
+      <th>模型</th>
+      <th>对齐方法</th>
+      <th>对齐数据量</th>
+      <th>数据来源</th>
+      <th>关键数据设计</th>
+    </tr>
+    <tr>
+      <td><strong>LLaMA-2-Chat</strong></td>
+      <td>RLHF (PPO)</td>
+      <td>RM 数据 ~100 万对；迭代 5 轮收集</td>
+      <td>Meta 内部标注员；分为 Helpfulness 和 Safety 两类标注</td>
+      <td>首次公开披露迭代式 RLHF 数据收集流程；Safety 数据中 18% 为对抗性样本（adversarial）；分别训练 Helpfulness RM 和 Safety RM</td>
+    </tr>
+    <tr>
+      <td><strong>LLaMA-3-Instruct</strong></td>
+      <td>DPO</td>
+      <td>数百万偏好对</td>
+      <td>人工标注 + 拒绝采样生成偏好对</td>
+      <td>从 RLHF 转向 DPO，降低训练复杂度；使用拒绝采样（Rejection Sampling）自动构建大量偏好对；多轮 DPO 迭代</td>
+    </tr>
+    <tr>
+      <td><strong>Qwen-2.5</strong></td>
+      <td>DPO + Online DPO</td>
+      <td>未公开（推测百万级）</td>
+      <td>自有标注 + 模型自动生成偏好对</td>
+      <td>Online DPO：在训练过程中持续生成新的偏好对（而非一次性标注）；中英双语偏好标注</td>
+    </tr>
+    <tr>
+      <td><strong>DeepSeek-V3</strong></td>
+      <td>GRPO</td>
+      <td>规则验证数据 ~80 万条</td>
+      <td>数学/代码题目的规则验证器 + 模型自采样</td>
+      <td>无需人工偏好标注——用规则验证器（代码运行、数学答案核验）替代人类判断；Group Relative 排序替代绝对打分</td>
+    </tr>
+    <tr>
+      <td><strong>DeepSeek-R1</strong></td>
+      <td>GRPO + RLVR</td>
+      <td>大量数学/代码验证数据</td>
+      <td>完全基于规则验证的强化学习</td>
+      <td>开创"纯 RL 训练推理能力"范式——无需 SFT，直接从 base model 通过 RL 训练获得 CoT 推理能力</td>
+    </tr>
+    <tr>
+      <td><strong>GPT-4</strong></td>
+      <td>RLHF (PPO)</td>
+      <td>未公开（推测百万级+）</td>
+      <td>Scale AI 等外部标注 + OpenAI 内部标注</td>
+      <td>业界最成熟的 RLHF 流水线；持续从真实用户反馈中收集数据迭代；多维度偏好标注体系</td>
+    </tr>
+    <tr>
+      <td><strong>Claude 系列</strong></td>
+      <td>RLHF + CAI</td>
+      <td>未公开</td>
+      <td>Constitutional AI：一组原则指导 AI 自我评估和修正</td>
+      <td>Constitutional AI 大幅减少人工标注需求——让 AI 自己根据原则判断回答质量；RLAIF（AI 反馈替代人类反馈）</td>
+    </tr>
+  </table>
+
+  <div class="highlight">
+    <strong>对齐数据的演进趋势：</strong>
+    <ul>
+      <li><strong>从纯人工标注到 AI 辅助（RLAIF）：</strong>用强模型（如 GPT-4）作为评判者，大幅降低标注成本，Constitutional AI（Anthropic）是这一思路的代表</li>
+      <li><strong>从偏好标注到规则验证（RLVR）：</strong>DeepSeek-R1 开创了用代码执行结果、数学答案正误等可验证信号替代人类主观偏好，在推理任务上效果更好</li>
+      <li><strong>从离线 DPO 到在线 DPO（Online DPO）：</strong>Qwen 等模型在 DPO 训练过程中持续生成新的偏好对，而非一次性使用静态数据集</li>
+      <li><strong>从单一奖励到多维度奖励：</strong>LLaMA-2 开创分别训练 Helpfulness RM 和 Safety RM 的做法，比单一 RM 更精确地平衡有用性和安全性</li>
+    </ul>
+  </div>
+
+  <!-- ===== 3.4 各阶段数据规模总览 ===== -->
+  <h3>3.4 各阶段训练数据规模全景总览</h3>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 440" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">主流模型各训练阶段数据规模全景</text>
+
+      <!-- 表头 -->
+      <rect x="20" y="42" width="780" height="30" rx="4" fill="#1a1a2e"/>
+      <text x="90" y="62" text-anchor="middle" fill="white" font-size="10" font-weight="700">模型</text>
+      <text x="220" y="62" text-anchor="middle" fill="white" font-size="10" font-weight="700">预训练数据</text>
+      <text x="390" y="62" text-anchor="middle" fill="white" font-size="10" font-weight="700">SFT 数据</text>
+      <text x="560" y="62" text-anchor="middle" fill="white" font-size="10" font-weight="700">对齐数据</text>
+      <text x="720" y="62" text-anchor="middle" fill="white" font-size="10" font-weight="700">对齐方法</text>
+
+      <!-- LLaMA-1 -->
+      <rect x="20" y="75" width="780" height="42" rx="0" fill="#f0f4ff"/>
+      <text x="90" y="95" text-anchor="middle" font-size="10" fill="#333" font-weight="600">LLaMA-1</text>
+      <text x="90" y="108" text-anchor="middle" font-size="8" fill="#888">65B</text>
+      <text x="220" y="95" text-anchor="middle" font-size="10" fill="#555">1.4T tokens</text>
+      <text x="220" y="108" text-anchor="middle" font-size="8" fill="#888">仅公开数据</text>
+      <text x="390" y="95" text-anchor="middle" font-size="10" fill="#999">—</text>
+      <text x="390" y="108" text-anchor="middle" font-size="8" fill="#888">仅 Base 模型</text>
+      <text x="560" y="95" text-anchor="middle" font-size="10" fill="#999">—</text>
+      <text x="720" y="95" text-anchor="middle" font-size="10" fill="#999">—</text>
+
+      <!-- LLaMA-2 -->
+      <rect x="20" y="120" width="780" height="42" rx="0" fill="white"/>
+      <text x="90" y="140" text-anchor="middle" font-size="10" fill="#333" font-weight="600">LLaMA-2</text>
+      <text x="90" y="153" text-anchor="middle" font-size="8" fill="#888">70B</text>
+      <text x="220" y="140" text-anchor="middle" font-size="10" fill="#555">2.0T tokens</text>
+      <text x="220" y="153" text-anchor="middle" font-size="8" fill="#888">增强质量过滤</text>
+      <text x="390" y="140" text-anchor="middle" font-size="10" fill="#555">~2.7 万条</text>
+      <text x="390" y="153" text-anchor="middle" font-size="8" fill="#888">内部精标</text>
+      <text x="560" y="140" text-anchor="middle" font-size="10" fill="#555">~100 万偏好对</text>
+      <text x="560" y="153" text-anchor="middle" font-size="8" fill="#888">5 轮迭代收集</text>
+      <text x="720" y="140" text-anchor="middle" font-size="10" fill="#667eea" font-weight="600">RLHF (PPO)</text>
+
+      <!-- LLaMA-3 -->
+      <rect x="20" y="165" width="780" height="42" rx="0" fill="#f0f4ff"/>
+      <text x="90" y="185" text-anchor="middle" font-size="10" fill="#333" font-weight="600">LLaMA-3</text>
+      <text x="90" y="198" text-anchor="middle" font-size="8" fill="#888">405B</text>
+      <text x="220" y="185" text-anchor="middle" font-size="10" fill="#555">15T tokens</text>
+      <text x="220" y="198" text-anchor="middle" font-size="8" fill="#888">30+语言 · 代码25%</text>
+      <text x="390" y="185" text-anchor="middle" font-size="10" fill="#555">~1000 万条</text>
+      <text x="390" y="198" text-anchor="middle" font-size="8" fill="#888">标注+合成+拒绝采样</text>
+      <text x="560" y="185" text-anchor="middle" font-size="10" fill="#555">数百万偏好对</text>
+      <text x="560" y="198" text-anchor="middle" font-size="8" fill="#888">拒绝采样构建</text>
+      <text x="720" y="185" text-anchor="middle" font-size="10" fill="#2a9d8f" font-weight="600">DPO</text>
+
+      <!-- Qwen-2.5 -->
+      <rect x="20" y="210" width="780" height="42" rx="0" fill="white"/>
+      <text x="90" y="230" text-anchor="middle" font-size="10" fill="#333" font-weight="600">Qwen-2.5</text>
+      <text x="90" y="243" text-anchor="middle" font-size="8" fill="#888">72B</text>
+      <text x="220" y="230" text-anchor="middle" font-size="10" fill="#555">18T tokens</text>
+      <text x="220" y="243" text-anchor="middle" font-size="8" fill="#888">中文15% · 多阶段配比</text>
+      <text x="390" y="230" text-anchor="middle" font-size="10" fill="#555">数百万条</text>
+      <text x="390" y="243" text-anchor="middle" font-size="8" fill="#888">中英双语 · CoT</text>
+      <text x="560" y="230" text-anchor="middle" font-size="10" fill="#555">百万级偏好对</text>
+      <text x="560" y="243" text-anchor="middle" font-size="8" fill="#888">在线生成</text>
+      <text x="720" y="230" text-anchor="middle" font-size="10" fill="#2a9d8f" font-weight="600">Online DPO</text>
+
+      <!-- DeepSeek-V3 -->
+      <rect x="20" y="255" width="780" height="42" rx="0" fill="#f0f4ff"/>
+      <text x="90" y="275" text-anchor="middle" font-size="10" fill="#333" font-weight="600">DeepSeek-V3</text>
+      <text x="90" y="288" text-anchor="middle" font-size="8" fill="#888">671B MoE</text>
+      <text x="220" y="275" text-anchor="middle" font-size="10" fill="#555">14.8T tokens</text>
+      <text x="220" y="288" text-anchor="middle" font-size="8" fill="#888">代码30% · FP8训练</text>
+      <text x="390" y="275" text-anchor="middle" font-size="10" fill="#555">150 万条</text>
+      <text x="390" y="288" text-anchor="middle" font-size="8" fill="#888">R1蒸馏 · 两阶段SFT</text>
+      <text x="560" y="275" text-anchor="middle" font-size="10" fill="#555">~80 万验证数据</text>
+      <text x="560" y="288" text-anchor="middle" font-size="8" fill="#888">规则验证器</text>
+      <text x="720" y="275" text-anchor="middle" font-size="10" fill="#f0a500" font-weight="600">GRPO</text>
+
+      <!-- DeepSeek-R1 -->
+      <rect x="20" y="300" width="780" height="42" rx="0" fill="white"/>
+      <text x="90" y="320" text-anchor="middle" font-size="10" fill="#333" font-weight="600">DeepSeek-R1</text>
+      <text x="90" y="333" text-anchor="middle" font-size="8" fill="#888">671B MoE</text>
+      <text x="220" y="320" text-anchor="middle" font-size="10" fill="#555">同 V3 Base</text>
+      <text x="220" y="333" text-anchor="middle" font-size="8" fill="#888">共享预训练权重</text>
+      <text x="390" y="320" text-anchor="middle" font-size="10" fill="#555">约 60 万条 CoT</text>
+      <text x="390" y="333" text-anchor="middle" font-size="8" fill="#888">冷启动数据</text>
+      <text x="560" y="320" text-anchor="middle" font-size="10" fill="#555">数学/代码验证数据</text>
+      <text x="560" y="333" text-anchor="middle" font-size="8" fill="#888">纯 RL 训练</text>
+      <text x="720" y="320" text-anchor="middle" font-size="10" fill="#e74c3c" font-weight="600">GRPO + RLVR</text>
+
+      <!-- GPT-4 -->
+      <rect x="20" y="345" width="780" height="42" rx="0" fill="#f0f4ff"/>
+      <text x="90" y="365" text-anchor="middle" font-size="10" fill="#333" font-weight="600">GPT-4</text>
+      <text x="90" y="378" text-anchor="middle" font-size="8" fill="#888">~1.8T MoE</text>
+      <text x="220" y="365" text-anchor="middle" font-size="10" fill="#555">~13T tokens（推测）</text>
+      <text x="220" y="378" text-anchor="middle" font-size="8" fill="#888">含专有数据源</text>
+      <text x="390" y="365" text-anchor="middle" font-size="10" fill="#555">数百万条（推测）</text>
+      <text x="390" y="378" text-anchor="middle" font-size="8" fill="#888">Scale AI + 内部标注</text>
+      <text x="560" y="365" text-anchor="middle" font-size="10" fill="#555">百万级+（推测）</text>
+      <text x="560" y="378" text-anchor="middle" font-size="8" fill="#888">持续用户反馈</text>
+      <text x="720" y="365" text-anchor="middle" font-size="10" fill="#667eea" font-weight="600">RLHF (PPO)</text>
+
+      <!-- 底部趋势 -->
+      <text x="410" y="420" text-anchor="middle" font-size="10" fill="#888">趋势：预训练数据从 1T→18T+，SFT 从纯人工→合成为主，对齐从 RLHF→DPO/GRPO 简化</text>
+      <text x="410" y="436" text-anchor="middle" font-size="9" fill="#aaa">注：未公开的模型数据量为根据公开信息和业界分析的推测值</text>
+    </svg>
+    <div class="caption">图 10：主流模型各训练阶段数据规模全景。可以看到从 LLaMA-1 到最新模型，预训练数据量增长 10 倍以上，SFT 和对齐方法也在快速演进。</div>
+  </div>
+
+  <div class="warning">
+    <strong>训练数据的法律与伦理挑战：</strong>
+    <ul>
+      <li><strong>版权问题：</strong>使用网页和书籍数据引发的版权诉讼不断增加（如 NYT vs. OpenAI），推动模型厂商转向更多授权数据和合成数据</li>
+      <li><strong>数据隐私：</strong>训练数据中的个人可识别信息（PII）需严格脱敏处理，GDPR 等法规对数据使用提出合规要求</li>
+      <li><strong>数据偏见：</strong>网页数据天然存在语言、文化、性别等偏见，需要在数据层面和训练层面双重去偏</li>
+      <li><strong>数据污染：</strong>训练数据可能包含评测集的答案（data contamination），导致 benchmark 分数虚高</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===== 四、训练超参数 ===== -->
+<div class="section">
+  <h2>四、核心训练超参数与策略</h2>
+
+  <h3>4.1 学习率调度（Learning Rate Schedule）</h3>
+  <p>
+    学习率是预训练中最关键的超参数。现代 LLM 通常采用 <strong>Warmup + Cosine Decay</strong> 调度策略。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 260" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">学习率调度策略：Warmup + Cosine Decay</text>
+
+      <!-- 坐标轴 -->
+      <line x1="100" y1="210" x2="750" y2="210" stroke="#ccc" stroke-width="1.5"/>
+      <line x1="100" y1="210" x2="100" y2="50" stroke="#ccc" stroke-width="1.5"/>
+      <text x="80" y="55" font-size="10" fill="#888">LR</text>
+      <text x="750" y="228" font-size="10" fill="#888">训练步数</text>
+
+      <!-- Warmup 阶段 -->
+      <line x1="100" y1="200" x2="200" y2="70" stroke="#e74c3c" stroke-width="2.5"/>
+      <rect x="115" y="220" width="70" height="18" rx="3" fill="#e74c3c" opacity="0.15"/>
+      <text x="150" y="234" text-anchor="middle" font-size="9" fill="#e74c3c" font-weight="600">Warmup</text>
+
+      <!-- Peak -->
+      <circle cx="200" cy="70" r="4" fill="#e74c3c"/>
+      <text x="210" y="60" font-size="9" fill="#e74c3c" font-weight="600">peak LR</text>
+
+      <!-- Cosine Decay -->
+      <path d="M200,70 C250,72 300,80 350,100 C400,120 450,155 500,175 C550,190 600,198 700,200" fill="none" stroke="#4a7dff" stroke-width="2.5"/>
+      <rect x="350" y="220" width="120" height="18" rx="3" fill="#4a7dff" opacity="0.15"/>
+      <text x="410" y="234" font-size="9" fill="#4a7dff" font-weight="600">Cosine Decay</text>
+
+      <!-- End LR -->
+      <circle cx="700" cy="200" r="4" fill="#4a7dff"/>
+      <text x="715" y="195" font-size="9" fill="#4a7dff" font-weight="600">min LR</text>
+      <line x1="702" y1="200" x2="750" y2="200" stroke="#4a7dff" stroke-width="1" stroke-dasharray="4 3"/>
+
+      <!-- 标注 -->
+      <rect x="100" y="45" width="650" height="1" fill="none" stroke="#ddd" stroke-width="0.5" stroke-dasharray="4 3"/>
+      <text x="55" y="75" font-size="8" fill="#888">3e-4</text>
+      <text x="55" y="205" font-size="8" fill="#888">3e-5</text>
+
+      <!-- 右侧说明 -->
+      <text x="480" y="80" font-size="10" fill="#555" font-weight="600">典型值（70B 模型）：</text>
+      <text x="480" y="98" font-size="10" fill="#555">Peak LR = 3×10⁻⁴</text>
+      <text x="480" y="115" font-size="10" fill="#555">Min LR = Peak × 0.1 = 3×10⁻⁵</text>
+      <text x="480" y="132" font-size="10" fill="#555">Warmup = 2000 steps</text>
+    </svg>
+    <div class="caption">图 11：Warmup + Cosine Decay 学习率调度。先线性增长到 Peak LR，再以余弦曲线衰减到 Min LR（通常为 Peak 的 10%）。</div>
+  </div>
+
+  <h3>4.2 核心超参数一览</h3>
+  <table>
+    <tr>
+      <th>超参数</th>
+      <th>含义</th>
+      <th>典型值</th>
+      <th>说明</th>
+    </tr>
+    <tr>
+      <td><strong>Peak Learning Rate</strong></td>
+      <td>最高学习率</td>
+      <td><code>1.5e-4 ~ 3e-4</code></td>
+      <td>模型越大，LR 通常越小</td>
+    </tr>
+    <tr>
+      <td><strong>Batch Size</strong></td>
+      <td>每步训练的 token 数</td>
+      <td><code>4M ~ 60M tokens</code></td>
+      <td>通常随训练逐步增大（Warmup）</td>
+    </tr>
+    <tr>
+      <td><strong>Sequence Length</strong></td>
+      <td>训练序列长度</td>
+      <td><code>4096 ~ 131072</code></td>
+      <td>部分模型分阶段扩展长度</td>
+    </tr>
+    <tr>
+      <td><strong>Optimizer</strong></td>
+      <td>优化器</td>
+      <td><code>AdamW</code></td>
+      <td>β₁=0.9, β₂=0.95, ε=1e-8</td>
+    </tr>
+    <tr>
+      <td><strong>Weight Decay</strong></td>
+      <td>权重衰减</td>
+      <td><code>0.1</code></td>
+      <td>正则化，防止过拟合</td>
+    </tr>
+    <tr>
+      <td><strong>Gradient Clipping</strong></td>
+      <td>梯度裁剪</td>
+      <td><code>1.0</code></td>
+      <td>防止梯度爆炸，稳定训练</td>
+    </tr>
+    <tr>
+      <td><strong>Warmup Steps</strong></td>
+      <td>学习率预热步数</td>
+      <td><code>2000</code></td>
+      <td>从 0 线性增长到 Peak LR</td>
+    </tr>
+    <tr>
+      <td><strong>Precision</strong></td>
+      <td>训练精度</td>
+      <td><code>BF16 / FP8</code></td>
+      <td>混合精度训练节省显存</td>
+    </tr>
+  </table>
+
+  <h3>4.3 Batch Size Warmup 策略</h3>
+  <p>
+    现代 LLM 训练常采用<strong>渐增 Batch Size</strong>策略：训练初期使用较小的 batch（如 4M tokens），
+    随训练进行逐步增大到最终值（如 32M tokens）。
+  </p>
+  <div class="highlight">
+    <strong>直觉理解：</strong>训练初期模型参数随机，小 batch 带来的噪声梯度有利于探索损失面上的方向；
+    训练后期模型接近收敛，大 batch 提供更稳定的梯度估计，帮助精细调整。
+    同时，渐增 batch 也使训练初期的吞吐量更高（数据并行度更灵活）。
+  </div>
+</div>
+
+<!-- ===== 五、分布式训练 ===== -->
+<div class="section">
+  <h2>五、分布式训练技术</h2>
+
+  <p>
+    一个 70B 参数的模型以 BF16 存储需要约 140 GB 显存，加上优化器状态和梯度需要 <strong>~1 TB</strong> 显存。
+    单张 GPU（80GB）远远不够，必须依赖分布式训练。
+  </p>
+
+  <h3>5.1 三大并行策略</h3>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 360" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">三种并行策略的核心思想</text>
+
+      <!-- 数据并行 -->
+      <rect x="30" y="50" width="240" height="280" rx="10" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="150" y="78" text-anchor="middle" font-size="13" font-weight="700" fill="#0f3460">数据并行 (DP/FSDP)</text>
+      <text x="150" y="98" text-anchor="middle" font-size="10" fill="#888">切分数据，复制模型</text>
+
+      <!-- DP 示意 -->
+      <rect x="55" y="115" width="80" height="55" rx="5" fill="#4a7dff" opacity="0.7"/>
+      <text x="95" y="137" text-anchor="middle" fill="white" font-size="9" font-weight="600">GPU 0</text>
+      <text x="95" y="155" text-anchor="middle" fill="white" font-size="8">完整模型</text>
+      <rect x="155" y="115" width="80" height="55" rx="5" fill="#4a7dff" opacity="0.7"/>
+      <text x="195" y="137" text-anchor="middle" fill="white" font-size="9" font-weight="600">GPU 1</text>
+      <text x="195" y="155" text-anchor="middle" fill="white" font-size="8">完整模型</text>
+
+      <rect x="55" y="180" width="80" height="25" rx="3" fill="#667eea" opacity="0.4"/><text x="95" y="197" text-anchor="middle" font-size="8" fill="#0f3460">Batch A</text>
+      <rect x="155" y="180" width="80" height="25" rx="3" fill="#667eea" opacity="0.4"/><text x="195" y="197" text-anchor="middle" font-size="8" fill="#0f3460">Batch B</text>
+
+      <text x="150" y="228" text-anchor="middle" font-size="9" fill="#555">AllReduce 同步梯度</text>
+      <text x="50" y="255" font-size="9" fill="#888">✅ 实现简单</text>
+      <text x="50" y="273" font-size="9" fill="#888">✅ 近线性加速</text>
+      <text x="50" y="291" font-size="9" fill="#888">❌ 每 GPU 需放下完整模型</text>
+      <text x="50" y="309" font-size="9" fill="#888">FSDP/ZeRO: 分片优化器状态</text>
+
+      <!-- 张量并行 -->
+      <rect x="290" y="50" width="240" height="280" rx="10" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="410" y="78" text-anchor="middle" font-size="13" font-weight="700" fill="#1a6b61">张量并行 (TP)</text>
+      <text x="410" y="98" text-anchor="middle" font-size="10" fill="#888">切分层内权重矩阵</text>
+
+      <rect x="310" y="115" width="90" height="55" rx="5" fill="#2a9d8f" opacity="0.7"/>
+      <text x="355" y="137" text-anchor="middle" fill="white" font-size="9" font-weight="600">GPU 0</text>
+      <text x="355" y="155" text-anchor="middle" fill="white" font-size="8">W 的左半</text>
+      <rect x="420" y="115" width="90" height="55" rx="5" fill="#2a9d8f" opacity="0.7"/>
+      <text x="465" y="137" text-anchor="middle" fill="white" font-size="9" font-weight="600">GPU 1</text>
+      <text x="465" y="155" text-anchor="middle" fill="white" font-size="8">W 的右半</text>
+
+      <rect x="310" y="180" width="200" height="25" rx="3" fill="#2a9d8f" opacity="0.3"/>
+      <text x="410" y="197" text-anchor="middle" font-size="8" fill="#1a6b61">同一份数据（同一 Batch）</text>
+
+      <text x="410" y="228" text-anchor="middle" font-size="9" fill="#555">AllReduce 合并中间结果</text>
+      <text x="310" y="255" font-size="9" fill="#888">✅ 减少单 GPU 内存占用</text>
+      <text x="310" y="273" font-size="9" fill="#888">✅ 降低 per-GPU 计算量</text>
+      <text x="310" y="291" font-size="9" fill="#888">❌ 通信频繁（层内）</text>
+      <text x="310" y="309" font-size="9" fill="#888">通常 TP=8（单机 8 卡内）</text>
+
+      <!-- 流水线并行 -->
+      <rect x="550" y="50" width="240" height="280" rx="10" fill="#fff8f0" stroke="#f0a500" stroke-width="1.5"/>
+      <text x="670" y="78" text-anchor="middle" font-size="13" font-weight="700" fill="#e65100">流水线并行 (PP)</text>
+      <text x="670" y="98" text-anchor="middle" font-size="10" fill="#888">切分层（不同层放不同 GPU）</text>
+
+      <rect x="610" y="115" width="50" height="100" rx="5" fill="#f0a500" opacity="0.7"/>
+      <text x="635" y="145" text-anchor="middle" fill="white" font-size="8" font-weight="600">GPU 0</text>
+      <text x="635" y="160" text-anchor="middle" fill="white" font-size="7">Layer 0-19</text>
+      <rect x="670" y="115" width="50" height="100" rx="5" fill="#f0a500" opacity="0.7"/>
+      <text x="695" y="145" text-anchor="middle" fill="white" font-size="8" font-weight="600">GPU 1</text>
+      <text x="695" y="160" text-anchor="middle" fill="white" font-size="7">Layer 20-39</text>
+      <rect x="730" y="115" width="50" height="100" rx="5" fill="#f0a500" opacity="0.7"/>
+      <text x="755" y="145" text-anchor="middle" fill="white" font-size="8" font-weight="600">GPU 2</text>
+      <text x="755" y="160" text-anchor="middle" fill="white" font-size="7">Layer 40-59</text>
+
+      <text x="670" y="235" text-anchor="middle" font-size="9" fill="#555">Micro-batch 流水调度</text>
+      <text x="570" y="255" font-size="9" fill="#888">✅ 支持超大模型</text>
+      <text x="570" y="273" font-size="9" fill="#888">✅ 跨机通信少</text>
+      <text x="570" y="291" font-size="9" fill="#888">❌ 存在 Pipeline Bubble</text>
+      <text x="570" y="309" font-size="9" fill="#888">1F1B / ZeroBubble 调度优化</text>
+    </svg>
+    <div class="caption">图 12：三种并行策略对比。实际训练通常采用"3D 并行"——同时使用 DP + TP + PP 的组合。</div>
+  </div>
+
+  <h3>5.2 混合精度训练</h3>
+  <p>
+    现代 LLM 训练普遍采用<strong>混合精度</strong>（Mixed Precision）：前向和反向传播使用 BF16/FP16 计算（2 字节/参数），
+    优化器状态保持 FP32（4 字节/参数），更新时在 FP32 空间完成后再转回低精度。
+  </p>
+
+  <table>
+    <tr>
+      <th>精度格式</th>
+      <th>位宽</th>
+      <th>数值范围</th>
+      <th>使用场景</th>
+    </tr>
+    <tr>
+      <td><strong>FP32</strong></td>
+      <td>32 bit</td>
+      <td>大范围 + 高精度</td>
+      <td>优化器状态（Master Weights）</td>
+    </tr>
+    <tr>
+      <td><strong>BF16</strong></td>
+      <td>16 bit</td>
+      <td>与 FP32 同范围，精度略低</td>
+      <td>前向/反向计算（主流选择）</td>
+    </tr>
+    <tr>
+      <td><strong>FP16</strong></td>
+      <td>16 bit</td>
+      <td>范围小，需 Loss Scaling</td>
+      <td>前向/反向计算（旧方案）</td>
+    </tr>
+    <tr>
+      <td><strong>FP8 (E4M3/E5M2)</strong></td>
+      <td>8 bit</td>
+      <td>极小范围</td>
+      <td>DeepSeek-V3 等前沿模型的训练</td>
+    </tr>
+  </table>
+
+  <div class="success">
+    <strong>DeepSeek-V3 的突破：</strong>在预训练中成功使用了 <strong>FP8 混合精度</strong>训练，
+    将计算效率提升约 1.5 倍。这是首个公开证实 FP8 训练可行的超大规模模型，
+    显著降低了训练成本（14.8T tokens 仅用 2.788M H800 GPU 小时 ≈ $5.5M）。
+  </div>
+
+  <h3>5.3 显存分析</h3>
+  <p>训练一个参数量为 Φ 的模型，显存消耗如下（以 BF16 混合精度 + AdamW 为例）：</p>
+  <div class="formula">
+    显存 ≈ 2Φ（模型参数 BF16）+ 2Φ（梯度 BF16）+ 4Φ（FP32 master weights）+ 8Φ（Adam 状态 m + v）= <strong>16Φ 字节</strong>
+    <br><br>
+    <span style="font-size:0.85em;">以 70B 模型为例: 16 × 70 × 10⁹ = 1.12 TB → 需要至少 14 张 A100 (80GB) 仅放模型状态</span>
+  </div>
+</div>
+
+<!-- ===== 六、训练稳定性 ===== -->
+<div class="section">
+  <h2>六、训练稳定性与异常处理</h2>
+
+  <p>
+    大模型预训练动辄耗时数月、花费数百万美元。<strong>训练中的不稳定</strong>（如 Loss Spike、NaN、发散）
+    一旦未被及时发现和处理，就可能浪费大量计算资源。
+  </p>
+
+  <h3>6.1 Loss Spike（损失尖刺）</h3>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 240" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">训练 Loss 曲线中的 Loss Spike 现象</text>
+
+      <!-- 坐标轴 -->
+      <line x1="80" y1="200" x2="780" y2="200" stroke="#ccc" stroke-width="1"/>
+      <line x1="80" y1="200" x2="80" y2="45" stroke="#ccc" stroke-width="1"/>
+      <text x="60" y="50" font-size="9" fill="#888">Loss</text>
+      <text x="780" y="218" font-size="9" fill="#888">Steps</text>
+
+      <!-- 正常下降曲线 -->
+      <path d="M80,80 C120,82 160,90 200,100 C250,112 300,125 350,135 C400,143 450,150 500,155 C550,159 600,162 650,164 C700,165 750,166 780,166" fill="none" stroke="#4a7dff" stroke-width="2"/>
+
+      <!-- Spike 1 -->
+      <path d="M280,127 L285,60 L290,125" fill="none" stroke="#e74c3c" stroke-width="2.5"/>
+      <circle cx="285" cy="60" r="3" fill="#e74c3c"/>
+      <text x="285" y="50" text-anchor="middle" font-size="9" fill="#e74c3c" font-weight="600">Spike!</text>
+
+      <!-- Spike 2 -->
+      <path d="M500,155 L505,85 L510,153" fill="none" stroke="#e74c3c" stroke-width="2.5"/>
+      <circle cx="505" cy="85" r="3" fill="#e74c3c"/>
+
+      <!-- 说明 -->
+      <rect x="540" y="55" width="240" height="115" rx="6" fill="#fff8f0" stroke="#f0a500" stroke-width="1"/>
+      <text x="560" y="78" font-size="11" font-weight="700" fill="#e65100">Loss Spike 常见原因：</text>
+      <text x="560" y="100" font-size="10" fill="#555">· 训练数据中的异常样本</text>
+      <text x="560" y="118" font-size="10" fill="#555">· 学习率过高</text>
+      <text x="560" y="136" font-size="10" fill="#555">· 梯度爆炸</text>
+      <text x="560" y="154" font-size="10" fill="#555">· 数值精度溢出（FP16）</text>
+    </svg>
+    <div class="caption">图 13：Loss Spike 现象。训练损失突然飙升后自行恢复（小 Spike），或持续上升导致发散（致命 Spike）。</div>
+  </div>
+
+  <h3>6.2 应对策略</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>梯度裁剪（Gradient Clipping）</h4>
+      <p>限制梯度的最大范数（通常 clip=1.0）。这是几乎所有 LLM 训练的标配，能有效防止梯度爆炸。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>使用 BF16 而非 FP16</h4>
+      <p>BF16 与 FP32 同范围（8 位指数），不易溢出；FP16 范围窄（5 位指数），需要 Loss Scaling。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>回滚重训（Rollback）</h4>
+      <p>遇到严重 Spike 时，回退到最近的 Checkpoint，跳过有问题的数据 batch 重新训练。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>z-loss 正则化</h4>
+      <p>PaLM 提出的方法：在 Softmax 之前的 logits 上添加 z-loss 惩罚项，防止 logits 过大。</p>
+    </div>
+  </div>
+
+  <div class="formula">
+    z-loss = α &middot; log<sup>2</sup>( &sum;<sub>j</sub> exp(z<sub>j</sub>) )
+    <br><br>
+    <span style="font-size:0.85em;">α = 1e-4；鼓励 logits 不要过大，减少 Softmax 数值不稳定</span>
+  </div>
+
+  <h3>6.3 Checkpoint 策略</h3>
+  <div class="warning">
+    <strong>Checkpoint 是训练的"保险单"：</strong>
+    大模型训练通常每 500~2000 步保存一次完整 Checkpoint（模型参数 + 优化器状态 + LR 调度器 + 数据进度）。
+    一个 70B 模型的完整 Checkpoint 约 1~2 TB。训练期间通常保留最近 3~5 个 Checkpoint + 若干里程碑 Checkpoint。
+  </div>
+</div>
+
+<!-- ===== 七、Scaling Laws ===== -->
+<div class="section">
+  <h2>七、Scaling Laws —— 大模型训练的"路线图"</h2>
+
+  <h3>7.1 Kaplan Scaling Law (OpenAI, 2020)</h3>
+  <p>
+    OpenAI 的 Kaplan 等人首先发现：模型的测试 Loss 与模型参数量 N、训练数据量 D、训练计算量 C
+    之间存在<strong>幂律关系</strong>。
+  </p>
+  <div class="formula">
+    L(N) ∝ N<sup>−0.076</sup> &nbsp;&nbsp;|&nbsp;&nbsp; L(D) ∝ D<sup>−0.095</sup> &nbsp;&nbsp;|&nbsp;&nbsp; L(C) ∝ C<sup>−0.050</sup>
+    <br><br>
+    <span style="font-size:0.85em;">在三者之间合理分配资源，可以最小化给定计算预算下的 Loss</span>
+  </div>
+
+  <h3>7.2 Chinchilla Scaling Law (DeepMind, 2022)</h3>
+  <p>
+    Hoffmann 等人在 <em>Training Compute-Optimal Large Language Models</em> 中进一步发现：
+    给定固定的计算预算 C，<strong>参数量和数据量应该等比例增长</strong>——
+    即训练 token 数 D ≈ 20 × 参数量 N。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 250" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">Chinchilla Scaling Law: 数据量 ≈ 20× 参数量</text>
+
+      <!-- 对比表 -->
+      <rect x="80" y="50" width="310" height="175" rx="8" fill="#fff0f0" stroke="#e74c3c" stroke-width="1.5"/>
+      <text x="235" y="78" text-anchor="middle" font-size="12" font-weight="700" fill="#c0392b">过去做法（Under-trained）</text>
+      <text x="100" y="102" font-size="11" fill="#555">GPT-3 175B: 仅训练 300B tokens</text>
+      <text x="100" y="122" font-size="11" fill="#555">比例 = 300B / 175B ≈ 1.7×</text>
+      <text x="100" y="148" font-size="11" fill="#e74c3c" font-weight="600">→ 模型参数过多、数据不足</text>
+      <text x="100" y="170" font-size="11" fill="#e74c3c" font-weight="600">→ 同样计算量下 Loss 不是最优</text>
+      <text x="100" y="198" font-size="10" fill="#888">Chinchilla 最优: 175B 应配 3.5T tokens</text>
+
+      <!-- vs -->
+      <text x="418" y="140" text-anchor="middle" font-size="16" fill="#888" font-weight="700">vs</text>
+
+      <!-- 新做法 -->
+      <rect x="440" y="50" width="310" height="175" rx="8" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="595" y="78" text-anchor="middle" font-size="12" font-weight="700" fill="#1a6b61">当前做法（Over-trained）</text>
+      <text x="460" y="102" font-size="11" fill="#555">LLaMA-3 70B: 训练 15T tokens</text>
+      <text x="460" y="122" font-size="11" fill="#555">比例 = 15T / 70B ≈ 214×</text>
+      <text x="460" y="148" font-size="11" fill="#2a9d8f" font-weight="600">→ 远超 Chinchilla 最优比例</text>
+      <text x="460" y="170" font-size="11" fill="#2a9d8f" font-weight="600">→ 以更多训练换更小、更快的模型</text>
+      <text x="460" y="198" font-size="10" fill="#888">训练更贵，但推理成本大幅降低</text>
+    </svg>
+    <div class="caption">图 14：从 Chinchilla 最优到 Over-training。现代实践往往刻意过训练（200×+），用更多数据训练较小模型，因为推理成本 >> 训练成本。</div>
+  </div>
+
+  <div class="highlight">
+    <strong>行业现状：</strong>Chinchilla Law 的"数据 = 20× 参数"只是 <em>训练计算最优</em>。
+    实际部署时，推理成本远高于训练成本（模型要持续服务数百万用户）。
+    因此，当前主流做法是<strong>"Over-training"</strong>——用更多数据训练较小的模型，
+    获得更好的推理性价比。LLaMA-3 70B 训练了 15T tokens（214× 参数量），远超 Chinchilla 最优的 20×。
+  </div>
+</div>
+
+<!-- ===== 八、SFT ===== -->
+<div class="section">
+  <h2>八、监督微调（SFT）</h2>
+
+  <h3>8.1 SFT 的目标与原理</h3>
+  <p>
+    预训练后的 Base Model 是一个优秀的"文本续写器"，但不会遵循指令、不会以对话格式回复。
+    <strong>SFT（Supervised Fine-Tuning）</strong>的目标是教模型"如何做一个好助手"——
+    使用人工编写的<strong>（指令, 回答）</strong>对进行有监督训练。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 200" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar7" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">SFT 训练的输入输出格式</text>
+
+      <rect x="30" y="45" width="370" height="130" rx="8" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="215" y="72" text-anchor="middle" font-size="12" font-weight="700" fill="#0f3460">SFT 训练样本格式</text>
+      <text x="50" y="96" font-size="10" fill="#888">[System] 你是一个有帮助的助手。</text>
+      <text x="50" y="116" font-size="10" fill="#4a7dff" font-weight="600">[User] 什么是量子计算？</text>
+      <text x="50" y="136" font-size="10" fill="#2a9d8f" font-weight="600">[Assistant] 量子计算是利用量子力学</text>
+      <text x="50" y="152" font-size="10" fill="#2a9d8f" font-weight="600">原理进行信息处理的计算范式…</text>
+
+      <line x1="405" y1="110" x2="445" y2="110" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar7)"/>
+
+      <rect x="450" y="45" width="340" height="130" rx="8" fill="#fff8f0" stroke="#f0a500" stroke-width="1.5"/>
+      <text x="620" y="72" text-anchor="middle" font-size="12" font-weight="700" fill="#e65100">损失计算方式</text>
+      <text x="470" y="96" font-size="10" fill="#888">[System] 部分 → <tspan fill="#e74c3c">不计算损失（mask）</tspan></text>
+      <text x="470" y="116" font-size="10" fill="#888">[User] 部分 → <tspan fill="#e74c3c">不计算损失（mask）</tspan></text>
+      <text x="470" y="140" font-size="10" fill="#888">[Assistant] 部分</text>
+      <text x="470" y="158" font-size="10" fill="#2a9d8f" font-weight="600">→ 只在这部分计算交叉熵损失 ✓</text>
+    </svg>
+    <div class="caption">图 15：SFT 训练的核心：只在 Assistant 回复部分计算损失，System 和 User 部分被 mask 掉，防止模型"学会提问"而非"学会回答"。</div>
+  </div>
+
+  <h3>8.2 SFT 的关键实践</h3>
+  <table>
+    <tr>
+      <th>维度</th>
+      <th>典型值</th>
+      <th>说明</th>
+    </tr>
+    <tr>
+      <td><strong>数据量</strong></td>
+      <td>10K ~ 10M 条</td>
+      <td>质量 >> 数量；少量高质量数据优于大量低质量数据</td>
+    </tr>
+    <tr>
+      <td><strong>学习率</strong></td>
+      <td>1e-5 ~ 5e-5</td>
+      <td>比预训练低 ~10 倍，防止遗忘预训练知识</td>
+    </tr>
+    <tr>
+      <td><strong>训练轮数</strong></td>
+      <td>2~5 epochs</td>
+      <td>通常 2~3 轮即可，过多会过拟合</td>
+    </tr>
+    <tr>
+      <td><strong>数据来源</strong></td>
+      <td>人工标注 + 合成</td>
+      <td>用强模型（GPT-4）合成数据已成为主流</td>
+    </tr>
+    <tr>
+      <td><strong>训练耗时</strong></td>
+      <td>数小时~数天</td>
+      <td>比预训练快 100~1000 倍</td>
+    </tr>
+  </table>
+
+  <h3>8.3 参数高效微调（PEFT）</h3>
+  <p>全参数 SFT 需要修改所有参数，对显存要求高。<strong>LoRA（Low-Rank Adaptation）</strong>是最流行的 PEFT 方法，只训练低秩增量矩阵：</p>
+  <div class="formula">
+    W' = W + ΔW = W + B &middot; A
+    <br><br>
+    <span style="font-size:0.85em;">W ∈ R<sup>d×d</sup>（冻结），A ∈ R<sup>r×d</sup>，B ∈ R<sup>d×r</sup>（可训练），r << d（如 r=8~64）</span>
+    <br>
+    <span style="font-size:0.85em;">可训练参数量仅为全参数的 ~0.1%~1%，显存需求大幅降低</span>
+  </div>
+</div>
+
+<!-- ===== 九、对齐训练 ===== -->
+<div class="section">
+  <h2>九、对齐训练 —— 让模型安全、有用、诚实</h2>
+
+  <h3>9.1 RLHF（Reinforcement Learning from Human Feedback）</h3>
+  <p>
+    SFT 模型能遵循指令，但输出质量参差不齐。RLHF 通过<strong>人类偏好反馈</strong>进一步优化模型——
+    "告诉模型哪个回答更好"。完整的 RLHF 分三步：
+  </p>
+
+  <div class="step-flow">
+    <div class="step-box">Step 1<br><span style="font-weight:400;font-size:0.85em;">训练奖励模型 (RM)</span></div>
+    <span class="step-arrow">→</span>
+    <div class="step-box">Step 2<br><span style="font-weight:400;font-size:0.85em;">PPO 强化学习优化</span></div>
+    <span class="step-arrow">→</span>
+    <div class="step-box">Step 3<br><span style="font-weight:400;font-size:0.85em;">迭代收集 & 再训练</span></div>
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 280" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar8" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+        <marker id="ar8g" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2a9d8f"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">RLHF 完整训练流程</text>
+
+      <!-- Step 1: RM -->
+      <rect x="20" y="50" width="245" height="90" rx="8" fill="#667eea" opacity="0.85"/>
+      <text x="142" y="75" text-anchor="middle" fill="white" font-size="12" font-weight="700">Step 1: 训练奖励模型</text>
+      <text x="142" y="95" text-anchor="middle" fill="white" font-size="9">人类标注: Response A > Response B</text>
+      <text x="142" y="115" text-anchor="middle" fill="white" font-size="9">RM 学习预测人类偏好分数</text>
+      <line x1="267" y1="95" x2="292" y2="95" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar8)"/>
+
+      <!-- Step 2: PPO -->
+      <rect x="296" y="50" width="245" height="90" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="418" y="75" text-anchor="middle" fill="white" font-size="12" font-weight="700">Step 2: PPO 强化学习</text>
+      <text x="418" y="95" text-anchor="middle" fill="white" font-size="9">SFT 模型生成回答 → RM 打分</text>
+      <text x="418" y="115" text-anchor="middle" fill="white" font-size="9">PPO 优化: 最大化 RM 分数</text>
+      <line x1="543" y1="95" x2="568" y2="95" stroke="#2a9d8f" stroke-width="2" marker-end="url(#ar8g)"/>
+
+      <!-- Output -->
+      <rect x="572" y="55" width="220" height="80" rx="8" fill="#e74c3c" opacity="0.85"/>
+      <text x="682" y="82" text-anchor="middle" fill="white" font-size="12" font-weight="700">RLHF 模型</text>
+      <text x="682" y="102" text-anchor="middle" fill="white" font-size="9">安全 + 有用 + 诚实</text>
+      <text x="682" y="120" text-anchor="middle" fill="white" font-size="9">人类偏好对齐</text>
+
+      <!-- PPO 目标函数 -->
+      <rect x="80" y="165" width="660" height="95" rx="8" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="100" y="190" font-size="12" font-weight="700" fill="#0f3460">PPO 优化目标：</text>
+      <text x="100" y="215" font-size="11" fill="#555">maximize  E<tspan font-size="9" dy="3">x~D</tspan><tspan dy="-3">[ R</tspan><tspan font-size="9" dy="3">RM</tspan><tspan dy="-3">(x, y) − β · KL(π</tspan><tspan font-size="9" dy="3">θ</tspan><tspan dy="-3"> ‖ π</tspan><tspan font-size="9" dy="3">SFT</tspan><tspan dy="-3">) ]</tspan></text>
+      <text x="100" y="242" font-size="10" fill="#888">R_RM = 奖励模型的打分；KL 项约束模型不要偏离 SFT 太远（防止 reward hacking）</text>
+    </svg>
+    <div class="caption">图 16：RLHF 完整流程。先训练奖励模型，再用 PPO 强化学习优化 SFT 模型，KL 惩罚防止过度优化。</div>
+  </div>
+
+  <h3>9.2 DPO（Direct Preference Optimization）</h3>
+  <p>
+    DPO（Rafailov et al., 2023）跳过了显式训练奖励模型的步骤，<strong>直接用偏好数据优化策略模型</strong>。
+    它将 RLHF 的优化目标转化为一个简洁的二分类损失：
+  </p>
+  <div class="formula">
+    L<sub>DPO</sub>(θ) = − E<sub>(x,y<sub>w</sub>,y<sub>l</sub>)</sub> [ log σ( β · ( log(π<sub>θ</sub>(y<sub>w</sub>|x) / π<sub>ref</sub>(y<sub>w</sub>|x)) − log(π<sub>θ</sub>(y<sub>l</sub>|x) / π<sub>ref</sub>(y<sub>l</sub>|x)) ) ) ]
+    <br><br>
+    <span style="font-size:0.85em;">y<sub>w</sub> = 人类偏好的好回答, y<sub>l</sub> = 人类不偏好的差回答, π<sub>ref</sub> = SFT 参考模型</span>
+  </div>
+
+  <h3>9.3 GRPO（Group Relative Policy Optimization）</h3>
+  <p>
+    DeepSeek 在 R1 模型中提出的 GRPO，核心创新是<strong>去掉了独立的奖励模型</strong>，
+    而是在一组采样结果内部通过相对排序来计算优势函数。这大幅简化了训练流程。
+  </p>
+
+  <h3>9.4 对齐方法对比</h3>
+  <table>
+    <tr>
+      <th>方法</th>
+      <th>需要奖励模型？</th>
+      <th>训练复杂度</th>
+      <th>效果</th>
+      <th>代表模型</th>
+    </tr>
+    <tr>
+      <td><strong>RLHF (PPO)</strong></td>
+      <td>是</td>
+      <td>高（4 个模型同时在线）</td>
+      <td>强</td>
+      <td>GPT-4, Claude</td>
+    </tr>
+    <tr>
+      <td><strong>DPO</strong></td>
+      <td>否</td>
+      <td>低（与 SFT 相当）</td>
+      <td>接近 RLHF</td>
+      <td>Zephyr, LLaMA-3</td>
+    </tr>
+    <tr>
+      <td><strong>GRPO</strong></td>
+      <td>否</td>
+      <td>中</td>
+      <td>强（尤其推理任务）</td>
+      <td>DeepSeek-R1</td>
+    </tr>
+    <tr>
+      <td><strong>KTO</strong></td>
+      <td>否</td>
+      <td>低</td>
+      <td>良好</td>
+      <td>部分开源模型</td>
+    </tr>
+    <tr>
+      <td><strong>RLVR</strong></td>
+      <td>规则验证器</td>
+      <td>中</td>
+      <td>数学/代码强</td>
+      <td>DeepSeek-R1</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ===== 十、主流模型训练实践 ===== -->
+<div class="section">
+  <h2>十、主流模型训练实践案例</h2>
+
+  <h3>10.1 LLaMA 系列（Meta）</h3>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 260" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar9" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">LLaMA 系列的训练演进</text>
+
+      <!-- LLaMA-1 -->
+      <rect x="20" y="50" width="180" height="85" rx="8" fill="#667eea" opacity="0.75"/>
+      <text x="110" y="73" text-anchor="middle" fill="white" font-size="11" font-weight="700">LLaMA-1 (2023.2)</text>
+      <text x="110" y="92" text-anchor="middle" fill="white" font-size="9">7B ~ 65B</text>
+      <text x="110" y="108" text-anchor="middle" fill="white" font-size="9">1.4T tokens · 2048 A100</text>
+      <text x="110" y="124" text-anchor="middle" fill="white" font-size="8">SentencePiece 32K vocab</text>
+      <line x1="202" y1="92" x2="222" y2="92" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar9)"/>
+
+      <!-- LLaMA-2 -->
+      <rect x="225" y="50" width="180" height="85" rx="8" fill="#4a7dff" opacity="0.8"/>
+      <text x="315" y="73" text-anchor="middle" fill="white" font-size="11" font-weight="700">LLaMA-2 (2023.7)</text>
+      <text x="315" y="92" text-anchor="middle" fill="white" font-size="9">7B ~ 70B</text>
+      <text x="315" y="108" text-anchor="middle" fill="white" font-size="9">2T tokens · GQA 引入</text>
+      <text x="315" y="124" text-anchor="middle" fill="white" font-size="8">+ SFT + RLHF (Chat版)</text>
+      <line x1="407" y1="92" x2="427" y2="92" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar9)"/>
+
+      <!-- LLaMA-3 -->
+      <rect x="430" y="50" width="180" height="85" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="520" y="73" text-anchor="middle" fill="white" font-size="11" font-weight="700">LLaMA-3 (2024.4)</text>
+      <text x="520" y="92" text-anchor="middle" fill="white" font-size="9">8B ~ 70B ~ 405B</text>
+      <text x="520" y="108" text-anchor="middle" fill="white" font-size="9">15T tokens · 128K vocab</text>
+      <text x="520" y="124" text-anchor="middle" fill="white" font-size="8">Tiktoken · DPO · 16K GPU</text>
+      <line x1="612" y1="92" x2="632" y2="92" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar9)"/>
+
+      <!-- LLaMA-4 -->
+      <rect x="635" y="50" width="165" height="85" rx="8" fill="#e74c3c" opacity="0.8"/>
+      <text x="717" y="73" text-anchor="middle" fill="white" font-size="11" font-weight="700">LLaMA-4 (2025)</text>
+      <text x="717" y="92" text-anchor="middle" fill="white" font-size="9">MoE 架构</text>
+      <text x="717" y="108" text-anchor="middle" fill="white" font-size="9">多模态 (文本+图像)</text>
+      <text x="717" y="124" text-anchor="middle" fill="white" font-size="8">Early Fusion</text>
+
+      <!-- 关键变化 -->
+      <rect x="60" y="155" width="700" height="85" rx="8" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="80" y="178" font-size="12" font-weight="700" fill="#0f3460">LLaMA 系列的关键演进：</text>
+      <text x="80" y="200" font-size="10" fill="#555">· <tspan font-weight="600">数据量：</tspan>1.4T → 2T → 15T tokens，增长 10 倍（Over-training 策略）</text>
+      <text x="80" y="218" font-size="10" fill="#555">· <tspan font-weight="600">词表：</tspan>32K (SentencePiece) → 128K (Tiktoken)，多语言效率大幅提升</text>
+      <text x="80" y="236" font-size="10" fill="#555">· <tspan font-weight="600">对齐：</tspan>无 → RLHF → DPO，对齐方法更简洁高效</text>
+    </svg>
+    <div class="caption">图 17：LLaMA 系列的训练演进。核心趋势：数据量激增、词表扩大、对齐方法简化。</div>
+  </div>
+
+  <h3>10.2 DeepSeek 系列</h3>
+  <div class="highlight">
+    <strong>DeepSeek-V3 的训练亮点：</strong>
+    <ul>
+      <li><strong>架构创新：</strong>671B MoE（37B 激活），Multi-head Latent Attention (MLA) 节省 KV Cache</li>
+      <li><strong>FP8 训练：</strong>首个公开的超大规模 FP8 混合精度预训练</li>
+      <li><strong>辅助损失无关负载均衡：</strong>用无偏辅助策略替代传统 MoE 辅助 loss，避免对主损失的干扰</li>
+      <li><strong>Multi-Token Prediction (MTP)：</strong>同时预测 2 个 token，提升训练信号密度</li>
+      <li><strong>极致成本效率：</strong>14.8T tokens，仅用 2.788M H800 GPU·h（约 $5.5M），是同级别模型的 1/10</li>
+    </ul>
+  </div>
+
+  <h3>10.3 主流模型训练配置对比</h3>
+  <table>
+    <tr>
+      <th>模型</th>
+      <th>参数量</th>
+      <th>架构</th>
+      <th>训练数据</th>
+      <th>GPU 用量</th>
+      <th>关键策略</th>
+    </tr>
+    <tr>
+      <td><strong>GPT-4</strong></td>
+      <td>~1.8T MoE（推测）</td>
+      <td>Dense MoE</td>
+      <td>~13T tokens</td>
+      <td>~25K A100</td>
+      <td>RLHF, 预测能力校准</td>
+    </tr>
+    <tr>
+      <td><strong>LLaMA-3 405B</strong></td>
+      <td>405B Dense</td>
+      <td>Decoder-only</td>
+      <td>15T tokens</td>
+      <td>16K H100</td>
+      <td>Over-training, DPO</td>
+    </tr>
+    <tr>
+      <td><strong>DeepSeek-V3</strong></td>
+      <td>671B MoE (37B act.)</td>
+      <td>MoE + MLA</td>
+      <td>14.8T tokens</td>
+      <td>2048 H800</td>
+      <td>FP8, MTP, GRPO</td>
+    </tr>
+    <tr>
+      <td><strong>Qwen-2.5 72B</strong></td>
+      <td>72B Dense</td>
+      <td>Decoder-only</td>
+      <td>18T tokens</td>
+      <td>未公开</td>
+      <td>多阶段训练, DPO</td>
+    </tr>
+    <tr>
+      <td><strong>Gemini 1.5 Pro</strong></td>
+      <td>未公开 MoE</td>
+      <td>MoE</td>
+      <td>未公开</td>
+      <td>TPUv5</td>
+      <td>1M 上下文窗口</td>
+    </tr>
+    <tr>
+      <td><strong>Claude Opus 4</strong></td>
+      <td>未公开</td>
+      <td>未公开</td>
+      <td>未公开</td>
+      <td>未公开</td>
+      <td>RLHF, Constitutional AI</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ===== 十一、长上下文训练 ===== -->
+<div class="section">
+  <h2>十一、长上下文与多阶段训练</h2>
+
+  <h3>11.1 多阶段训练策略</h3>
+  <p>
+    现代 LLM 通常不是"一次性训练到底"，而是采用<strong>多阶段训练</strong>策略，
+    不同阶段使用不同的数据配比、学习率和上下文长度。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 200" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar10" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">典型多阶段训练流程（以 Qwen / LLaMA-3 风格为例）</text>
+
+      <!-- 阶段 1 -->
+      <rect x="20" y="50" width="220" height="70" rx="8" fill="#667eea" opacity="0.8"/>
+      <text x="130" y="73" text-anchor="middle" fill="white" font-size="11" font-weight="700">阶段 1：通用预训练</text>
+      <text x="130" y="92" text-anchor="middle" fill="white" font-size="9">4K ctx · 大 batch · 通用网页数据</text>
+      <text x="130" y="108" text-anchor="middle" fill="white" font-size="9">~80% 训练量</text>
+      <line x1="242" y1="85" x2="262" y2="85" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar10)"/>
+
+      <!-- 阶段 2 -->
+      <rect x="265" y="50" width="220" height="70" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="375" y="73" text-anchor="middle" fill="white" font-size="11" font-weight="700">阶段 2：长上下文扩展</text>
+      <text x="375" y="92" text-anchor="middle" fill="white" font-size="9">32K~128K ctx · RoPE 外推</text>
+      <text x="375" y="108" text-anchor="middle" fill="white" font-size="9">~10% 训练量</text>
+      <line x1="487" y1="85" x2="507" y2="85" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar10)"/>
+
+      <!-- 阶段 3 -->
+      <rect x="510" y="50" width="280" height="70" rx="8" fill="#f0a500" opacity="0.85"/>
+      <text x="650" y="73" text-anchor="middle" fill="white" font-size="11" font-weight="700">阶段 3：高质量退火 (Annealing)</text>
+      <text x="650" y="92" text-anchor="middle" fill="white" font-size="9">高质量数据 · LR 线性降至 0 · 提升 benchmark</text>
+      <text x="650" y="108" text-anchor="middle" fill="white" font-size="9">~10% 训练量</text>
+
+      <!-- 说明 -->
+      <rect x="50" y="140" width="720" height="45" rx="6" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="410" y="160" text-anchor="middle" font-size="10" fill="#0f3460" font-weight="600">退火阶段（Annealing）是 LLaMA-3 的关键创新：用少量高质量数据在训练末期线性衰减 LR 至 0</text>
+      <text x="410" y="178" text-anchor="middle" font-size="10" fill="#888">这个阶段虽然只用 ~10% 的训练量，但能在 MMLU 等 benchmark 上带来 2~5 分的提升</text>
+    </svg>
+    <div class="caption">图 18：典型的多阶段训练流程。通用预训练奠定基础，长上下文阶段扩展窗口，退火阶段用高质量数据精细打磨。</div>
+  </div>
+
+  <h3>11.2 长上下文训练的关键技术</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>RoPE 频率缩放</h4>
+      <p>通过调整 RoPE 的 base frequency（如从 10000 增大到 500000），使位置编码能外推到更长的序列。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>渐进式长度扩展</h4>
+      <p>不直接从 4K 跳到 128K，而是分阶段扩展：4K → 32K → 128K，每阶段用较少的数据适应新长度。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>Ring Attention / Sequence Parallel</h4>
+      <p>将超长序列的注意力计算分散到多张 GPU，每张 GPU 只处理序列的一部分，通过环形通信交换 KV。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>长文本数据采集</h4>
+      <p>训练数据中需包含足够的长文档（书籍、论文、代码仓库）。只靠短文本拼接的"假长文"效果很差。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 十二、训练成本 ===== -->
+<div class="section">
+  <h2>十二、训练成本与效率</h2>
+
+  <h3>12.1 训练成本估算</h3>
+  <p>
+    预训练的计算量可以用一个简单的公式估算：
+  </p>
+  <div class="formula">
+    C ≈ 6 &middot; N &middot; D &nbsp;&nbsp;(FLOPs)
+    <br><br>
+    <span style="font-size:0.85em;">N = 参数量, D = 训练 token 数; 6 = 前向(2ND) + 反向(4ND) 的系数</span>
+  </div>
+
+  <table>
+    <tr>
+      <th>模型</th>
+      <th>参数量</th>
+      <th>训练 Token 数</th>
+      <th>估算 FLOPs</th>
+      <th>估算 GPU·h</th>
+      <th>估算成本</th>
+    </tr>
+    <tr>
+      <td>LLaMA-2 70B</td>
+      <td>70B</td>
+      <td>2T</td>
+      <td>8.4×10²³</td>
+      <td>~1.7M A100·h</td>
+      <td>~$3.4M</td>
+    </tr>
+    <tr>
+      <td>LLaMA-3 70B</td>
+      <td>70B</td>
+      <td>15T</td>
+      <td>6.3×10²⁴</td>
+      <td>~6.4M H100·h</td>
+      <td>~$20M</td>
+    </tr>
+    <tr>
+      <td>LLaMA-3 405B</td>
+      <td>405B</td>
+      <td>15T</td>
+      <td>3.6×10²⁵</td>
+      <td>~30M H100·h</td>
+      <td>~$100M+</td>
+    </tr>
+    <tr>
+      <td>DeepSeek-V3</td>
+      <td>671B MoE (37B act.)</td>
+      <td>14.8T</td>
+      <td>~5.5×10²⁴ *</td>
+      <td>2.788M H800·h</td>
+      <td><strong>~$5.5M</strong></td>
+    </tr>
+  </table>
+  <p style="font-size:0.9em; color:#888;">* MoE 激活参数仅 37B，计算量远低于同规模 Dense 模型</p>
+
+  <div class="success">
+    <strong>效率启示：</strong>DeepSeek-V3 用 $5.5M 训练了 671B MoE 模型，性能媲美 GPT-4 和 LLaMA-3 405B，
+    成本仅为后者的 1/10~1/20。这得益于 MoE 架构（少激活参数）、FP8 训练、高效并行策略的三重优化。
+  </div>
+
+  <h3>12.2 MFU（Model FLOPs Utilization）</h3>
+  <p>
+    <strong>MFU</strong> 衡量训练过程中 GPU 的实际利用效率。理论峰值的百分比越高越好。
+  </p>
+  <div class="formula">
+    MFU = 实际训练 FLOPs / (GPU 理论峰值 FLOPs × 训练时间)
+  </div>
+  <table>
+    <tr>
+      <th>训练规模</th>
+      <th>典型 MFU</th>
+      <th>说明</th>
+    </tr>
+    <tr>
+      <td>小规模（单机 8 卡）</td>
+      <td>50~60%</td>
+      <td>通信开销小，利用率高</td>
+    </tr>
+    <tr>
+      <td>中规模（~256 GPU）</td>
+      <td>40~55%</td>
+      <td>跨机通信成为瓶颈</td>
+    </tr>
+    <tr>
+      <td>超大规模（1000+ GPU）</td>
+      <td>30~45%</td>
+      <td>Pipeline Bubble + 通信开销</td>
+    </tr>
+    <tr>
+      <td>DeepSeek-V3 (2048 GPU)</td>
+      <td><strong>~52%</strong></td>
+      <td>业界领先，归功于高效并行设计</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ===== 总结 ===== -->
+<div class="section">
+  <h2>总结</h2>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 300" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">大模型训练核心知识脉络</text>
+
+      <!-- 行 1: 数据 -->
+      <rect x="30" y="50" width="120" height="50" rx="6" fill="#667eea" opacity="0.85"/>
+      <text x="90" y="72" text-anchor="middle" fill="white" font-size="10" font-weight="600">数据工程</text>
+      <text x="90" y="88" text-anchor="middle" fill="white" font-size="8">采集·清洗·配比</text>
+
+      <rect x="170" y="50" width="120" height="50" rx="6" fill="#4a7dff" opacity="0.85"/>
+      <text x="230" y="72" text-anchor="middle" fill="white" font-size="10" font-weight="600">训练目标</text>
+      <text x="230" y="88" text-anchor="middle" fill="white" font-size="8">NTP 交叉熵</text>
+
+      <rect x="310" y="50" width="120" height="50" rx="6" fill="#2a9d8f" opacity="0.85"/>
+      <text x="370" y="72" text-anchor="middle" fill="white" font-size="10" font-weight="600">超参数策略</text>
+      <text x="370" y="88" text-anchor="middle" fill="white" font-size="8">LR·Batch·精度</text>
+
+      <rect x="450" y="50" width="120" height="50" rx="6" fill="#f0a500" opacity="0.85"/>
+      <text x="510" y="72" text-anchor="middle" fill="white" font-size="10" font-weight="600">分布式训练</text>
+      <text x="510" y="88" text-anchor="middle" fill="white" font-size="8">DP·TP·PP</text>
+
+      <rect x="590" y="50" width="100" height="50" rx="6" fill="#e74c3c" opacity="0.85"/>
+      <text x="640" y="72" text-anchor="middle" fill="white" font-size="10" font-weight="600">稳定性</text>
+      <text x="640" y="88" text-anchor="middle" fill="white" font-size="8">Spike·Checkpoint</text>
+
+      <rect x="710" y="50" width="90" height="50" rx="6" fill="#9b59b6" opacity="0.85"/>
+      <text x="755" y="72" text-anchor="middle" fill="white" font-size="10" font-weight="600">Scaling</text>
+      <text x="755" y="88" text-anchor="middle" fill="white" font-size="8">Laws</text>
+
+      <!-- 行 2: 连接线 -->
+      <line x1="410" y1="105" x2="410" y2="130" stroke="#4a7dff" stroke-width="2"/>
+
+      <!-- 行 3: 三阶段 -->
+      <rect x="80" y="130" width="200" height="50" rx="8" fill="#667eea" opacity="0.9"/>
+      <text x="180" y="153" text-anchor="middle" fill="white" font-size="12" font-weight="700">预训练 (99%+ 计算)</text>
+      <text x="180" y="170" text-anchor="middle" fill="white" font-size="9">数万亿 tokens · 数月</text>
+
+      <rect x="310" y="130" width="200" height="50" rx="8" fill="#2a9d8f" opacity="0.9"/>
+      <text x="410" y="153" text-anchor="middle" fill="white" font-size="12" font-weight="700">SFT 微调</text>
+      <text x="410" y="170" text-anchor="middle" fill="white" font-size="9">指令数据 · 数天</text>
+
+      <rect x="540" y="130" width="200" height="50" rx="8" fill="#e74c3c" opacity="0.85"/>
+      <text x="640" y="153" text-anchor="middle" fill="white" font-size="12" font-weight="700">对齐训练</text>
+      <text x="640" y="170" text-anchor="middle" fill="white" font-size="9">RLHF / DPO · 数天</text>
+
+      <!-- 底部关键洞察 -->
+      <rect x="50" y="205" width="720" height="80" rx="8" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="70" y="230" font-size="12" font-weight="700" fill="#0f3460">当前训练的三大趋势：</text>
+      <text x="70" y="252" font-size="10" fill="#555">1. Over-training：用更多数据训练更小的模型，换取更好的推理性价比</text>
+      <text x="70" y="270" font-size="10" fill="#555">2. MoE 架构：在固定推理成本下获得更强能力（DeepSeek-V3 的成功范例）</text>
+      <text x="410" y="252" font-size="10" fill="#555">3. RL for Reasoning：用 GRPO/RLVR 训练推理链，提升数学和代码能力</text>
+      <text x="410" y="270" font-size="10" fill="#555">4. 后训练愈加重要：对齐训练的投入和方法创新加速</text>
+    </svg>
+    <div class="caption">图 19：大模型训练核心知识脉络与当前趋势。</div>
+  </div>
+
+  <div class="highlight">
+    <strong>一句话总结：</strong>大模型训练是一场数据、算力、工程和算法的系统工程。
+    预训练用海量数据和计算教会模型"理解世界"，SFT 教会模型"听从指令"，对齐训练教会模型"做个好助手"。
+    在这条路上，<strong>数据质量 > 数据数量，训练效率 > 训练规模</strong>，
+    而 Scaling Laws 为整个过程提供了可预测的路线图。
+  </div>
+
+  <p>
+    随着 MoE 架构的普及、FP8 训练的成熟、以及 RL-based 推理训练的兴起，
+    大模型训练正在从"堆算力"转向"提效率"。未来的竞争重心将越来越多地转移到
+    数据工程的精细化、训练策略的创新、以及后训练阶段的深度优化上。
+  </p>
+</div>
+
+<div class="footer">
+  大模型训练策略、流程与原理详解 · 文档生成于 2026 年 5 月
+</div>
+
+</div>
+</body>
+</html>

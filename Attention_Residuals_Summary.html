@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attention Residuals 论文总结报告</title>
+<style>
+  :root{--primary:#1a1a2e;--accent:#0f3460;--highlight-bg:#f0f4ff;--highlight-border:#4a7dff;--text:#222;--border:#e0e0e0}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text);line-height:1.8;background:#fafafa}
+  .container{max-width:920px;margin:0 auto;padding:20px}
+  .cover{text-align:center;padding:70px 20px 50px;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);color:white;border-radius:12px;margin-bottom:40px}
+  .cover h1{font-size:2em;margin-bottom:12px;font-weight:700}
+  .cover .subtitle{font-size:1em;color:#aab;margin-bottom:24px}
+  .cover .badge{display:inline-block;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:8px 24px;font-size:.95em;color:#dde}
+  .section{background:white;border-radius:10px;padding:36px 40px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid var(--border)}
+  h2{font-size:1.5em;color:var(--primary);margin-bottom:6px;padding-bottom:10px;border-bottom:2px solid var(--highlight-border)}
+  h3{font-size:1.15em;color:var(--accent);margin:22px 0 10px}
+  p{margin:12px 0;text-align:justify}
+  .highlight{background:var(--highlight-bg);border-left:4px solid var(--highlight-border);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .highlight strong{color:var(--accent)}
+  .warning{background:#fff8f0;border-left:4px solid #f0a500;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .success{background:#f0fff4;border-left:4px solid #2a9d8f;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  ul,ol{padding-left:24px;margin:10px 0} li{margin:6px 0}
+  .formula{text-align:center;padding:18px 20px;margin:18px 0;background:#f8f9ff;border-radius:8px;border:1px solid #e8eaf0;font-size:1.1em;font-family:"Times New Roman","STIX",serif;overflow-x:auto}
+  .figure{text-align:center;margin:24px 0;padding:16px;background:#fafafa;border-radius:8px;border:1px solid #eee}
+  .figure img{max-width:100%;height:auto;border-radius:4px}
+  .figure .caption{font-size:.88em;color:#666;margin-top:10px;font-style:italic}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.92em}
+  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid #eee}
+  th{background:var(--primary);color:white;font-weight:600} tr:hover{background:#f8f9ff}
+  .card-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .card{background:linear-gradient(135deg,#f8f9ff,#f0f4ff);border:1px solid #d8e0f0;border-radius:10px;padding:20px 24px}
+  .card .num{display:inline-block;background:var(--highlight-border);color:white;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-size:.85em;font-weight:700;margin-right:8px}
+  .card h4{display:inline;color:var(--accent);font-size:1.05em}
+  .card p{margin-top:8px;font-size:.93em}
+  .footer{text-align:center;color:#999;font-size:.85em;padding:30px 0;border-top:1px solid #eee;margin-top:20px}
+  @media(max-width:640px){.section{padding:24px 20px}.cover h1{font-size:1.6em}.card-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ===== Cover ===== -->
+<div class="cover">
+  <h1>Attention Residuals</h1>
+  <div class="subtitle">
+    Kimi Team (Moonshot AI) &nbsp;|&nbsp; arXiv:2603.15031 &nbsp;|&nbsp; 2026.03.16<br>
+    用学习的深度注意力替代固定残差累加，突破 PreNorm 稀释瓶颈
+  </div>
+  <div class="badge">论文总结报告</div>
+</div>
+
+<!-- ===== 一、概述 ===== -->
+<div class="section">
+  <h2>一、论文概述</h2>
+  <p>
+    标准残差连接（h<sub>l</sub> = h<sub>l-1</sub> + f<sub>l-1</sub>(h<sub>l-1</sub>)）是现代 LLM 的基础构件，
+    但它以<strong>固定权重 1</strong> 累加所有层的输出，导致两大问题：
+    (1) 隐藏状态幅度随深度 O(L) 增长（<strong>PreNorm 稀释</strong>）；
+    (2) 早期层的信息被淹没，无法被后续层选择性检索。
+  </p>
+  <div class="highlight">
+    <strong>核心提案：</strong>Attention Residuals (AttnRes) 用<strong>学习的 softmax 注意力</strong>
+    替代固定残差累加。每层通过一个<strong>伪查询向量 w<sub>l</sub></strong>（d 维可学习参数）
+    对所有前驱层输出做 softmax 加权，实现<strong>内容依赖、选择性的深度聚合</strong>。
+  </div>
+  <p>
+    论文提出两个变体：<strong>Full AttnRes</strong>（全层注意力，O(Ld) 内存）和
+    <strong>Block AttnRes</strong>（分块注意力，O(Nd) 内存，N 为块数），并在 Kimi Linear 48B 模型上
+    验证了其有效性。
+  </p>
+</div>
+
+<!-- ===== 二、动机与问题 ===== -->
+<div class="section">
+  <h2>二、研究动机：标准残差的三大局限</h2>
+
+  <h3>2.1 PreNorm 稀释问题</h3>
+  <p>
+    展开标准残差递推 h<sub>l</sub> = h<sub>1</sub> + &sum; f<sub>i</sub>(h<sub>i</sub>)，
+    可见第 l 层的隐藏状态是<strong>所有前驱层输出的等权求和</strong>。PreNorm 下 ||h<sub>l</sub>|| 随深度
+    O(L) 增长，每一层的相对贡献被逐步<strong>稀释</strong>——深层网络中，大量层可以被剪除而损失极小。
+  </p>
+
+  <h3>2.2 三大结构性局限</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>无选择性访问</h4>
+      <p>每层只能访问压缩后的单一状态 h<sub>l-1</sub>，无法区分前驱各层的独立输出。
+      注意力层和 MLP 层接收相同的聚合状态，尽管它们可能需要不同的历史信息。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>不可逆信息损失</h4>
+      <p>一旦信息在累加过程中被淹没，后续层无法从聚合状态中选择性恢复。
+      早期层学到的精细特征可能被深层的大幅度输出覆盖。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>输出幅度失控增长</h4>
+      <p>深层需要学习越来越大的输出以对抗稀释效应，导致数值不稳定。
+      梯度分布也高度不均匀——早期层梯度远大于深层。</p>
+    </div>
+  </div>
+
+  <div class="warning">
+    <strong>类比：</strong>标准残差对应序列维度的 RNN——将所有历史信息压缩为单一状态。
+    AttnRes 之于残差，正如 Attention 之于 RNN——用选择性注意力替代固定累加。
+  </div>
+</div>
+
+<!-- ===== 三、方法 ===== -->
+<div class="section">
+  <h2>三、方法：Attention Residuals</h2>
+
+  <h3>3.1 Full AttnRes</h3>
+  <p>
+    AttnRes 将第 l 层的输入定义为<strong>对所有前驱层输出的 softmax 加权和</strong>：
+  </p>
+  <div class="formula">
+    h<sub>l</sub> = &sum;<sub>i=0</sub><sup>l-1</sup> &alpha;<sub>i&rarr;l</sub> &middot; v<sub>i</sub>
+    &nbsp;&nbsp;&nbsp; 其中 &alpha;<sub>i&rarr;l</sub> = softmax( &phi;(q<sub>l</sub>, k<sub>i</sub>) )
+  </div>
+  <p>关键设计：</p>
+  <ul>
+    <li><strong>伪查询 q<sub>l</sub> = w<sub>l</sub></strong>：每层一个可学习的 d 维向量（不依赖输入），训练时所有 w<sub>l</sub> 初始化为零（初始等权 → 等价于标准残差）</li>
+    <li><strong>键 k<sub>i</sub> = v<sub>i</sub></strong>：v<sub>0</sub> = h<sub>1</sub>（token embedding），v<sub>i</sub> = f<sub>i</sub>(h<sub>i</sub>)（第 i 层输出）</li>
+    <li><strong>核函数 &phi;</strong>：&phi;(q, k) = exp(q<sup>T</sup> RMSNorm(k))，RMSNorm 防止大幅度层主导注意力</li>
+  </ul>
+
+  <div class="figure">
+    <img src="attnres_figures/fig1_overview.png" alt="Figure 1: AttnRes overview">
+    <div class="caption">图 1：三种残差结构对比。(a) 标准残差：固定等权累加；(b) Full AttnRes：每层通过学习的注意力权重选择性聚合所有前驱层输出；(c) Block AttnRes：层被分组为块，块内标准累加，块间注意力聚合。</div>
+  </div>
+
+  <h3>3.2 Block AttnRes</h3>
+  <p>
+    Full AttnRes 的内存和通信开销为 O(Ld)，在流水线并行的大规模训练中不实际。
+    Block AttnRes 将 L 层分为 N 个块（每块 S = L/N 层）：
+  </p>
+  <ul>
+    <li><strong>块内：</strong>标准残差累加，形成块级表示 b<sub>n</sub> = &sum; f<sub>j</sub>(h<sub>j</sub>)</li>
+    <li><strong>块间：</strong>对 N 个块级表示做 softmax 注意力聚合</li>
+  </ul>
+  <div class="formula">
+    内存：O(Ld) &rarr; O(Nd) &nbsp;&nbsp;|&nbsp;&nbsp; 实验中 N &asymp; 8 即可恢复 Full AttnRes 的大部分收益
+  </div>
+
+  <div class="success">
+    <strong>参数开销极小：</strong>每层仅新增 1 个 RMSNorm + 1 个 d 维伪查询向量 w<sub>l</sub>，
+    总新增参数量占模型总参数的<strong>可忽略比例</strong>。
+  </div>
+</div>
+
+<!-- ===== 四、基础设施 ===== -->
+<div class="section">
+  <h2>四、工程实现：训练与推理优化</h2>
+
+  <h3>4.1 训练：跨阶段缓存（Cross-Stage Caching）</h3>
+  <p>
+    流水线并行中，标准残差只传递相邻阶段间的固定大小隐藏状态。Block AttnRes 需要传递
+    所有累积的块表示。朴素实现导致 O(C<sup>2</sup>) 的冗余通信。
+  </p>
+  <p>
+    <strong>解决方案：</strong>每个物理阶段<strong>缓存</strong>从前序阶段接收到的块表示，
+    后续虚拟阶段只传递<strong>增量块</strong>（新完成的块），避免重复传输。
+    这将峰值通信从 O(C) 降为 O(P)（P 为物理阶段数），实现与计算的完全重叠。
+  </p>
+
+  <div class="figure">
+    <img src="attnres_figures/fig3_pipeline.png" alt="Figure 3: Pipeline communication">
+    <div class="caption">图 3：基于缓存的流水线通信示意（4 个物理 rank，2 个虚拟阶段）。
+    每个 rank 缓存已接收的块表示，阶段转换时只传递增量块（+[b<sub>1</sub>, b<sub>2</sub>]），而非完整历史。</div>
+  </div>
+
+  <h3>4.2 推理：两阶段计算策略</h3>
+  <p>推理时，Block AttnRes 采用两阶段计算以降低 I/O：</p>
+  <ol>
+    <li><strong>Phase 1（并行）：</strong>块内所有 S 层的伪查询<strong>同时批量</strong>查询所有前序块表示，
+    只需读一次块表示 KV cache，摊销内存访问</li>
+    <li><strong>Phase 2（顺序）：</strong>块内逐层处理，使用 Online Softmax 将 Phase 1 的跨块结果
+    与当前块内的增量结果合并</li>
+  </ol>
+  <div class="highlight">
+    <strong>推理延迟开销 &lt; 2%：</strong>两阶段策略使得每层的 I/O 从 O(L) 降为 O(S+N)，
+    在典型推理负载下端到端延迟增加不到 2%。
+  </div>
+</div>
+
+<!-- ===== 五、缩放律实验 ===== -->
+<div class="section">
+  <h2>五、缩放律实验</h2>
+  <p>
+    在 5 个模型规模（194M-528M 激活参数）上训练 Baseline、Full AttnRes 和 Block AttnRes，
+    验证改进在不同计算预算下的一致性。
+  </p>
+
+  <div class="figure">
+    <img src="attnres_figures/tab2_scaling.png" alt="Table 2: Scaling configurations">
+    <div class="caption">表 2：缩放律实验配置和各变体的验证损失。Full AttnRes 在所有规模上取得最低损失，Block AttnRes 紧随其后。</div>
+  </div>
+
+  <div class="figure">
+    <img src="attnres_figures/fig4_scaling_curve.png" alt="Figure 4: Scaling curves">
+    <div class="caption">图 4：缩放律曲线。拟合幂律后，在 5.6 PFLOP/s-days 时，Block AttnRes 达到与
+    Baseline 使用 1.25 倍计算量相同的损失（1.692 vs 1.714）——即 <strong>25% 的等效计算节省</strong>。</div>
+  </div>
+</div>
+
+<!-- ===== 六、48B 大模型实验 ===== -->
+<div class="section">
+  <h2>六、Kimi Linear 48B 大模型验证</h2>
+
+  <h3>6.1 模型配置</h3>
+  <p>
+    基于 <strong>Kimi Linear 架构</strong>（48B 总参数 / 3B 激活参数的 MoE 模型），
+    27 个 Transformer Block（54 层），KDA + MLA 混合注意力，256 个路由专家 + 1 个共享专家。
+    Block AttnRes 使用 6 层/块，产生 9 个块 + token embedding = 10 个深度源。
+    在 1.4T token 上预训练。
+  </p>
+
+  <h3>6.2 训练动态分析</h3>
+
+  <div class="figure">
+    <img src="attnres_figures/fig5_training_dynamics.png" alt="Figure 5: Training dynamics">
+    <div class="caption">图 5：训练动态对比。(a) 验证损失：AttnRes 全程低于 Baseline，衰减阶段差距持续扩大；
+    (b) 输出幅度：Baseline 随深度单调增长，AttnRes 在块边界处重置，保持有界周期性模式；
+    (c) 梯度幅度：Baseline 集中于早期层（不均匀），AttnRes 分布更均匀。</div>
+  </div>
+
+  <h3>6.3 下游基准测试</h3>
+
+  <div class="figure">
+    <img src="attnres_figures/tab3_benchmarks.png" alt="Table 3: Downstream benchmarks">
+    <div class="caption">表 3：Block AttnRes 在 15 个下游基准上与 Baseline 对比。AttnRes 在<strong>全部 15 项基准</strong>上持平或优于 Baseline。
+    多步推理任务（GPQA-Diamond +7.5，Math +3.6，HumanEval +3.1）和知识任务（MMLU +1.1，TriviaQA +1.9）均有显著提升。</div>
+  </div>
+</div>
+
+<!-- ===== 七、消融实验 ===== -->
+<div class="section">
+  <h2>七、消融实验与分析</h2>
+
+  <h3>7.1 关键组件消融</h3>
+
+  <div class="figure">
+    <img src="attnres_figures/tab4_fig6_ablation.png" alt="Table 4 + Figure 6: Ablation">
+    <div class="caption">表 4 + 图 6：消融实验结果。<br>
+    左表：各设计选择的贡献——softmax 优于 sigmoid（1.741 vs 1.737），RMSNorm 不可或缺（去除后退化到 1.743/1.750），
+    输入无关混合权重退化到 1.749。<br>
+    右图：块大小 S 的影响——S=2,4,8 均在 1.746 附近，S=32 才回退到 Baseline 水平。N&asymp;8 是实用的最优块数。</div>
+  </div>
+
+  <h3>7.2 与先前方法对比</h3>
+  <table>
+    <tr><th>方法</th><th>验证损失</th><th>权重类型</th><th>深度源访问</th></tr>
+    <tr><td>Baseline (PreNorm)</td><td>1.766</td><td>固定（全 1）</td><td>仅 h<sub>l-1</sub></td></tr>
+    <tr><td>DenseFormer</td><td>1.767</td><td>静态（训后固定标量）</td><td>所有前驱层</td></tr>
+    <tr><td>mHC (m=4)</td><td>1.747</td><td>动态（学习混合矩阵）</td><td>仅 h<sub>l-1</sub>（多流）</td></tr>
+    <tr><td><strong>Full AttnRes</strong></td><td><strong>1.737</strong></td><td>动态（softmax 注意力）</td><td>所有前驱层</td></tr>
+    <tr><td><strong>Block AttnRes</strong></td><td><strong>1.746</strong></td><td>动态（softmax 注意力）</td><td>所有前驱块</td></tr>
+  </table>
+
+  <h3>7.3 学习到的注意力模式</h3>
+
+  <div class="figure">
+    <img src="attnres_figures/fig8_attention_weights.png" alt="Figure 8: Learned attention weights">
+    <div class="caption">图 8：学习到的深度注意力权重分布热力图。<br>
+    三个关键发现：(1) <strong>局部性保持：</strong>对角线主导，每层最关注其直接前驱；
+    (2) <strong>嵌入持久性：</strong>Token embedding (source 0) 在所有层中持续获得非零权重；
+    (3) <strong>跳跃连接：</strong>出现选择性的远距离跳跃（如 layer 4 关注 source 0, layer 15-16 回溯到早期 source）。</div>
+  </div>
+</div>
+
+<!-- ===== 八、统一视角 ===== -->
+<div class="section">
+  <h2>八、理论洞察：序列-深度对偶性</h2>
+
+  <h3>8.1 结构化矩阵视角</h3>
+  <p>
+    论文提出了一个统一框架：所有残差变体都可以表示为<strong>深度混合矩阵 M</strong> 的不同形式，
+    其中 M<sub>i&rarr;l</sub> 是第 l 层赋予第 i 层输出的权重。
+  </p>
+
+  <div class="figure">
+    <img src="attnres_figures/fig9_depth_mixing.png" alt="Figure 9: Depth mixing matrices">
+    <div class="caption">图 9：四种残差变体的深度混合矩阵 M（L=4）。标准残差：全 1 下三角矩阵（等权累加）；
+    Highway：通过门控因子分解的软 softmax-free 变体；Full AttnRes：基于 &phi; 核的全密集矩阵；
+    Block AttnRes：块内共享权重，块间独立注意力。</div>
+  </div>
+
+  <h3>8.2 从线性注意力到 softmax 注意力</h3>
+  <div class="highlight">
+    <strong>关键洞察：</strong>
+    标准残差 = 深度维度的<strong>线性注意力</strong>（固定权重，无归一化）。
+    Highway / mHC = 深度维度的<strong>门控线性注意力</strong>（可学习权重，但无竞争性归一化）。
+    AttnRes = 深度维度的<strong>softmax 注意力</strong>（内容依赖，竞争性归一化）。<br><br>
+    这完成了深度维度上"从线性到 softmax"的同一过渡，正如 Transformer 在序列维度上所做的那样。
+  </div>
+</div>
+
+<!-- ===== 九、创新点总结 ===== -->
+<div class="section">
+  <h2>九、核心创新点总结</h2>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>深度维度的 softmax 注意力</h4>
+      <p>首次将标准残差连接重新定义为深度维度的线性注意力，并用 softmax 注意力替代，
+      实现内容依赖、选择性的跨层信息聚合。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>Block AttnRes 的可扩展设计</h4>
+      <p>将 O(Ld) 内存降为 O(Nd)（N&asymp;8），通过块内标准累加 + 块间注意力，
+      在保持大部分收益的同时实现工程可行性。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>缓解 PreNorm 稀释</h4>
+      <p>选择性聚合将输出幅度限制在有界周期性模式中，梯度分布更均匀，
+      从根本上解决了深层网络中层贡献被稀释的问题。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>近零开销的工程实现</h4>
+      <p>跨阶段缓存消除冗余通信，两阶段推理策略使延迟增加 &lt;2%，
+      训练开销 &lt;4%。作为标准残差的即插即用替代方案。</p>
+    </div>
+    <div class="card">
+      <span class="num">5</span>
+      <h4>序列-深度对偶性理论</h4>
+      <p>建立了残差连接与序列注意力的形式化对偶关系，
+      统一了 Residual/Highway/mHC/AttnRes 等变体在结构化矩阵框架下的分析。</p>
+    </div>
+    <div class="card">
+      <span class="num">6</span>
+      <h4>48B 规模验证</h4>
+      <p>在 Kimi Linear 48B (MoE) 架构上 1.4T token 预训练验证，
+      15 个下游基准全面提升，缩放律显示等效 25% 计算节省。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 十、结论 ===== -->
+<div class="section">
+  <h2>十、结论</h2>
+  <p>
+    Attention Residuals 揭示了残差连接中长期被忽视的信息聚合局限，
+    并通过一个优雅的解决方案——深度维度的 softmax 注意力——实现了选择性的跨层信息路由。
+  </p>
+  <div class="highlight">
+    <strong>一句话总结：</strong>
+    正如 Transformer 用注意力替代 RNN 解决了序列维度的信息压缩瓶颈，
+    AttnRes 用注意力替代固定残差累加，解决了<strong>深度维度</strong>的同一瓶颈。
+    Block AttnRes 以 N&asymp;8 个块表示、不到 2% 的推理开销，
+    实现了 25% 等效计算节省和全面的下游性能提升，
+    是标准残差连接的实用升级方案。
+  </div>
+</div>
+
+<div class="footer">
+  论文总结报告 &middot; Attention Residuals (Kimi Team, 2026)
+</div>
+
+</div>
+</body>
+</html>

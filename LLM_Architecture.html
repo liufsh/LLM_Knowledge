@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM 模型架构、计算原理与 KV Cache 详解</title>
+<style>
+  :root {
+    --primary: #1a1a2e;
+    --accent: #0f3460;
+    --highlight-bg: #f0f4ff;
+    --highlight-border: #4a7dff;
+    --text: #222;
+    --text-light: #555;
+    --border: #e0e0e0;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: var(--text);
+    line-height: 1.8;
+    background: #fafafa;
+  }
+  .container { max-width: 920px; margin: 0 auto; padding: 20px; }
+
+  .cover {
+    text-align: center;
+    padding: 70px 20px 50px;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    color: white;
+    border-radius: 12px;
+    margin-bottom: 40px;
+  }
+  .cover h1 { font-size: 2.1em; margin-bottom: 12px; font-weight: 700; letter-spacing: 1px; }
+  .cover .subtitle { font-size: 1.05em; color: #aab; margin-bottom: 24px; }
+  .cover .tags { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+  .cover .tag {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 20px;
+    padding: 6px 18px;
+    font-size: 0.9em;
+    color: #dde;
+  }
+
+  .section {
+    background: white;
+    border-radius: 10px;
+    padding: 36px 40px;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    border: 1px solid var(--border);
+  }
+  h2 {
+    font-size: 1.5em;
+    color: var(--primary);
+    margin-bottom: 6px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--highlight-border);
+  }
+  h3 { font-size: 1.15em; color: var(--accent); margin: 22px 0 10px; }
+  p { margin: 12px 0; text-align: justify; }
+
+  .highlight {
+    background: var(--highlight-bg);
+    border-left: 4px solid var(--highlight-border);
+    padding: 16px 20px;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0;
+  }
+  .highlight strong { color: var(--accent); }
+
+  .warning {
+    background: #fff8f0;
+    border-left: 4px solid #f0a500;
+    padding: 16px 20px;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0;
+  }
+
+  .success {
+    background: #f0fff4;
+    border-left: 4px solid #2a9d8f;
+    padding: 16px 20px;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0;
+  }
+
+  ul, ol { padding-left: 24px; margin: 10px 0; }
+  li { margin: 6px 0; }
+
+  .formula {
+    text-align: center;
+    padding: 18px 20px;
+    margin: 18px 0;
+    background: #f8f9ff;
+    border-radius: 8px;
+    border: 1px solid #e8eaf0;
+    font-size: 1.12em;
+    font-family: "Times New Roman", "STIX", serif;
+    letter-spacing: 0.5px;
+    overflow-x: auto;
+  }
+
+  .figure {
+    text-align: center;
+    margin: 24px 0;
+    padding: 16px;
+    background: #fafafa;
+    border-radius: 8px;
+    border: 1px solid #eee;
+  }
+  .figure img { max-width: 100%; height: auto; border-radius: 4px; }
+  .figure .caption {
+    font-size: 0.88em;
+    color: #666;
+    margin-top: 10px;
+    font-style: italic;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+  }
+  th { background: var(--primary); color: white; font-weight: 600; }
+  tr:hover { background: #f8f9ff; }
+  td code {
+    background: #f0f0f5;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.9em;
+  }
+
+  .card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .card {
+    background: linear-gradient(135deg, #f8f9ff 0%, #f0f4ff 100%);
+    border: 1px solid #d8e0f0;
+    border-radius: 10px;
+    padding: 20px 24px;
+  }
+  .card .num {
+    display: inline-block;
+    background: var(--highlight-border);
+    color: white;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 28px;
+    font-size: 0.85em;
+    font-weight: 700;
+    margin-right: 8px;
+  }
+  .card h4 { display: inline; color: var(--accent); font-size: 1.05em; }
+  .card p { margin-top: 8px; font-size: 0.93em; }
+
+  .pros-cons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .pros, .cons { padding: 16px; border-radius: 8px; }
+  .pros { background: #f0fff4; border: 1px solid #c8e6c9; }
+  .cons { background: #fff8f0; border: 1px solid #ffe0b2; }
+  .pros h4 { color: #2e7d32; margin-bottom: 8px; }
+  .cons h4 { color: #e65100; margin-bottom: 8px; }
+  .pros li, .cons li { font-size: 0.93em; }
+
+  .step-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 20px 0;
+    flex-wrap: wrap;
+  }
+  .step-box {
+    background: var(--highlight-bg);
+    border: 1px solid var(--highlight-border);
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 0.92em;
+    font-weight: 600;
+    color: var(--accent);
+    text-align: center;
+    min-width: 100px;
+  }
+  .step-arrow { font-size: 1.4em; color: #aaa; }
+
+  .footer {
+    text-align: center;
+    color: #999;
+    font-size: 0.85em;
+    padding: 30px 0;
+    border-top: 1px solid #eee;
+    margin-top: 20px;
+  }
+
+  @media (max-width: 640px) {
+    .section { padding: 24px 20px; }
+    .cover h1 { font-size: 1.6em; }
+    .pros-cons, .card-grid { grid-template-columns: 1fr; }
+    .step-flow { flex-direction: column; }
+    .step-arrow { transform: rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ===== Cover ===== -->
+<div class="cover">
+  <h1>LLM 模型架构、计算原理<br>与 KV Cache 详解</h1>
+  <div class="subtitle">从 Transformer 到大语言模型 —— 理解现代 AI 的核心引擎</div>
+  <div class="tags">
+    <span class="tag">Transformer</span>
+    <span class="tag">Self-Attention</span>
+    <span class="tag">Multi-Head Attention</span>
+    <span class="tag">FFN / SwiGLU</span>
+    <span class="tag">KV Cache</span>
+    <span class="tag">Autoregressive Decoding</span>
+  </div>
+</div>
+
+<!-- ===== 引言 ===== -->
+<div class="section">
+  <h2>引言：什么是大语言模型？</h2>
+  <p>
+    大语言模型（Large Language Model, LLM）本质上是一个<strong>概率预测器</strong>：
+    给定一段文本，它预测下一个最可能出现的词（token）。这个简单的目标，
+    配合海量数据和庞大的模型参数，催生了 GPT、LLaMA、Gemma 等令人惊叹的模型。
+  </p>
+  <div class="highlight">
+    <strong>核心公式：</strong>给定前面的 token 序列 x<sub>1</sub>, x<sub>2</sub>, ..., x<sub>t-1</sub>，
+    模型计算下一个 token 的概率分布 P(x<sub>t</sub> | x<sub>1</sub>, ..., x<sub>t-1</sub>)，
+    然后从中采样或选取概率最高的 token。
+  </div>
+  <p>
+    本文将深入介绍当前主流 LLM（以 LLaMA 为代表的 Decoder-Only Transformer）的核心内容：
+  </p>
+  <ol>
+    <li><strong>模型架构</strong>：从整体到组件，逐层拆解 Transformer 的内部结构</li>
+    <li><strong>计算原理</strong>：Attention 机制的数学本质和直觉理解</li>
+    <li><strong>端到端计算流程</strong>：从文本输入到输出的完整过程——Tokenization、Embedding、前向计算、输出解码</li>
+    <li><strong>自回归生成</strong>：逐 token 生成的详细过程与采样策略</li>
+    <li><strong>训练过程</strong>：损失函数、反向传播与参数更新</li>
+    <li><strong>KV Cache</strong>：推理加速的关键技术，理解其原理、收益和代价</li>
+  </ol>
+</div>
+
+<!-- ===== Part I: 模型架构 ===== -->
+<div class="section">
+  <h2>一、模型整体架构</h2>
+  <p>
+    现代 LLM 几乎都采用 <strong>Decoder-Only Transformer</strong> 架构。与原始 Transformer
+    的 Encoder-Decoder 结构不同，Decoder-Only 去掉了 Encoder 和交叉注意力层，仅保留
+    带因果掩码的自注意力机制，更适合自回归文本生成任务。
+  </p>
+
+  <h3>1.1 宏观结构</h3>
+  <p>一个 LLM 由三部分组成：</p>
+
+  <div class="step-flow">
+    <div class="step-box">Token<br>Embedding</div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box">N &times; Transformer<br>Block</div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box">RMSNorm</div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box">Linear Head<br>(Vocabulary)</div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box">Softmax<br>(Probabilities)</div>
+  </div>
+
+  <ul>
+    <li><strong>Token Embedding：</strong>将输入的每个 token ID 映射为一个 d<sub>model</sub> 维的连续向量。</li>
+    <li><strong>Transformer Block &times; N：</strong>核心计算单元，堆叠 N 层（LLaMA-7B 有 32 层，65B 有 80 层）。</li>
+    <li><strong>输出头：</strong>经过最后的 RMSNorm 后，线性层将隐藏状态映射回词表大小，Softmax 输出概率。</li>
+  </ul>
+
+  <h3>1.2 单个 Transformer Block</h3>
+  <p>
+    每个 Transformer Block 包含两个子模块，各自配有<strong>预归一化</strong>和<strong>残差连接</strong>：
+  </p>
+
+  <div class="figure">
+    <img src="llm_arch_figures/transformer_block.png" alt="Transformer Block" style="max-width: 420px;">
+    <div class="caption">图 1：Decoder-Only Transformer Block 结构（LLaMA 架构）。<br>
+    注意两个关键设计：Pre-Norm（归一化在子层之前）和残差连接（跨越每个子层）。</div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>因果多头自注意力</h4>
+      <p>每个 token 只能"看到"自己和之前的 token（因果掩码）。通过多个注意力头并行工作，
+      捕捉不同类型的依赖关系。使用 RoPE 位置编码。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>前馈网络（FFN）</h4>
+      <p>对每个 token 独立做非线性变换。LLaMA 使用 SwiGLU 激活函数，维度为 2/3 &times; 4d。
+      这里存储了模型的大部分"知识"。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>RMSNorm 预归一化</h4>
+      <p>在每个子层之前（而非之后）进行归一化，提升训练稳定性。RMSNorm 比 LayerNorm 更高效，
+      省去了均值的计算。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>残差连接</h4>
+      <p>每个子层的输出与输入相加。这保证了梯度可以"绕过"子层直接回传，
+      是训练超深网络（80+ 层）的关键。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Part II: Attention ===== -->
+<div class="section">
+  <h2>二、注意力机制：计算原理</h2>
+
+  <h3>2.1 核心思想</h3>
+  <p>
+    注意力机制的本质是一个<strong>加权信息检索</strong>过程。对于序列中的每个 token，
+    我们要回答一个问题：<em>"在理解当前词时，应该重点关注前文的哪些部分？"</em>
+  </p>
+  <div class="highlight">
+    <strong>类比：</strong>想象你在图书馆查资料。你心里有一个<strong>查询（Query）</strong>，
+    书架上每本书的目录是<strong>键（Key）</strong>，书的内容是<strong>值（Value）</strong>。
+    你用查询去匹配每本书的目录（计算相似度），然后根据匹配程度加权提取内容。
+  </div>
+
+  <h3>2.2 Q、K、V 的生成</h3>
+  <p>
+    对于输入序列中的每个 token 向量 x（维度 d<sub>model</sub>），通过三组<strong>独立的线性变换</strong>
+    生成 Query、Key 和 Value：
+  </p>
+  <div class="formula">
+    Q = x &middot; W<sub>Q</sub> , &nbsp;&nbsp;
+    K = x &middot; W<sub>K</sub> , &nbsp;&nbsp;
+    V = x &middot; W<sub>V</sub>
+  </div>
+  <p>
+    其中 W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> 是可学习的权重矩阵。直觉理解：
+  </p>
+  <ul>
+    <li><strong>Query（查询）：</strong>"我需要什么信息？"—— 当前 token 的需求表示</li>
+    <li><strong>Key（键）：</strong>"我能提供什么？"—— 每个 token 的索引/标签</li>
+    <li><strong>Value（值）：</strong>"我的实际内容是什么？"—— 每个 token 的信息内容</li>
+  </ul>
+
+  <h3>2.3 缩放点积注意力</h3>
+  <div class="formula">
+    Attention(Q, K, V) = Softmax(Q &middot; K<sup>T</sup> / &radic;d<sub>k</sub>) &middot; V
+  </div>
+
+  <div class="figure">
+    <img src="llm_arch_figures/attention_computation.png" alt="Attention computation flow">
+    <div class="caption">图 2：缩放点积注意力的计算流程。输入 Q、K、V 经过矩阵乘法、缩放、可选掩码、Softmax 和加权求和五个步骤。</div>
+  </div>
+
+  <p>计算分为四步：</p>
+  <ol>
+    <li><strong>相似度计算：</strong>Q &middot; K<sup>T</sup> 得到注意力分数矩阵，
+    形状为 [序列长度 &times; 序列长度]。每个元素表示两个 token 之间的"相关程度"。</li>
+    <li><strong>缩放：</strong>除以 &radic;d<sub>k</sub>（d<sub>k</sub> 是每个头的维度）。
+    这防止当 d<sub>k</sub> 较大时点积值过大，导致 Softmax 输出趋向 one-hot（梯度消失）。</li>
+    <li><strong>Softmax 归一化：</strong>将分数转化为概率分布，所有权重之和为 1。
+    在 LLM 中，先应用<strong>因果掩码</strong>（将未来位置设为 -&infin;），确保 token 只能关注过去。</li>
+    <li><strong>加权求和：</strong>用注意力权重对 V 进行加权求和，得到当前 token 的输出表示。</li>
+  </ol>
+
+  <div class="warning">
+    <strong>为什么要缩放？</strong>假设 Q 和 K 的每个元素都是均值 0、方差 1 的随机变量，
+    它们的点积的方差为 d<sub>k</sub>。当 d<sub>k</sub>=128 时，点积的标准差为 &radic;128 &asymp; 11.3，
+    这样的大值会让 Softmax 的输出极度集中，梯度几乎为零。除以 &radic;d<sub>k</sub> 可以将方差拉回 1。
+  </div>
+
+  <h3>2.4 因果掩码（Causal Mask）</h3>
+  <p>
+    LLM 是<strong>自回归</strong>模型：生成第 t 个 token 时只能看到前 t-1 个 token，不能"偷看"未来。
+    因果掩码通过将注意力矩阵的上三角（未来位置）设为 -&infin; 来实现，Softmax 后这些位置的权重变为 0。
+  </p>
+
+  <div class="figure">
+    <img src="llm_arch_figures/attention_patterns.png" alt="Attention patterns">
+    <div class="caption">图 3：双向注意力（左，BERT 风格）vs 因果注意力（右，GPT/LLaMA 风格）。
+    右图中标"X"的位置被掩码屏蔽，token 只能关注自己及之前的位置。</div>
+  </div>
+</div>
+
+<!-- ===== Multi-Head Attention ===== -->
+<div class="section">
+  <h2>三、多头注意力（Multi-Head Attention）</h2>
+
+  <h3>3.1 为什么需要多个头？</h3>
+  <p>
+    单个注意力头只能捕捉一种类型的关系。而在自然语言中，token 之间存在多种层次的依赖：
+  </p>
+  <ul>
+    <li><strong>语法关系：</strong>主语-谓语-宾语的结构性关联</li>
+    <li><strong>语义关系：</strong>同义词、上下位关系</li>
+    <li><strong>位置关系：</strong>相邻词之间的局部依赖</li>
+    <li><strong>长距离依赖：</strong>指代消解、跨段落的上下文关联</li>
+  </ul>
+  <p>
+    <strong>多头注意力</strong>让模型同时运行多个独立的注意力头，每个头可以自由学习不同类型的注意力模式。
+  </p>
+
+  <div class="formula">
+    MultiHead(Q, K, V) = Concat(head<sub>1</sub>, head<sub>2</sub>, ..., head<sub>h</sub>) &middot; W<sub>O</sub>
+    <br><br>
+    其中 head<sub>i</sub> = Attention(Q &middot; W<sub>i</sub><sup>Q</sup>, K &middot; W<sub>i</sub><sup>K</sup>, V &middot; W<sub>i</sub><sup>V</sup>)
+  </div>
+
+  <div class="figure">
+    <img src="llm_arch_figures/multihead_attention.png" alt="Multi-head attention">
+    <div class="caption">图 4：多头注意力机制。输入分别经过 h 组独立的线性变换和注意力计算，
+    结果拼接后通过一个线性层融合。</div>
+  </div>
+
+  <h3>3.2 维度拆分</h3>
+  <p>
+    假设 d<sub>model</sub> = 4096，注意力头数 h = 32，则每个头的维度 d<sub>k</sub> = 4096 / 32 = 128。
+    <strong>总计算量与单头注意力完全相同</strong>——多头注意力不是增加计算，而是将同样的计算
+    拆分到多个并行的子空间中，从而捕捉更丰富的模式。
+  </p>
+
+  <table>
+    <tr><th>LLaMA 模型</th><th>d<sub>model</sub></th><th>注意力头数 h</th><th>每头维度 d<sub>k</sub></th><th>层数 N</th></tr>
+    <tr><td>LLaMA-7B</td><td>4096</td><td>32</td><td>128</td><td>32</td></tr>
+    <tr><td>LLaMA-13B</td><td>5120</td><td>40</td><td>128</td><td>40</td></tr>
+    <tr><td>LLaMA-33B</td><td>6656</td><td>52</td><td>128</td><td>60</td></tr>
+    <tr><td>LLaMA-65B</td><td>8192</td><td>64</td><td>128</td><td>80</td></tr>
+  </table>
+
+  <div class="success">
+    <strong>观察：</strong>所有 LLaMA 变体的每头维度 d<sub>k</sub> 都是 128——
+    这说明增大模型时，主要通过增加头的数量和层数来扩展能力，每个头的"视角粒度"保持一致。
+  </div>
+</div>
+
+<!-- ===== FFN ===== -->
+<div class="section">
+  <h2>四、前馈网络（FFN）与知识存储</h2>
+
+  <h3>4.1 标准 FFN</h3>
+  <p>
+    在每个 Transformer Block 中，注意力层负责"决定关注什么"，而 FFN 负责"做实际的计算和知识提取"。
+    标准 FFN 是一个两层的全连接网络：
+  </p>
+  <div class="formula">
+    FFN(x) = ReLU(x &middot; W<sub>1</sub> + b<sub>1</sub>) &middot; W<sub>2</sub> + b<sub>2</sub>
+  </div>
+  <p>
+    中间层的维度通常是 d<sub>model</sub> 的 4 倍（如 d<sub>model</sub>=4096 时，中间维度为 16384），
+    先"展开"到高维空间，经过非线性激活，再"压缩"回原维度。
+  </p>
+
+  <h3>4.2 LLaMA 的 SwiGLU FFN</h3>
+  <p>
+    LLaMA 将标准 FFN 替换为 <strong>SwiGLU FFN</strong>，使用门控机制和 SiLU 激活：
+  </p>
+  <div class="formula">
+    FFN<sub>SwiGLU</sub>(x) = (SiLU(x &middot; W<sub>gate</sub>)) &otimes; (x &middot; W<sub>up</sub>)) &middot; W<sub>down</sub>
+  </div>
+
+  <div class="step-flow">
+    <div class="step-box">输入 x<br>(d<sub>model</sub>)</div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#ffe0e0; border-color:#e63946;">
+      W<sub>gate</sub><br>
+      &darr; SiLU
+    </div>
+    <span class="step-arrow">&otimes;</span>
+    <div class="step-box" style="background:#e0f0e0; border-color:#2a9d8f;">
+      W<sub>up</sub><br>
+      (线性)
+    </div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#e8e0f0; border-color:#6a4c93;">
+      W<sub>down</sub>
+    </div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box">输出<br>(d<sub>model</sub>)</div>
+  </div>
+
+  <div class="highlight">
+    <strong>参数量占比：</strong>FFN 层占据了 Transformer 总参数量的约 <strong>2/3</strong>。
+    研究表明，FFN 的权重中编码了大量的<strong>事实性知识</strong>（如"巴黎是法国的首都"），
+    而注意力层更多负责"信息路由"——决定哪些知识在当前上下文中被激活。
+  </div>
+</div>
+
+<!-- ===== 位置编码 ===== -->
+<div class="section">
+  <h2>五、位置编码：RoPE</h2>
+
+  <h3>5.1 为什么需要位置编码？</h3>
+  <p>
+    注意力机制本身是<strong>置换不变的</strong>——打乱 token 的顺序，注意力计算的结果完全相同。
+    但语言是有序的（"猫吃鱼"和"鱼吃猫"意义完全不同），因此必须显式注入位置信息。
+  </p>
+
+  <h3>5.2 旋转位置编码（RoPE）</h3>
+  <p>
+    LLaMA 使用 <strong>RoPE（Rotary Position Embedding）</strong>，其核心思想是：
+    <strong>通过旋转矩阵将位置信息编码进 Q 和 K 向量中</strong>，使得注意力分数自然地包含相对位置信息。
+  </p>
+  <div class="formula">
+    RoPE(x, pos) = x &middot; R(pos)
+    &nbsp;&nbsp;其中 R(pos) 是基于位置 pos 的旋转矩阵
+  </div>
+
+  <p>RoPE 的巧妙之处在于：</p>
+  <ul>
+    <li><strong>相对位置编码：</strong>两个 token 的注意力分数只取决于它们的相对距离，
+    而非绝对位置。</li>
+    <li><strong>远程衰减：</strong>距离越远的 token 对之间的注意力自然衰减，
+    符合语言学中的"局部性"假设。</li>
+    <li><strong>外推能力：</strong>相比固定的正弦位置编码或可学习的位置嵌入，
+    RoPE 在推理时可以更好地泛化到训练时未见过的长度。</li>
+  </ul>
+
+  <div class="success">
+    <strong>直觉理解：</strong>想象二维平面上的向量。RoPE 将每个 token 的 Q/K 向量
+    按照其位置旋转不同的角度。当计算 Q &middot; K<sup>T</sup> 时，结果只取决于两者的
+    角度差（即相对位置），而非各自的绝对角度。
+  </div>
+</div>
+
+<!-- ===== 端到端计算流程 ===== -->
+<div class="section">
+  <h2>六、端到端计算流程：从文本到概率</h2>
+  <p>
+    理解了模型的各个组件后，让我们追踪一段文本<strong>从输入到输出的完整计算过程</strong>。
+    以输入 "The cat sat on" 并预测下一个词为例：
+  </p>
+
+  <div class="step-flow">
+    <div class="step-box">原始文本<br><small>"The cat sat on"</small></div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#ffe0e0; border-color:#e63946;">Tokenizer<br><small>分词</small></div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#e0f0e0; border-color:#2a9d8f;">Embedding<br><small>查表</small></div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#e8e0f0; border-color:#6a4c93;">Transformer<br><small>&times;N 层</small></div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#fff3cd; border-color:#f0a500;">LM Head<br><small>映射词表</small></div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box">下一个词<br><small>"the" (0.72)</small></div>
+  </div>
+
+  <h3>6.1 第一步：Tokenization（分词）</h3>
+  <p>
+    模型不直接处理文字——它只接受<strong>整数 ID</strong>。Tokenizer 负责将文本切割为
+    <strong>token</strong>（子词单元），每个 token 对应词表中的一个 ID。
+  </p>
+  <div class="highlight">
+    <strong>示例：</strong><code>"The cat sat on"</code> &rarr; Tokenizer &rarr; <code>[The, ▁cat, ▁sat, ▁on]</code> &rarr; ID: <code>[450, 6635, 3290, 373]</code>
+  </div>
+  <p>
+    LLaMA 使用 <strong>SentencePiece BPE</strong>（Byte Pair Encoding）分词器，词表大小为 32,000。
+    BPE 的核心思想是：
+  </p>
+  <ul>
+    <li><strong>高频词</strong>保持完整：如 "the"、"is" 是单个 token</li>
+    <li><strong>低频词</strong>被拆分为子词：如 "unhappiness" &rarr; ["un", "happiness"] 或 ["un", "happ", "iness"]</li>
+    <li><strong>未知字符</strong>回退到字节级别：保证任何 UTF-8 文本都能被编码</li>
+    <li><strong>数字</strong>被拆分为单个数字：如 "2024" &rarr; ["2", "0", "2", "4"]</li>
+  </ul>
+
+  <div class="warning">
+    <strong>Token ≠ 词：</strong>一个英文单词可能是 1-3 个 token，一个中文字通常是 1-2 个 token。
+    例如 "人工智能" 可能被切分为 ["人工", "智能"] 或 ["人", "工", "智", "能"]。
+    这直接影响模型能处理的实际文本长度——4096 token 的上下文窗口，
+    英文约 3000 词，中文约 2000-3000 字。
+  </div>
+
+  <h3>6.2 第二步：Token Embedding（词嵌入查表）</h3>
+  <p>
+    将每个 token ID 转换为一个 <strong>d<sub>model</sub> 维的连续向量</strong>。这通过一个
+    <strong>查表操作</strong>（而非矩阵乘法）实现：
+  </p>
+  <div class="formula">
+    Embedding Table: E &isin; R<sup>V &times; d</sup> &nbsp;&nbsp;(V=词表大小, d=d<sub>model</sub>)
+    <br><br>
+    x<sub>i</sub> = E[token_id<sub>i</sub>] &nbsp;&nbsp;&rarr;&nbsp;&nbsp; 取出第 token_id 行，得到一个 d 维向量
+  </div>
+  <p>以 LLaMA-7B 为例：</p>
+  <ul>
+    <li>词表大小 V = 32,000，嵌入维度 d = 4,096</li>
+    <li>Embedding 表参数量 = 32,000 &times; 4,096 = <strong>1.31 亿</strong>参数</li>
+    <li>输入 4 个 token &rarr; 查表得到 4 个向量 &rarr; 形状 <code>[4, 4096]</code></li>
+  </ul>
+  <div class="success">
+    <strong>直觉理解：</strong>Embedding 表是在训练中学到的"词典"——每个 token 被映射到一个
+    高维空间中的点。语义相近的 token（如 "cat" 和 "dog"）在这个空间中距离较近。
+  </div>
+
+  <h3>6.3 第三步：Transformer 前向传播</h3>
+  <p>
+    Embedding 向量序列（形状 <code>[seq_len, d<sub>model</sub>]</code>）依次通过 N 层 Transformer Block。
+    每层进行的计算：
+  </p>
+  <ol>
+    <li><strong>RMSNorm</strong>：归一化输入，稳定数值范围</li>
+    <li><strong>Multi-Head Attention</strong>：生成 Q、K、V &rarr; 应用 RoPE &rarr; 计算注意力 &rarr; 输出</li>
+    <li><strong>残差连接</strong>：attention_output + input</li>
+    <li><strong>RMSNorm</strong>：再次归一化</li>
+    <li><strong>SwiGLU FFN</strong>：非线性特征变换</li>
+    <li><strong>残差连接</strong>：ffn_output + attention_output</li>
+  </ol>
+  <p>
+    经过 N 层后，输出的形状仍为 <code>[seq_len, d<sub>model</sub>]</code>——每个位置对应一个
+    融合了全部上下文信息的隐藏状态向量。
+  </p>
+
+  <div class="figure">
+    <img src="llm_arch_figures/single_forward_pass.png" alt="Single forward pass detail">
+    <div class="caption">图 6：单个 token 在一层 Transformer 中的完整前向传播过程。
+    新 token 的 Q 与 KV Cache 中所有历史 K、V 进行注意力计算，然后经过 SwiGLU FFN。</div>
+  </div>
+
+  <h3>6.4 第四步：输出层（LM Head）—— 从向量到词</h3>
+  <p>
+    Transformer 的输出是隐藏状态向量，我们需要将其转换为<strong>词表上的概率分布</strong>。
+    这分为三步：
+  </p>
+
+  <h4>Step A：最终 RMSNorm</h4>
+  <p>对最后一层的输出做归一化。</p>
+
+  <h4>Step B：线性映射到词表（Language Model Head）</h4>
+  <div class="formula">
+    logits = h<sub>last</sub> &middot; W<sub>vocab</sub><sup>T</sup>
+    &nbsp;&nbsp;其中 h<sub>last</sub> &isin; R<sup>d</sup>, W<sub>vocab</sub> &isin; R<sup>V &times; d</sup>
+    <br><br>
+    输出 logits &isin; R<sup>V</sup>（V=32,000 个原始分数）
+  </div>
+  <p>
+    这里的 W<sub>vocab</sub> 通常<strong>与 Embedding 表共享权重</strong>（Weight Tying），
+    即用同一个矩阵——输入时用它将 token ID 映射为向量，输出时用它的转置将向量映射回 token 空间。
+    这既减少了参数量，也让输入输出空间保持一致。
+  </p>
+
+  <h4>Step C：Softmax 归一化</h4>
+  <div class="formula">
+    P(token<sub>i</sub>) = exp(logit<sub>i</sub>) / &sum;<sub>j</sub> exp(logit<sub>j</sub>)
+  </div>
+  <p>
+    将 32,000 个 logit 值转化为概率分布。每个值表示对应 token 成为下一个词的概率。
+  </p>
+  <div class="highlight">
+    <strong>数值示例：</strong>假设 logits 中 "the" 对应的值为 3.2，"a" 为 1.8，"mat" 为 2.5，...
+    经过 Softmax 后，"the" 的概率可能是 0.35，"a" 是 0.09，"mat" 是 0.17，...
+    所有 32,000 个概率之和 = 1.0。
+  </div>
+
+  <h3>6.5 全流程数值追踪</h3>
+  <p>
+    以 LLaMA-7B 处理 "The cat sat on" 为例，追踪每一步的张量形状变化：
+  </p>
+  <table>
+    <tr><th>步骤</th><th>操作</th><th>输出形状</th><th>说明</th></tr>
+    <tr><td>0</td><td>原始文本</td><td>1 个字符串</td><td>"The cat sat on"</td></tr>
+    <tr><td>1</td><td>Tokenization</td><td>[4]</td><td>4 个 token ID: [450, 6635, 3290, 373]</td></tr>
+    <tr><td>2</td><td>Embedding 查表</td><td>[4, 4096]</td><td>每个 token → 4096 维向量</td></tr>
+    <tr><td>3</td><td>Transformer &times;32 层</td><td>[4, 4096]</td><td>形状不变，但向量已融合上下文</td></tr>
+    <tr><td>4</td><td>取最后一个位置</td><td>[1, 4096]</td><td>只需最后一个位置来预测下一词</td></tr>
+    <tr><td>5</td><td>RMSNorm</td><td>[1, 4096]</td><td>归一化</td></tr>
+    <tr><td>6</td><td>Linear (LM Head)</td><td>[1, 32000]</td><td>映射到词表大小，得到 logits</td></tr>
+    <tr><td>7</td><td>Softmax</td><td>[1, 32000]</td><td>转换为概率分布</td></tr>
+    <tr><td>8</td><td>采样/Argmax</td><td>[1]</td><td>选出 token ID，如 278 ("the")</td></tr>
+    <tr><td>9</td><td>Detokenize</td><td>1 个字符串</td><td>"the" → 拼接到输出</td></tr>
+  </table>
+</div>
+
+<!-- ===== 自回归生成 ===== -->
+<div class="section">
+  <h2>七、自回归生成的详细过程</h2>
+
+  <h3>7.1 Token-by-Token 生成</h3>
+  <p>
+    LLM 的文本生成是一个<strong>逐 token 的迭代过程</strong>。每一步只生成一个 token，
+    然后将其作为下一步的输入。整个过程就像一个"滚雪球"：
+  </p>
+
+  <div class="figure">
+    <img src="llm_arch_figures/autoregressive_steps.png" alt="Autoregressive generation steps">
+    <div class="caption">图 7：自回归生成的完整示例。每一步中，模型接收所有已有的 token，
+    经过前向计算得到概率分布，采样出下一个 token。绿色=缓存复用，黄色=新输入，红色=生成输出。</div>
+  </div>
+
+  <p>关键观察：</p>
+  <ul>
+    <li>每一步的输出<strong>依赖于之前所有 token</strong>（包括原始 prompt 和已生成的 token）</li>
+    <li>生成是<strong>串行的</strong>——第 t 个 token 必须等第 t-1 个生成完成后才能开始</li>
+    <li>这就是"自回归"（autoregressive）的含义：模型的输出会"回归"成自己的输入</li>
+  </ul>
+
+  <h3>7.2 Prefill 与 Decode 两阶段</h3>
+  <p>
+    实际推理分为两个截然不同的阶段：
+  </p>
+
+  <div class="figure">
+    <img src="llm_arch_figures/prefill_vs_decode.png" alt="Prefill vs Decode">
+    <div class="caption">图 8：Prefill 阶段（左）并行处理所有 prompt token，构建完整的 [n&times;n] 注意力矩阵和 KV Cache；
+    Decode 阶段（右）每步只处理一个新 token，计算 [1&times;n] 的注意力向量。</div>
+  </div>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>Prefill 阶段</h4>
+      <ul>
+        <li>处理整个 prompt（可能数百/数千 token）</li>
+        <li>所有 token <strong>并行</strong>通过 Transformer</li>
+        <li>构建初始 KV Cache</li>
+        <li><strong>计算密集型</strong>：瓶颈是 GPU 算力（FLOPS）</li>
+        <li>通常很快（数十毫秒到数秒）</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>Decode 阶段</h4>
+      <ul>
+        <li>逐个生成新 token</li>
+        <li>每步只处理 <strong>1 个 token</strong></li>
+        <li>复用并追加 KV Cache</li>
+        <li><strong>内存密集型</strong>：瓶颈是显存带宽（GB/s）</li>
+        <li>较慢（每个 token 需要加载全部模型权重）</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="highlight">
+    <strong>为什么 Decode 慢？</strong>每生成一个 token，GPU 都需要从显存中加载整个模型的权重
+    （LLaMA-7B 约 14 GB），但只做了极少量的计算（一个 token 的矩阵向量乘法）。
+    GPU 算力严重"吃不饱"，大部分时间花在等待数据从显存搬运到计算单元。
+    这就是所谓的 <strong>Memory-Bound</strong>（内存瓶颈）。
+  </div>
+
+  <h3>7.3 解码步骤的完整计算量</h3>
+  <p>以 LLaMA-7B 生成 1 个 token 的单步 Decode 为例：</p>
+  <table>
+    <tr><th>计算步骤</th><th>操作</th><th>FLOPs（约）</th></tr>
+    <tr><td>Embedding</td><td>查表（无计算）</td><td>0</td></tr>
+    <tr><td>QKV 投影 &times;32 层</td><td>3 个矩阵向量乘 [4096 &times; 4096]</td><td>3 &times; 32 &times; 2 &times; 4096<sup>2</sup> &asymp; 3.2G</td></tr>
+    <tr><td>注意力计算 &times;32 层</td><td>Q@K<sup>T</sup> + Softmax + @V</td><td>~O(t &times; d) per layer</td></tr>
+    <tr><td>输出投影 &times;32 层</td><td>矩阵向量乘 [4096 &times; 4096]</td><td>32 &times; 2 &times; 4096<sup>2</sup> &asymp; 1.1G</td></tr>
+    <tr><td>FFN &times;32 层</td><td>3 个矩阵向量乘（SwiGLU 有 3 个矩阵）</td><td>3 &times; 32 &times; 2 &times; 4096 &times; 11008 &asymp; 8.6G</td></tr>
+    <tr><td>LM Head</td><td>矩阵向量乘 [4096 &times; 32000]</td><td>2 &times; 4096 &times; 32000 &asymp; 0.26G</td></tr>
+    <tr><td><strong>合计</strong></td><td></td><td><strong>~13.2 GFLOPs / token</strong></td></tr>
+  </table>
+
+  <h3>7.4 采样策略：如何从概率中选词</h3>
+  <p>
+    模型输出 32,000 个概率值后，如何选择下一个 token？不同的策略会产生风格迥异的文本：
+  </p>
+
+  <div class="figure">
+    <img src="llm_arch_figures/sampling_strategies.png" alt="Sampling strategies">
+    <div class="caption">图 9：四种采样策略对比。(a) 贪心解码总选最高概率；(b) 温度控制分布的"锐度"；
+    (c) Top-k 只保留前 k 个候选；(d) Top-p 按累积概率截断。</div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>Greedy Decoding（贪心）</h4>
+      <p>总是选概率最高的 token。确定性输出，但容易重复且缺乏创造性。
+      适合翻译、摘要等需要精确的任务。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>Temperature（温度）</h4>
+      <p>logits 除以温度 T 后再 Softmax。T&lt;1 使分布更尖锐（更确定），
+      T&gt;1 使分布更平坦（更随机）。T=0 等价于贪心。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>Top-k Sampling</h4>
+      <p>只保留概率最高的 k 个 token，其余设为 0 后重新归一化再采样。
+      k 越小越保守，k 越大越多样。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>Top-p / Nucleus Sampling</h4>
+      <p>按概率从高到低排列，保留累积概率 &ge; p 的最小集合。
+      自适应调整候选数量——高置信时少选，低置信时多选。</p>
+    </div>
+  </div>
+
+  <div class="success">
+    <strong>实际应用中</strong>通常组合使用：例如 Temperature=0.7 + Top-p=0.9 + Top-k=50，
+    兼顾创造性和质量。对话类应用常用 T=0.7-1.0；代码生成常用 T=0-0.2（更确定性）。
+  </div>
+
+  <h3>7.5 停止条件</h3>
+  <p>自回归生成在以下任一条件满足时停止：</p>
+  <ul>
+    <li><strong>EOS Token：</strong>模型生成了特殊的结束标记 <code>&lt;/s&gt;</code> 或 <code>&lt;eos&gt;</code></li>
+    <li><strong>最大长度：</strong>达到预设的最大生成 token 数</li>
+    <li><strong>停止词：</strong>遇到用户指定的停止字符串（如 "\n\n"）</li>
+  </ul>
+</div>
+
+<!-- ===== 训练过程 ===== -->
+<div class="section">
+  <h2>八、训练过程：如何教会模型预测下一个词</h2>
+
+  <h3>8.1 训练目标：Next Token Prediction</h3>
+  <p>
+    LLM 的训练目标极其简洁：给定前面的 token，<strong>最大化正确下一个 token 的概率</strong>。
+    数学上，对于一个长度为 T 的训练序列，损失函数为：
+  </p>
+  <div class="formula">
+    L = - (1/T) &sum;<sub>t=1</sub><sup>T</sup> log P(x<sub>t</sub> | x<sub>1</sub>, ..., x<sub>t-1</sub>)
+  </div>
+  <p>
+    这就是<strong>交叉熵损失</strong>（Cross-Entropy Loss）。直觉理解：
+    模型在每个位置都给出 32,000 个 token 的概率预测，损失函数衡量的是
+    模型把正确答案排多高——如果把正确 token 预测为 100% 概率，损失为 0；
+    预测为很低概率，损失很大。
+  </p>
+
+  <h3>8.2 训练时的并行优势</h3>
+  <div class="highlight">
+    <strong>训练 vs 推理的关键区别：</strong>训练时，模型可以<strong>一次性并行</strong>处理
+    整个训练序列（如 2048 或 4096 个 token）。因为训练数据中所有正确答案都已知
+    （Teacher Forcing），无需逐 token 生成。因果掩码确保每个位置只看到前面的 token，
+    使得单次前向传播就能同时计算所有位置的预测和损失。
+  </div>
+  <p>
+    这意味着一个 2048 token 的训练样本，<strong>一次前向传播就产生 2048 个预测</strong>，
+    每个位置都提供一个学习信号。这比推理时的逐 token 生成高效得多。
+  </p>
+
+  <h3>8.3 反向传播与参数更新</h3>
+  <p>完整的训练循环：</p>
+  <div class="step-flow">
+    <div class="step-box">训练文本<br><small>batch &times; seq_len</small></div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#ffe0e0; border-color:#e63946;">前向传播<br><small>计算 logits</small></div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#fff3cd; border-color:#f0a500;">计算损失<br><small>Cross-Entropy</small></div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#e8e0f0; border-color:#6a4c93;">反向传播<br><small>计算梯度</small></div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#e0f0e0; border-color:#2a9d8f;">更新参数<br><small>AdamW</small></div>
+  </div>
+
+  <ol>
+    <li><strong>前向传播：</strong>输入 token 序列，经过全部 Transformer 层，输出每个位置的 logits</li>
+    <li><strong>计算损失：</strong>将每个位置的预测概率与实际下一个 token 对比，计算交叉熵损失</li>
+    <li><strong>反向传播：</strong>通过链式法则计算损失对每个参数的梯度——梯度从输出层逐层回传到输入层</li>
+    <li><strong>参数更新：</strong>使用 AdamW 优化器，根据梯度更新所有参数
+    (&beta;<sub>1</sub>=0.9, &beta;<sub>2</sub>=0.95, 权重衰减=0.1)</li>
+  </ol>
+
+  <h3>8.4 训练的计算规模</h3>
+  <p>以 LLaMA-65B 为例，训练的计算需求：</p>
+  <table>
+    <tr><th>参数</th><th>数值</th></tr>
+    <tr><td>模型参数</td><td>65.2B（652 亿）</td></tr>
+    <tr><td>训练 token 数</td><td>1.4T（1.4 万亿）</td></tr>
+    <tr><td>每 token 前向计算量</td><td>&asymp; 2 &times; 参数量 = 130.4 GFLOPs</td></tr>
+    <tr><td>含反向传播（约 3 倍前向）</td><td>&asymp; 6 &times; 参数量 = 391.2 GFLOPs / token</td></tr>
+    <tr><td>总计算量</td><td>1.4T &times; 391.2G &asymp; <strong>5.5 &times; 10<sup>23</sup> FLOPs</strong></td></tr>
+    <tr><td>训练硬件</td><td>2048 &times; A100-80GB GPU</td></tr>
+    <tr><td>训练时长</td><td>&asymp; 21 天</td></tr>
+  </table>
+
+  <div class="warning">
+    <strong>训练内存瓶颈：</strong>训练比推理消耗更多显存，因为需要存储：
+    (1) 模型参数；(2) 梯度（与参数等大）；(3) 优化器状态（Adam 需要 2 倍参数大小的动量）；
+    (4) 激活值（用于反向传播）。65B 模型的训练至少需要 &gt;1TB 的总显存，
+    因此必须使用模型并行、流水线并行、ZeRO 等分布式训练技术。
+  </div>
+</div>
+
+<!-- ===== KV Cache ===== -->
+<div class="section">
+  <h2>九、KV Cache：推理加速的核心技术</h2>
+
+  <h3>7.1 核心思想</h3>
+  <p>
+    KV Cache 的核心思想非常直观：<strong>缓存已计算过的 Key 和 Value，避免重复计算</strong>。
+  </p>
+  <p>
+    在自回归生成中，当计算第 t 个 token 的注意力时：
+  </p>
+  <ul>
+    <li><strong>Query：</strong>只需要当前 token（第 t 个）的 Q 向量（1 &times; d<sub>k</sub>）</li>
+    <li><strong>Key 和 Value：</strong>需要前面所有 token（1 到 t）的 K 和 V 向量</li>
+  </ul>
+  <p>
+    关键观察：<strong>前 t-1 个 token 的 K 和 V 在上一步已经计算过了！</strong>
+    因此，只需要计算新 token 的 K、V，然后拼接到缓存中即可。
+  </p>
+
+  <div class="highlight">
+    <strong>KV Cache 一句话总结：</strong>
+    在每个生成步骤中，不重新计算所有 token 的 K 和 V，
+    而是只计算新 token 的 K 和 V，并追加到缓存中。
+    注意力计算变为：新 Q &times; 全部缓存 K<sup>T</sup> &rarr; 权重 &rarr; 权重 &times; 全部缓存 V。
+  </div>
+
+  <h3>7.2 有缓存 vs 无缓存</h3>
+
+  <div class="figure">
+    <img src="llm_arch_figures/kv_cache_comparison.png" alt="KV Cache comparison">
+    <div class="caption">图 10：无 KV Cache（左）vs 有 KV Cache（右）的计算对比。
+    绿色块表示缓存复用，黄色块表示新计算。总计算量从 O(n<sup>2</sup>) 降为 O(n)。</div>
+  </div>
+
+  <table>
+    <tr><th>对比项</th><th>无 KV Cache</th><th>有 KV Cache</th></tr>
+    <tr><td><strong>每步计算</strong></td><td>重算所有 token 的 Q, K, V</td><td>只算新 token 的 Q, K, V</td></tr>
+    <tr><td><strong>注意力矩阵</strong></td><td>[t &times; t] 完整矩阵</td><td>[1 &times; t] 单行向量</td></tr>
+    <tr><td><strong>总计算量</strong></td><td>O(n<sup>2</sup>) 次注意力计算</td><td>O(n) 次注意力计算</td></tr>
+    <tr><td><strong>额外内存</strong></td><td>无</td><td>需要存储 K, V 缓存</td></tr>
+    <tr><td><strong>生成 4096 token</strong></td><td>~840 万次注意力</td><td>4096 次注意力</td></tr>
+  </table>
+
+  <h3>7.3 计算加速效果</h3>
+
+  <div class="figure">
+    <img src="llm_arch_figures/kv_cache_speedup.png" alt="KV Cache speedup">
+    <div class="caption">图 11：KV Cache 在不同序列长度下的计算节省。随着序列增长，加速倍数线性增大——
+    生成 4096 个 token 时加速约 2048 倍。</div>
+  </div>
+
+  <h3>7.4 KV Cache 的内存代价</h3>
+  <p>
+    KV Cache 用<strong>内存换速度</strong>。对于每个 token，需要存储每一层的 K 和 V 向量：
+  </p>
+  <div class="formula">
+    每 token 的 KV Cache = 2 &times; n<sub>layers</sub> &times; d<sub>model</sub> &times; 数据类型字节数
+  </div>
+
+  <div class="figure">
+    <img src="llm_arch_figures/kv_cache_memory.png" alt="KV Cache memory">
+    <div class="caption">图 12：KV Cache 的内存占用。左图：每个 token 的缓存大小（FP16）；
+    右图：缓存随序列长度增长的内存需求。LLaMA-65B 在 4096 token 时需要约 5GB 缓存。</div>
+  </div>
+
+  <table>
+    <tr><th>模型</th><th>每 token 缓存</th><th>512 tokens</th><th>2048 tokens</th><th>4096 tokens</th></tr>
+    <tr><td>LLaMA-7B</td><td>0.50 MB</td><td>0.25 GB</td><td>1.0 GB</td><td>2.0 GB</td></tr>
+    <tr><td>LLaMA-13B</td><td>0.78 MB</td><td>0.39 GB</td><td>1.6 GB</td><td>3.1 GB</td></tr>
+    <tr><td>LLaMA-33B</td><td>1.52 MB</td><td>0.76 GB</td><td>3.0 GB</td><td>6.1 GB</td></tr>
+    <tr><td>LLaMA-65B</td><td>2.50 MB</td><td>1.25 GB</td><td>5.0 GB</td><td>10.0 GB</td></tr>
+  </table>
+
+  <div class="warning">
+    <strong>内存瓶颈：</strong>在批量推理场景下，KV Cache 的内存消耗会乘以 batch size。
+    例如 LLaMA-65B 以 batch=8、4096 tokens 推理时，仅 KV Cache 就需要约 80 GB 显存，
+    超过单张 A100-80GB 的容量。这是推动 GQA、MQA 等 KV Cache 压缩技术发展的重要原因。
+  </div>
+</div>
+
+<!-- ===== KV Cache 优化 ===== -->
+<div class="section">
+  <h2>十、KV Cache 优化技术</h2>
+  <p>
+    由于 KV Cache 的内存瓶颈，研究者提出了多种优化方案：
+  </p>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>Multi-Query Attention (MQA)</h4>
+      <p>所有注意力头共享同一组 K 和 V，只有 Q 各自独立。
+      KV Cache 减少为原来的 1/h（h 为头数）。代表：PaLM、Falcon。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>Grouped-Query Attention (GQA)</h4>
+      <p>将头分为若干组，同组内共享 K、V。在 MQA 和 MHA 之间取平衡。
+      代表：LLaMA 2、Mistral。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>量化 KV Cache</h4>
+      <p>将 KV Cache 从 FP16 量化到 INT8 或 INT4，直接减少 2-4 倍内存。
+      需要权衡精度损失。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>PagedAttention (vLLM)</h4>
+      <p>借鉴操作系统的虚拟内存管理，将 KV Cache 分页存储，
+      避免预分配造成的内存碎片和浪费。代表：vLLM。</p>
+    </div>
+  </div>
+
+  <h3>MHA vs GQA vs MQA 对比</h3>
+  <table>
+    <tr><th>方案</th><th>K/V 组数</th><th>KV Cache 大小</th><th>质量损失</th><th>代表模型</th></tr>
+    <tr><td><strong>MHA</strong>（标准）</td><td>= 头数 h</td><td>1x（基线）</td><td>无</td><td>LLaMA 1, GPT-3</td></tr>
+    <tr><td><strong>GQA</strong></td><td>h/g（g 为组数）</td><td>1/g</td><td>极小</td><td>LLaMA 2, Mistral</td></tr>
+    <tr><td><strong>MQA</strong></td><td>1</td><td>1/h</td><td>轻微</td><td>PaLM, Falcon</td></tr>
+  </table>
+</div>
+
+<!-- ===== 完整推理流程 ===== -->
+<div class="section">
+  <h2>十一、完整推理流程总结</h2>
+  <p>
+    综合以上内容，LLM 的推理分为两个阶段：
+  </p>
+
+  <h3>阶段一：Prefill（预填充）</h3>
+  <p>
+    处理输入 prompt 的所有 token。这一步是<strong>并行</strong>的——所有 token 同时经过 Transformer 计算，
+    生成初始的 KV Cache。这一步通常是<strong>计算密集型</strong>（受限于 GPU 算力）。
+  </p>
+
+  <h3>阶段二：Decode（解码生成）</h3>
+  <p>
+    逐 token 生成新内容。每步只处理一个新 token，利用 KV Cache 避免重复计算。
+    这一步通常是<strong>内存密集型</strong>（受限于显存带宽——需要频繁读取 KV Cache 和模型权重）。
+  </p>
+
+  <div class="step-flow">
+    <div class="step-box" style="background:#ffe0e0; border-color:#e63946;">
+      Prefill 阶段<br>
+      <small>并行处理 prompt</small><br>
+      <small>构建 KV Cache</small><br>
+      <small>计算密集</small>
+    </div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#e0f0e0; border-color:#2a9d8f;">
+      Decode 阶段<br>
+      <small>逐 token 生成</small><br>
+      <small>复用 KV Cache</small><br>
+      <small>内存密集</small>
+    </div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box">
+      输出文本
+    </div>
+  </div>
+
+  <div class="highlight">
+    <strong>性能关键点：</strong>
+    Prefill 阶段的速度主要取决于 GPU 的<strong>算力（FLOPS）</strong>；
+    Decode 阶段的速度主要取决于<strong>显存带宽（GB/s）</strong>，
+    因为每生成一个 token 都需要从显存中加载全部模型权重和 KV Cache。
+    这就是为什么 Decode 阶段往往是推理的瓶颈。
+  </div>
+</div>
+
+<!-- ===== 总结 ===== -->
+<div class="section">
+  <h2>十二、总结</h2>
+  <p>本文系统介绍了大语言模型的完整知识体系：</p>
+  <ol>
+    <li><strong>模型架构：</strong>Decoder-Only Transformer 由 Token Embedding、N 层 Transformer Block
+    （每层含因果自注意力 + SwiGLU FFN + RMSNorm + 残差连接）和输出头组成。</li>
+    <li><strong>计算原理：</strong>注意力机制通过 Q-K 相似度计算 + Softmax 归一化 + V 加权求和
+    实现动态的信息检索。多头注意力在多个子空间并行捕捉不同关系，RoPE 编码相对位置。</li>
+    <li><strong>端到端流程：</strong>文本经过 Tokenization → Embedding 查表 → N 层 Transformer 前向传播
+    → LM Head 线性映射 → Softmax 归一化，完成从字符串到概率分布的完整计算。</li>
+    <li><strong>自回归生成：</strong>Prefill 阶段并行处理 prompt，Decode 阶段逐 token 生成，
+    配合 Temperature / Top-k / Top-p 采样策略控制输出的多样性。</li>
+    <li><strong>训练过程：</strong>以 Next Token Prediction 为目标，通过交叉熵损失 + 反向传播 + AdamW
+    优化器更新参数，训练时可并行处理整个序列。</li>
+    <li><strong>KV Cache：</strong>通过缓存历史 token 的 K、V 向量避免重复计算，
+    将解码阶段的注意力计算从 O(n<sup>2</sup>) 降为 O(n)，是推理加速的基石。</li>
+  </ol>
+  <div class="highlight">
+    <strong>一句话理解 LLM：</strong>一台由数十层 Transformer Block 构成的"预测引擎"——
+    将文本分词为 token，嵌入为向量，经过注意力和 FFN 反复提炼，
+    最终映射回词表得到概率分布，逐词生成文本。
+    训练时并行预测整个序列，推理时借助 KV Cache 高效逐词输出。
+  </div>
+</div>
+
+<div class="footer">
+  深度学习基础系列 &middot; LLM 模型架构、计算原理与 KV Cache 详解
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM Prefill 阶段详细计算过程</title>
+<style>
+  :root{--primary:#1a1a2e;--accent:#0f3460;--highlight-bg:#f0f4ff;--highlight-border:#4a7dff;--text:#222;--border:#e0e0e0}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text);line-height:1.8;background:#fafafa}
+  .container{max-width:920px;margin:0 auto;padding:20px}
+  .cover{text-align:center;padding:70px 20px 50px;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);color:white;border-radius:12px;margin-bottom:40px}
+  .cover h1{font-size:2.1em;margin-bottom:12px;font-weight:700}
+  .cover .subtitle{font-size:1.05em;color:#aab;margin-bottom:24px}
+  .cover .tags{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}
+  .cover .tag{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:20px;padding:6px 18px;font-size:.9em;color:#dde}
+  .section{background:white;border-radius:10px;padding:36px 40px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid var(--border)}
+  h2{font-size:1.5em;color:var(--primary);margin-bottom:6px;padding-bottom:10px;border-bottom:2px solid var(--highlight-border)}
+  h3{font-size:1.15em;color:var(--accent);margin:22px 0 10px}
+  p{margin:12px 0;text-align:justify}
+  .highlight{background:var(--highlight-bg);border-left:4px solid var(--highlight-border);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .highlight strong{color:var(--accent)}
+  .warning{background:#fff8f0;border-left:4px solid #f0a500;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .success{background:#f0fff4;border-left:4px solid #2a9d8f;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  ul,ol{padding-left:24px;margin:10px 0} li{margin:6px 0}
+  .formula{text-align:center;padding:18px 20px;margin:18px 0;background:#f8f9ff;border-radius:8px;border:1px solid #e8eaf0;font-size:1.1em;font-family:"Times New Roman","STIX",serif;overflow-x:auto}
+  .figure{text-align:center;margin:24px 0;padding:16px;background:#fafafa;border-radius:8px;border:1px solid #eee}
+  .figure img{max-width:100%;height:auto;border-radius:4px}
+  .figure .caption{font-size:.88em;color:#666;margin-top:10px;font-style:italic}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.92em}
+  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid #eee}
+  th{background:var(--primary);color:white;font-weight:600} tr:hover{background:#f8f9ff}
+  td code{background:#f0f0f5;padding:2px 6px;border-radius:3px;font-size:.9em}
+  .card-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .card{background:linear-gradient(135deg,#f8f9ff,#f0f4ff);border:1px solid #d8e0f0;border-radius:10px;padding:20px 24px}
+  .card .num{display:inline-block;background:var(--highlight-border);color:white;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-size:.85em;font-weight:700;margin-right:8px}
+  .card h4{display:inline;color:var(--accent);font-size:1.05em}
+  .card p{margin-top:8px;font-size:.93em}
+  .step-flow{display:flex;align-items:center;justify-content:center;gap:8px;margin:20px 0;flex-wrap:wrap}
+  .step-box{background:var(--highlight-bg);border:1px solid var(--highlight-border);border-radius:8px;padding:10px 16px;font-size:.92em;font-weight:600;color:var(--accent);text-align:center;min-width:100px}
+  .step-arrow{font-size:1.4em;color:#aaa}
+  .footer{text-align:center;color:#999;font-size:.85em;padding:30px 0;border-top:1px solid #eee;margin-top:20px}
+  @media(max-width:640px){.section{padding:24px 20px}.cover h1{font-size:1.6em}.card-grid{grid-template-columns:1fr}.step-flow{flex-direction:column}.step-arrow{transform:rotate(90deg)}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="cover">
+  <h1>LLM Prefill 阶段<br>详细计算过程</h1>
+  <div class="subtitle">以 LLaMA-7B 处理 "The cat sat on the mat" 为例 —— 逐步追踪每一个张量变换</div>
+  <div class="tags">
+    <span class="tag">Tokenization</span>
+    <span class="tag">Embedding</span>
+    <span class="tag">Self-Attention</span>
+    <span class="tag">SwiGLU FFN</span>
+    <span class="tag">KV Cache</span>
+    <span class="tag">LM Head</span>
+  </div>
+</div>
+
+<!-- ===== 概述 ===== -->
+<div class="section">
+  <h2>概述：什么是 Prefill？</h2>
+  <p>
+    LLM 推理分为两个阶段：<strong>Prefill（预填充）</strong>和 <strong>Decode（解码）</strong>。
+    Prefill 是第一阶段——处理用户输入的 prompt，<strong>一次性并行</strong>计算所有 token，
+    生成初始的 KV Cache 和第一个输出 token。
+  </p>
+  <div class="highlight">
+    <strong>Prefill 的三大目标：</strong>
+    (1) 理解完整的 prompt 上下文；
+    (2) 为每一层构建 KV Cache（供后续 Decode 复用）；
+    (3) 预测 prompt 后面的第一个 token。
+  </div>
+  <p>
+    下面我们以 <strong>LLaMA-7B</strong>（32 层，32 头，d=4096）处理
+    <code>"The cat sat on the mat"</code> 为例，逐步追踪 Prefill 中的每一步计算。
+  </p>
+
+  <div class="figure">
+    <img src="prefill_figures/prefill_pipeline.png" alt="Prefill pipeline overview">
+    <div class="caption">图 1：Prefill 阶段完整计算流程总览。输入文本经过 Tokenization、Embedding、N 层 Transformer（含注意力和 FFN）、
+    最后经 LM Head 输出下一个 token 的概率分布。整个过程中同时构建 KV Cache。</div>
+  </div>
+</div>
+
+<!-- ===== Step 1: Tokenization ===== -->
+<div class="section">
+  <h2>Step 1：Tokenization（分词）</h2>
+
+  <h3>1.1 过程</h3>
+  <p>
+    Tokenizer 将原始字符串切分为<strong>子词 token 序列</strong>，每个 token 映射到词表中的整数 ID。
+    LLaMA 使用 SentencePiece BPE，词表大小 V = 32,000。
+  </p>
+
+  <div class="figure">
+    <img src="prefill_figures/step1_tokenization.png" alt="Step 1: Tokenization">
+    <div class="caption">图 2：Tokenization 过程。原始字符串被 BPE 分词器切分为 6 个 token，
+    每个 token 映射到对应的词表 ID。注意 "▁" 前缀表示词前空格。</div>
+  </div>
+
+  <h3>1.2 数值追踪</h3>
+  <table>
+    <tr><th>位置</th><th>Token 文本</th><th>Token ID</th><th>说明</th></tr>
+    <tr><td>0</td><td>"The"</td><td>450</td><td>句首单词，无空格前缀</td></tr>
+    <tr><td>1</td><td>"▁cat"</td><td>6635</td><td>▁ 表示前面有空格</td></tr>
+    <tr><td>2</td><td>"▁sat"</td><td>3290</td><td></td></tr>
+    <tr><td>3</td><td>"▁on"</td><td>373</td><td></td></tr>
+    <tr><td>4</td><td>"▁the"</td><td>278</td><td>常见词，ID 较小</td></tr>
+    <tr><td>5</td><td>"▁mat"</td><td>15016</td><td></td></tr>
+  </table>
+
+  <div class="success">
+    <strong>关键点：</strong>Tokenization 是纯字符串操作，<strong>不涉及任何神经网络计算</strong>。
+    在 CPU 上执行，耗时可忽略（微秒级）。输出形状：<code>[6]</code>（6 个整数 ID）。
+  </div>
+</div>
+
+<!-- ===== Step 2: Embedding ===== -->
+<div class="section">
+  <h2>Step 2：Embedding 查表</h2>
+
+  <h3>2.1 过程</h3>
+  <p>
+    Embedding 层是一个<strong>大型查找表</strong> E &isin; R<sup>32000&times;4096</sup>。
+    给定 token ID，直接取出对应行——不做矩阵乘法，而是<strong>索引操作</strong>。
+  </p>
+
+  <div class="figure">
+    <img src="prefill_figures/step2_embedding.png" alt="Step 2: Embedding">
+    <div class="caption">图 3：Embedding 查表过程。6 个 token ID 各从表中取出一行 4096 维向量，
+    组成输入矩阵 X &isin; R<sup>6&times;4096</sup>。注意：这是查表操作，零 FLOPs。</div>
+  </div>
+
+  <h3>2.2 数值细节</h3>
+  <div class="formula">
+    X = E[token\_ids] &nbsp;&nbsp;&rarr;&nbsp;&nbsp; X &isin; R<sup>6 &times; 4096</sup>
+    <br><br>
+    Embedding 表参数量 = 32,000 &times; 4,096 = 131,072,000 (&asymp; 1.31 亿参数)
+  </div>
+
+  <div class="warning">
+    <strong>注意：</strong>此阶段<strong>不加位置编码</strong>。LLaMA 使用 RoPE，
+    位置信息在 Attention 层的 Q/K 投影之后才注入（通过旋转），而非在 Embedding 阶段加上去。
+    这与 GPT-2（Learned PE 加到 Embedding）和原始 Transformer（Sinusoidal PE 加到 Embedding）不同。
+  </div>
+</div>
+
+<!-- ===== Step 3: Transformer Layers ===== -->
+<div class="section">
+  <h2>Step 3：Transformer 层前向传播（&times;32 层）</h2>
+  <p>
+    Embedding 输出 X 依次通过 32 层 Transformer Block。每层包含两个子模块：
+    <strong>Self-Attention</strong> 和 <strong>SwiGLU FFN</strong>，各配 RMSNorm + 残差连接。
+    下面详细展开一层的计算。
+  </p>
+
+  <h3>3.1 子步骤 A：RMSNorm + Multi-Head Self-Attention</h3>
+
+  <h4>A1. RMSNorm（Pre-Normalization）</h4>
+  <div class="formula">
+    h_norm = h / RMS(h) &times; &gamma;
+    &nbsp;&nbsp;其中 RMS(h) = &radic;(mean(h<sup>2</sup>))
+    <br><br>
+    输入 [6, 4096] &rarr; 输出 [6, 4096]（形状不变，数值归一化）
+  </div>
+
+  <h4>A2. Q/K/V 线性投影</h4>
+  <p>
+    对归一化后的输入做三组独立的线性变换，生成 Query、Key、Value：
+  </p>
+  <div class="formula">
+    Q = h_norm &middot; W<sub>Q</sub> &nbsp;&nbsp;[6, 4096] &times; [4096, 4096] &rarr; [6, 4096]
+    <br>
+    K = h_norm &middot; W<sub>K</sub> &nbsp;&nbsp;[6, 4096] &times; [4096, 4096] &rarr; [6, 4096]
+    <br>
+    V = h_norm &middot; W<sub>V</sub> &nbsp;&nbsp;[6, 4096] &times; [4096, 4096] &rarr; [6, 4096]
+    <br><br>
+    然后 reshape 为 32 个头：Q, K, V &rarr; [6, 32, 128]
+  </div>
+  <p>
+    <strong>FLOPs：</strong>3 &times; 2 &times; 6 &times; 4096 &times; 4096 = <strong>603M</strong> per layer
+  </p>
+
+  <h4>A3. 应用 RoPE 位置编码</h4>
+  <p>
+    对每个头的 Q 和 K 向量，根据其<strong>序列位置</strong>进行旋转。位置 0 的 Q/K 不旋转，
+    位置 1 旋转 &theta; 角，位置 5 旋转 5&theta; 角。旋转以 2D 对的方式独立进行，
+    (q<sub>0</sub>, q<sub>1</sub>) 用频率 &theta;<sub>0</sub> 旋转，(q<sub>2</sub>, q<sub>3</sub>) 用 &theta;<sub>1</sub> 旋转...
+    <strong>V 不做 RoPE</strong>。
+  </p>
+
+  <h4>A4. 注意力计算（Prefill 的核心！）</h4>
+
+  <div class="figure">
+    <img src="prefill_figures/step3_attention.png" alt="Step 3: Attention">
+    <div class="caption">图 4：Prefill 阶段单个注意力头的完整计算流程。
+    Q &isin; [6,128]，K &isin; [6,128]，V &isin; [6,128]。
+    Q@K<sup>T</sup> 产生完整的 [6&times;6] 注意力矩阵，经因果掩码和 Softmax 后与 V 相乘。
+    右侧同时将 K、V 存入 KV Cache。</div>
+  </div>
+
+  <p>逐步计算（以单个头为例）：</p>
+  <ol>
+    <li><strong>注意力分数：</strong>S = Q &middot; K<sup>T</sup> / &radic;128 &rarr; <code>[6, 6]</code> 矩阵。
+    S[i][j] 表示位置 i 的 token 对位置 j 的"关注程度"。</li>
+    <li><strong>因果掩码：</strong>将上三角（j &gt; i 的位置）设为 -&infin;。
+    这保证每个 token 只能看到自己和之前的 token。</li>
+    <li><strong>Softmax：</strong>对每行做 softmax，将分数转为概率。每行之和 = 1。
+    被掩码的位置变为 0。</li>
+    <li><strong>加权求和：</strong>Output = A &middot; V &rarr; <code>[6, 128]</code>。
+    每个位置的输出是其能看到的所有 V 向量的加权平均。</li>
+  </ol>
+
+  <div class="highlight">
+    <strong>Prefill 的 [6&times;6] vs Decode 的 [1&times;7]：</strong>
+    Prefill 一次性计算完整的 N&times;N 注意力矩阵（这里是 6&times;6），
+    36 个注意力对全部并行计算。而 Decode 每步只算 [1&times;t] 的单行向量。
+    这就是 Prefill <strong>计算密集</strong>（充分利用 GPU 并行性）
+    而 Decode <strong>内存密集</strong>的根本原因。
+  </div>
+
+  <h4>A5. 输出投影 + 残差</h4>
+  <div class="formula">
+    32 个头的输出 concat &rarr; [6, 4096]
+    <br>
+    &times; W<sub>O</sub> [4096, 4096] &rarr; [6, 4096]
+    <br>
+    + 残差（加回原始输入 h）
+  </div>
+
+  <h4>A6. 存入 KV Cache</h4>
+  <p>
+    <strong>同时</strong>，将本层计算出的 K 和 V 存入 KV Cache。这是 Prefill 阶段的<strong>副产品</strong>
+    ——不需要额外计算，只是把已计算的结果保留下来：
+  </p>
+  <div class="formula">
+    KV Cache[layer_l] = { K: [6, 32, 128], V: [6, 32, 128] }
+  </div>
+
+  <h3>3.2 子步骤 B：RMSNorm + SwiGLU FFN</h3>
+
+  <div class="figure">
+    <img src="prefill_figures/step3b_ffn.png" alt="Step 3b: FFN">
+    <div class="caption">图 5：SwiGLU FFN 的计算流程。输入经两条并行路径（Gate + Up），
+    Gate 路径经过 SiLU 激活，两路逐元素相乘后经 Down 投影回原维度。</div>
+  </div>
+
+  <p>SwiGLU FFN 的三步计算：</p>
+  <ol>
+    <li><strong>Gate 路径：</strong>gate = SiLU(h &middot; W<sub>gate</sub>) &nbsp;&nbsp;
+    [6, 4096] &times; [4096, 11008] &rarr; [6, 11008] &rarr; SiLU &rarr; [6, 11008]</li>
+    <li><strong>Up 路径：</strong>up = h &middot; W<sub>up</sub> &nbsp;&nbsp;
+    [6, 4096] &times; [4096, 11008] &rarr; [6, 11008]</li>
+    <li><strong>Down 投影：</strong>out = (gate &otimes; up) &middot; W<sub>down</sub> &nbsp;&nbsp;
+    [6, 11008] &times; [11008, 4096] &rarr; [6, 4096] + 残差</li>
+  </ol>
+  <p>
+    <strong>FLOPs：</strong>3 &times; 2 &times; 6 &times; 4096 &times; 11008 = <strong>1.62G</strong> per layer
+    （FFN 的计算量约为 Attention 的 2.7 倍！）
+  </p>
+</div>
+
+<!-- ===== Step 4: LM Head ===== -->
+<div class="section">
+  <h2>Step 4：LM Head —— 输出层计算</h2>
+  <p>
+    经过 32 层 Transformer 后，得到最终隐藏状态 H &isin; R<sup>6&times;4096</sup>。
+    输出层将其转换为词表上的概率分布。
+  </p>
+
+  <div class="figure">
+    <img src="prefill_figures/step4_lm_head.png" alt="Step 4: LM Head">
+    <div class="caption">图 6：LM Head 输出计算。取最后一个位置（"mat"）的隐藏向量，
+    经 RMSNorm → 线性映射到 32000 维 → Softmax 得到概率分布。</div>
+  </div>
+
+  <h3>4.1 为什么只取最后一个位置？</h3>
+  <p>
+    在自回归模型中，位置 i 的输出预测的是位置 i+1 的 token。
+    <strong>最后一个位置</strong>（位置 5，"mat"）的输出就是我们要的——它融合了整个 prompt 的上下文信息，
+    预测下一个 token。
+  </p>
+  <div class="highlight">
+    <strong>训练 vs 推理的差异：</strong>
+    训练时，<strong>所有 6 个位置</strong>的 logits 都会被使用（分别与位置 1-6 的真实 token 计算损失）。
+    推理时，只需要<strong>最后一个位置</strong>的 logits 来生成下一个 token。
+  </div>
+
+  <h3>4.2 计算步骤</h3>
+  <div class="formula">
+    h<sub>last</sub> = H[5] &nbsp;&rarr;&nbsp; [1, 4096]
+    <br>
+    h<sub>norm</sub> = RMSNorm(h<sub>last</sub>) &nbsp;&rarr;&nbsp; [1, 4096]
+    <br>
+    logits = h<sub>norm</sub> &middot; W<sub>vocab</sub><sup>T</sup> &nbsp;&rarr;&nbsp; [1, 4096] &times; [4096, 32000] = [1, 32000]
+    <br>
+    probs = Softmax(logits) &nbsp;&rarr;&nbsp; [1, 32000]
+    <br><br>
+    next\_token = sample(probs) &nbsp; 或 &nbsp; argmax(probs)
+  </div>
+</div>
+
+<!-- ===== KV Cache ===== -->
+<div class="section">
+  <h2>Step 5：KV Cache 的构建</h2>
+  <p>
+    Prefill 阶段的另一个关键产出是 <strong>KV Cache</strong>——它是 Decode 阶段高效运行的基础。
+  </p>
+
+  <div class="figure">
+    <img src="prefill_figures/kv_cache_build.png" alt="KV Cache building">
+    <div class="caption">图 7：Prefill 阶段构建的 KV Cache。每一层都存储了 6 个 token 的 K 和 V 向量（32 个头，每头 128 维）。
+    整个 Cache 在 Decode 阶段<strong>不再重新计算</strong>，只会被追加新 token 的 K/V。</div>
+  </div>
+
+  <h3>5.1 KV Cache 结构</h3>
+  <div class="formula">
+    KV Cache 总大小 = 32 layers &times; 2 (K+V) &times; 6 tokens &times; 32 heads &times; 128 dims &times; 2 bytes (FP16)
+    <br>= 32 &times; 2 &times; 6 &times; 32 &times; 128 &times; 2 = <strong>3.0 MB</strong>
+  </div>
+
+  <table>
+    <tr><th>维度</th><th>大小</th><th>说明</th></tr>
+    <tr><td>层数</td><td>32</td><td>每层独立存储 K 和 V</td></tr>
+    <tr><td>K/V</td><td>&times;2</td><td>Key 和 Value 各一份</td></tr>
+    <tr><td>序列长度</td><td>6</td><td>当前 prompt 的 token 数（会在 Decode 中逐步增长）</td></tr>
+    <tr><td>头数</td><td>32</td><td>每个注意力头独立缓存</td></tr>
+    <tr><td>头维度</td><td>128</td><td>d<sub>model</sub> / n<sub>heads</sub> = 4096 / 32</td></tr>
+  </table>
+</div>
+
+<!-- ===== 数值汇总 ===== -->
+<div class="section">
+  <h2>全流程张量形状与计算量汇总</h2>
+
+  <table>
+    <tr><th>步骤</th><th>操作</th><th>输入形状</th><th>输出形状</th><th>FLOPs（每层）</th></tr>
+    <tr><td>1</td><td>Tokenization</td><td>字符串</td><td>[6]</td><td>0</td></tr>
+    <tr><td>2</td><td>Embedding 查表</td><td>[6]</td><td>[6, 4096]</td><td>0</td></tr>
+    <tr><td>3a</td><td>RMSNorm</td><td>[6, 4096]</td><td>[6, 4096]</td><td>~49K</td></tr>
+    <tr><td>3b</td><td>QKV 投影</td><td>[6, 4096]</td><td>[6, 4096] &times;3</td><td>603M</td></tr>
+    <tr><td>3c</td><td>RoPE</td><td>[6, 32, 128]</td><td>[6, 32, 128]</td><td>~98K</td></tr>
+    <tr><td>3d</td><td>Q@K<sup>T</sup></td><td>[6,128]&times;[128,6]</td><td>[6, 6] &times;32h</td><td>3.1M</td></tr>
+    <tr><td>3e</td><td>Mask + Softmax</td><td>[6, 6]</td><td>[6, 6]</td><td>~2K</td></tr>
+    <tr><td>3f</td><td>A @ V</td><td>[6,6]&times;[6,128]</td><td>[6, 128] &times;32h</td><td>3.1M</td></tr>
+    <tr><td>3g</td><td>输出投影 W<sub>O</sub></td><td>[6, 4096]</td><td>[6, 4096]</td><td>201M</td></tr>
+    <tr><td>3h</td><td>SwiGLU FFN (3 个矩阵)</td><td>[6, 4096]</td><td>[6, 4096]</td><td>1,620M</td></tr>
+    <tr><td></td><td><strong>单层合计</strong></td><td></td><td></td><td><strong>~2.43 GFLOPs</strong></td></tr>
+    <tr><td></td><td><strong>32 层合计</strong></td><td></td><td></td><td><strong>~77.7 GFLOPs</strong></td></tr>
+    <tr><td>4</td><td>LM Head</td><td>[1, 4096]</td><td>[1, 32000]</td><td>262M</td></tr>
+    <tr><td></td><td><strong>Prefill 总计</strong></td><td></td><td></td><td><strong>~78.0 GFLOPs</strong></td></tr>
+  </table>
+
+  <div class="success">
+    <strong>关键观察：</strong>
+    (1) FFN 占每层计算量的 <strong>~67%</strong>，Attention 投影占 ~33%，注意力矩阵运算 &lt;1%——
+    Prefill 是<strong>矩阵乘法密集型</strong>，非注意力密集型。
+    (2) 6 个 token 的 Prefill 计算量 ~78 GFLOPs，A100 (312 TFLOPS) 可在 <strong>&lt;0.25 ms</strong> 完成。
+    真实的长 prompt（如 4096 tokens）耗时约 100-500ms。
+  </div>
+</div>
+
+<!-- ===== Prefill vs Decode ===== -->
+<div class="section">
+  <h2>Prefill vs Decode：关键差异</h2>
+
+  <div class="figure">
+    <img src="prefill_figures/prefill_vs_decode_detail.png" alt="Prefill vs Decode detail">
+    <div class="caption">图 8：Prefill 与 Decode 的逐步对比。Prefill 处理所有 token（大批次矩阵乘），
+    Decode 每步只处理 1 个 token（矩阵向量乘），GPU 利用率截然不同。</div>
+  </div>
+
+  <table>
+    <tr><th>维度</th><th>Prefill</th><th>Decode（单步）</th></tr>
+    <tr><td><strong>处理 token 数</strong></td><td>N 个（整个 prompt）</td><td>1 个（新生成的 token）</td></tr>
+    <tr><td><strong>Q 形状</strong></td><td>[N, d<sub>k</sub>]</td><td>[1, d<sub>k</sub>]</td></tr>
+    <tr><td><strong>注意力矩阵</strong></td><td>[N &times; N] 完整矩阵</td><td>[1 &times; (N+t)] 单行向量</td></tr>
+    <tr><td><strong>计算类型</strong></td><td>矩阵 &times; 矩阵（GEMM）</td><td>矩阵 &times; 向量（GEMV）</td></tr>
+    <tr><td><strong>GPU 利用率</strong></td><td>高（计算密集）</td><td>低（内存密集）</td></tr>
+    <tr><td><strong>瓶颈</strong></td><td>GPU 算力（FLOPS）</td><td>显存带宽（GB/s）</td></tr>
+    <tr><td><strong>KV Cache</strong></td><td>构建（写入）</td><td>追加 + 读取（复用）</td></tr>
+    <tr><td><strong>并行性</strong></td><td>所有 token 并行</td><td>逐 token 串行</td></tr>
+    <tr><td><strong>典型耗时</strong></td><td>100-500ms（长 prompt）</td><td>10-30ms / token</td></tr>
+  </table>
+
+  <div class="warning">
+    <strong>为什么 Decode 慢？</strong>每生成一个 token，GPU 需要从显存加载完整的模型权重
+    （LLaMA-7B: ~14 GB）和全部 KV Cache，但只做极少量计算（一个 token 的矩阵向量乘）。
+    <strong>算力利用率不到 1%</strong>，大部分时间在等待数据搬运。
+    这就是为什么 Prefill 可能只需 200ms，但生成 100 个 token 却需要 2-3 秒。
+  </div>
+</div>
+
+<!-- ===== 优化 ===== -->
+<div class="section">
+  <h2>Prefill 阶段的性能优化</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>FlashAttention</h4>
+      <p>将 N&times;N 注意力矩阵分块计算，避免在 HBM 中物化完整矩阵。
+      内存从 O(N<sup>2</sup>) 降为 O(N)，速度提升 2-4 倍。这是 Prefill 的标准加速手段。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>Chunked Prefill</h4>
+      <p>将长 prompt 分成多个 chunk（如 512 tokens/chunk）依次处理，
+      避免一次性分配过大的注意力内存。每个 chunk 的 KV 追加到 Cache 中。
+      可与 Decode 请求交错调度（continuous batching）。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>Tensor Parallelism</h4>
+      <p>将 QKV 投影和 FFN 的权重矩阵切分到多 GPU，Prefill 的大矩阵乘法天然适合 TP——
+      多卡并行计算加速线性，NVLink 通信开销可被计算完全覆盖。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>Prefix Caching</h4>
+      <p>如果多个请求共享相同的 system prompt 前缀，只需 Prefill 一次并缓存 KV Cache，
+      后续请求直接复用。减少 50-90% 的 Prefill 计算。代表：vLLM RadixAttention。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 总结 ===== -->
+<div class="section">
+  <h2>总结</h2>
+  <p>Prefill 阶段是 LLM 推理的"启动引擎"，其核心工作可以用一句话概括：</p>
+  <div class="highlight">
+    <strong>将用户的文本 prompt 转化为两个关键产物：</strong>
+    (1) <strong>KV Cache</strong>——所有 prompt token 在每层的 Key/Value 向量，供后续 Decode 复用；
+    (2) <strong>第一个输出 token</strong>——基于完整上下文预测的下一个最可能的词。
+    <br><br>
+    整个过程是<strong>完全并行</strong>的：所有 prompt token 同时通过所有 Transformer 层，
+    充分利用 GPU 的矩阵乘法并行性。这是 Prefill<strong>计算密集</strong>（而非内存密集）的根本原因，
+    也是它通常比逐 token 的 Decode 阶段快得多的原因。
+  </div>
+</div>
+
+<div class="footer">
+  深度学习基础系列 &middot; LLM Prefill 阶段详细计算过程
+</div>
+
+</div>
+</body>
+</html>

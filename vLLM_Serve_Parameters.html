@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vLLM Serve 参数详解</title>
+<style>
+  :root { --primary:#1a1a2e; --accent:#0891b2; --highlight-bg:#f0f9ff; --highlight-border:#06b6d4; --text:#222; --border:#e0e0e0; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif; color:var(--text); line-height:1.8; background:#fafafa; }
+  .container { max-width:960px; margin:0 auto; padding:20px; }
+  .cover { text-align:center; padding:60px 20px 45px; background:linear-gradient(135deg,#0c1222 0%,#164e63 50%,#0891b2 100%); color:white; border-radius:12px; margin-bottom:40px; }
+  .cover h1 { font-size:2.1em; margin-bottom:10px; font-weight:700; }
+  .cover .subtitle { font-size:1.05em; color:#cde; margin-bottom:22px; }
+  .cover .tags { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; }
+  .cover .tag { background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.2); border-radius:20px; padding:5px 16px; font-size:0.88em; color:#eef; }
+  .section { background:white; border-radius:10px; padding:32px 36px; margin-bottom:22px; box-shadow:0 1px 4px rgba(0,0,0,0.06); border:1px solid var(--border); }
+  h2 { font-size:1.45em; color:var(--primary); margin-bottom:6px; padding-bottom:10px; border-bottom:2px solid var(--highlight-border); }
+  h3 { font-size:1.12em; color:var(--accent); margin:20px 0 8px; }
+  h4 { font-size:1.02em; color:#333; margin:14px 0 6px; }
+  p { margin:10px 0; text-align:justify; }
+  .highlight { background:var(--highlight-bg); border-left:4px solid var(--highlight-border); padding:14px 18px; border-radius:0 8px 8px 0; margin:14px 0; }
+  .highlight strong { color:var(--accent); }
+  .warning { background:#fff8f0; border-left:4px solid #f0a500; padding:14px 18px; border-radius:0 8px 8px 0; margin:14px 0; }
+  .danger { background:#fef2f2; border-left:4px solid #ef4444; padding:14px 18px; border-radius:0 8px 8px 0; margin:14px 0; }
+  .success { background:#f0fff4; border-left:4px solid #2a9d8f; padding:14px 18px; border-radius:0 8px 8px 0; margin:14px 0; }
+  ul,ol { padding-left:24px; margin:8px 0; }
+  li { margin:5px 0; }
+  code { background:#f0f0f5; padding:2px 6px; border-radius:3px; font-size:0.88em; font-family:"JetBrains Mono","Fira Code",Consolas,monospace; }
+  pre { background:#1e293b; color:#e2e8f0; padding:16px 20px; border-radius:8px; overflow-x:auto; margin:14px 0; font-size:0.88em; line-height:1.6; font-family:"JetBrains Mono","Fira Code",Consolas,monospace; }
+  pre .cmt { color:#64748b; }
+  pre .flag { color:#38bdf8; }
+  pre .val { color:#4ade80; }
+  pre .str { color:#fbbf24; }
+  table { width:100%; border-collapse:collapse; margin:14px 0; font-size:0.88em; }
+  th,td { padding:9px 12px; text-align:left; border-bottom:1px solid #eee; }
+  th { background:var(--primary); color:white; font-weight:600; }
+  tr:hover { background:#f0f9ff; }
+  td:first-child { font-weight:500; }
+  td code { background:#f0f0f5; padding:1px 5px; border-radius:3px; font-size:0.92em; }
+  .card-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:14px 0; }
+  .card { background:linear-gradient(135deg,#f0f9ff,#e0f2fe); border:1px solid #bae6fd; border-radius:10px; padding:18px 22px; }
+  .card .num { display:inline-block; background:var(--accent); color:white; width:26px; height:26px; border-radius:50%; text-align:center; line-height:26px; font-size:0.82em; font-weight:700; margin-right:6px; }
+  .card h4 { display:inline; color:var(--accent); font-size:1em; margin:0; }
+  .card p { margin-top:6px; font-size:0.9em; }
+  .param-block { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:16px 20px; margin:12px 0; }
+  .param-block .param-name { font-family:"JetBrains Mono",Consolas,monospace; font-size:0.95em; font-weight:700; color:#0e7490; }
+  .param-block .param-default { font-size:0.82em; color:#94a3b8; margin-left:8px; }
+  .param-block .param-type { display:inline-block; background:#e0f2fe; color:#0369a1; font-size:0.78em; padding:1px 8px; border-radius:10px; margin-left:6px; }
+  .param-block p { font-size:0.92em; margin:6px 0 0; }
+  .scenario { display:inline-block; background:#dbeafe; color:#1e40af; font-size:0.78em; padding:2px 8px; border-radius:4px; margin:2px 2px 2px 0; }
+  .impact-high { display:inline-block; background:#fef2f2; color:#dc2626; font-size:0.75em; padding:1px 6px; border-radius:3px; font-weight:600; }
+  .impact-mid { display:inline-block; background:#fff7ed; color:#ea580c; font-size:0.75em; padding:1px 6px; border-radius:3px; font-weight:600; }
+  .impact-low { display:inline-block; background:#f0fdf4; color:#16a34a; font-size:0.75em; padding:1px 6px; border-radius:3px; font-weight:600; }
+  .toc { background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:20px 28px; margin:0 0 24px; }
+  .toc h3 { margin:0 0 10px; color:var(--primary); }
+  .toc ol { padding-left:20px; }
+  .toc li { margin:4px 0; font-size:0.92em; }
+  .toc a { color:var(--accent); text-decoration:none; }
+  .toc a:hover { text-decoration:underline; }
+  .footer { text-align:center; color:#999; font-size:0.82em; padding:28px 0; border-top:1px solid #eee; margin-top:20px; }
+  @media(max-width:640px) { .section{padding:20px 18px;} .cover h1{font-size:1.6em;} .card-grid{grid-template-columns:1fr;} }
+  .figure { text-align:center; margin:20px 0; padding:14px; background:#fafafa; border-radius:8px; border:1px solid #eee; }
+  .figure svg { max-width:100%; height:auto; }
+  .figure .caption { font-size:0.85em; color:#666; margin-top:8px; font-style:italic; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="cover">
+  <h1>vLLM Serve 参数完全指南</h1>
+  <div class="subtitle">大模型推理引擎 vLLM 的全部服务参数详解、调优策略与使用场景</div>
+  <div class="tags">
+    <span class="tag">ModelConfig</span>
+    <span class="tag">CacheConfig</span>
+    <span class="tag">SchedulerConfig</span>
+    <span class="tag">ParallelConfig</span>
+    <span class="tag">MultiModalConfig</span>
+    <span class="tag">SpeculativeConfig</span>
+    <span class="tag">LoRAConfig</span>
+    <span class="tag">CompilationConfig</span>
+  </div>
+</div>
+
+<!-- 目录 -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-overview">整体架构概览</a></li>
+    <li><a href="#sec-model">ModelConfig — 模型配置</a></li>
+    <li><a href="#sec-cache">CacheConfig — KV 缓存配置</a></li>
+    <li><a href="#sec-scheduler">SchedulerConfig — 调度器配置</a></li>
+    <li><a href="#sec-parallel">ParallelConfig — 并行策略配置</a></li>
+    <li><a href="#sec-mm">MultiModalConfig — 多模态配置</a></li>
+    <li><a href="#sec-spec">SpeculativeConfig — 投机解码配置</a></li>
+    <li><a href="#sec-lora">LoRAConfig — LoRA 适配器配置</a></li>
+    <li><a href="#sec-compile">CompilationConfig — 编译与 CUDA Graph</a></li>
+    <li><a href="#sec-load">LoadConfig — 模型加载配置</a></li>
+    <li><a href="#sec-offload">OffloadConfig — 权重卸载配置</a></li>
+    <li><a href="#sec-frontend">Frontend — 前端服务配置</a></li>
+    <li><a href="#sec-observe">ObservabilityConfig — 可观测性配置</a></li>
+    <li><a href="#sec-recipes">场景化调优方案</a></li>
+  </ol>
+</div>
+
+<!-- ======== 1. 整体架构 ======== -->
+<div class="section" id="sec-overview">
+  <h2>一、整体架构概览</h2>
+  <p>
+    vLLM 是一个高性能大语言模型推理引擎，<code>vllm serve</code> 命令启动一个 OpenAI 兼容的 HTTP API 服务。
+    其核心设计包括：<strong>PagedAttention</strong>（分页 KV 缓存管理）、<strong>Continuous Batching</strong>
+    （连续批处理）、<strong>Prefix Caching</strong>（前缀缓存）、<strong>Speculative Decoding</strong>（投机解码）等。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 340" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">vLLM Serve 核心架构与参数分组</text>
+      <!-- Frontend -->
+      <rect x="30" y="45" width="760" height="55" rx="8" fill="#e0f2fe" stroke="#0891b2"/>
+      <text x="410" y="68" text-anchor="middle" font-size="12" font-weight="600" fill="#0e7490">Frontend (OpenAI API Server)</text>
+      <text x="410" y="86" text-anchor="middle" font-size="10" fill="#64748b">--host --port --api-key --chat-template --tool-call-parser --uvicorn-log-level</text>
+      <!-- Scheduler -->
+      <rect x="30" y="115" width="370" height="55" rx="8" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="215" y="138" text-anchor="middle" font-size="12" font-weight="600" fill="#92400e">SchedulerConfig</text>
+      <text x="215" y="156" text-anchor="middle" font-size="10" fill="#64748b">--max-num-batched-tokens --max-num-seqs --chunked-prefill</text>
+      <!-- Engine -->
+      <rect x="420" y="115" width="370" height="55" rx="8" fill="#ede9fe" stroke="#8b5cf6"/>
+      <text x="605" y="138" text-anchor="middle" font-size="12" font-weight="600" fill="#6d28d9">SpeculativeConfig</text>
+      <text x="605" y="156" text-anchor="middle" font-size="10" fill="#64748b">--speculative-config (method, num_speculative_tokens)</text>
+      <!-- Model -->
+      <rect x="30" y="185" width="245" height="65" rx="8" fill="#f0fdf4" stroke="#22c55e"/>
+      <text x="152" y="208" text-anchor="middle" font-size="12" font-weight="600" fill="#166534">ModelConfig</text>
+      <text x="152" y="224" text-anchor="middle" font-size="9.5" fill="#64748b">--model --dtype --max-model-len</text>
+      <text x="152" y="238" text-anchor="middle" font-size="9.5" fill="#64748b">--quantization --enforce-eager</text>
+      <!-- Cache -->
+      <rect x="290" y="185" width="245" height="65" rx="8" fill="#fff1f2" stroke="#f43f5e"/>
+      <text x="412" y="208" text-anchor="middle" font-size="12" font-weight="600" fill="#e11d48">CacheConfig</text>
+      <text x="412" y="224" text-anchor="middle" font-size="9.5" fill="#64748b">--gpu-memory-utilization</text>
+      <text x="412" y="238" text-anchor="middle" font-size="9.5" fill="#64748b">--kv-cache-dtype --prefix-caching</text>
+      <!-- Parallel -->
+      <rect x="550" y="185" width="240" height="65" rx="8" fill="#fdf4ff" stroke="#d946ef"/>
+      <text x="670" y="208" text-anchor="middle" font-size="12" font-weight="600" fill="#a21caf">ParallelConfig</text>
+      <text x="670" y="224" text-anchor="middle" font-size="9.5" fill="#64748b">--tensor-parallel-size</text>
+      <text x="670" y="238" text-anchor="middle" font-size="9.5" fill="#64748b">--data-parallel-size --pipeline-parallel</text>
+      <!-- Bottom row -->
+      <rect x="30" y="265" width="185" height="55" rx="8" fill="#ecfdf5" stroke="#10b981"/>
+      <text x="122" y="288" text-anchor="middle" font-size="11" font-weight="600" fill="#059669">MultiModalConfig</text>
+      <text x="122" y="305" text-anchor="middle" font-size="9" fill="#64748b">--media-io-kwargs --limit-mm</text>
+      <rect x="230" y="265" width="140" height="55" rx="8" fill="#fefce8" stroke="#eab308"/>
+      <text x="300" y="288" text-anchor="middle" font-size="11" font-weight="600" fill="#a16207">LoRAConfig</text>
+      <text x="300" y="305" text-anchor="middle" font-size="9" fill="#64748b">--enable-lora --max-loras</text>
+      <rect x="385" y="265" width="185" height="55" rx="8" fill="#fff7ed" stroke="#f97316"/>
+      <text x="477" y="288" text-anchor="middle" font-size="11" font-weight="600" fill="#c2410c">CompilationConfig</text>
+      <text x="477" y="305" text-anchor="middle" font-size="9" fill="#64748b">-cc.mode --cudagraph</text>
+      <rect x="585" y="265" width="205" height="55" rx="8" fill="#f8fafc" stroke="#94a3b8"/>
+      <text x="687" y="288" text-anchor="middle" font-size="11" font-weight="600" fill="#475569">LoadConfig / OffloadConfig</text>
+      <text x="687" y="305" text-anchor="middle" font-size="9" fill="#64748b">--load-format --cpu-offload-gb</text>
+    </svg>
+    <div class="caption">图 1：vLLM Serve 参数分组架构图。从前端到底层分为 Frontend、Scheduler、Model/Cache/Parallel、MultiModal/LoRA/Compilation 等模块。</div>
+  </div>
+
+  <div class="highlight">
+    <strong>核心理解：</strong>vLLM 的吞吐量 = 每次迭代处理的 token 数 × 迭代频率。
+    调优的本质是 <strong>(1) 让 GPU 每步处理更多 token</strong>（调大 batch、加并发）、
+    <strong>(2) 减少每步的无效开销</strong>（CUDA Graph、async 调度）、
+    <strong>(3) 合理分配显存</strong>（更多 KV cache = 更多并发能力）。
+  </div>
+</div>
+
+<!-- ======== 2. ModelConfig ======== -->
+<div class="section" id="sec-model">
+  <h2>二、ModelConfig — 模型配置</h2>
+  <p>控制模型加载、精度、序列长度等基础行为。对显存预算和推理精度有直接影响。</p>
+
+  <div class="param-block">
+    <span class="param-name">--model MODEL</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: Qwen/Qwen3-0.6B</span>
+    <p>HuggingFace 模型名或本地路径。支持原始权重、GPTQ、AWQ、FP8 量化格式。</p>
+    <p><span class="scenario">所有场景</span> 必须指定的参数。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--dtype {auto,half,float16,bfloat16,float,float32}</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: auto</span>
+    <span class="impact-mid">影响: 显存 / 精度</span>
+    <p><code>auto</code> 时 FP32/FP16 模型用 FP16，BF16 模型用 BF16，FP8 模型用 FP8。
+    手动指定 <code>half</code> 推荐用于 AWQ 量化模型。BF16 精度范围更大但精度略低于 FP16。</p>
+    <p><span class="scenario">量化模型</span> <span class="scenario">混合精度</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--max-model-len MAX_MODEL_LEN</span>
+    <span class="param-type">int | str</span>
+    <span class="param-default">默认: 模型 config 中的 max_position_embeddings</span>
+    <span class="impact-high">影响: 显存 / 并发</span>
+    <p>模型最大序列长度（输入 + 输出之和）。<strong>直接决定 KV 缓存预分配大小</strong>。
+    支持人类可读格式：<code>32k</code>=32000，<code>128K</code>=131072，<code>-1</code>=自动适配显存。</p>
+    <div class="warning">
+      设过大会大幅减少可用 KV cache → 并发数下降。
+      如果 90% 的请求 &lt;8K token，设 <code>8192</code> 比 <code>131072</code> 能多承载 16 倍并发。
+    </div>
+    <p><span class="scenario">长上下文</span> <span class="scenario">高并发</span> <span class="scenario">显存受限</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--quantization QUANTIZATION, -q</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: None（自动检测）</span>
+    <span class="impact-high">影响: 显存 / 速度 / 精度</span>
+    <p>量化方式。自动从模型 config 中检测，也可手动指定。常见值：</p>
+    <table>
+      <tr><th>方法</th><th>精度损失</th><th>显存节省</th><th>速度</th><th>说明</th></tr>
+      <tr><td><code>None</code> (FP16/BF16)</td><td>无</td><td>基线</td><td>基线</td><td>无量化</td></tr>
+      <tr><td><code>fp8</code></td><td>极小</td><td>~50%</td><td>快（H100+）</td><td>需 Ada/Hopper GPU</td></tr>
+      <tr><td><code>gptq</code></td><td>小</td><td>~75%(4bit)</td><td>中</td><td>需预量化模型</td></tr>
+      <tr><td><code>awq</code></td><td>小</td><td>~75%(4bit)</td><td>快</td><td>推荐配 half dtype</td></tr>
+      <tr><td><code>bitsandbytes</code></td><td>中</td><td>~75%</td><td>较慢</td><td>动态量化</td></tr>
+    </table>
+    <p><span class="scenario">显存受限</span> <span class="scenario">大模型单卡</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--enforce-eager</span>
+    <span class="param-type">flag</span>
+    <span class="param-default">默认: False</span>
+    <span class="impact-mid">影响: 启动速度 / 推理速度</span>
+    <p>强制使用 eager 模式，禁用 CUDA Graph。调试时有用，生产环境不建议开启。
+    CUDA Graph 通过预录制 GPU 操作序列来消除 Python/CUDA kernel launch 开销，
+    对 decode 阶段（小 batch）加速显著。</p>
+    <p><span class="scenario">调试</span> <span class="scenario">自定义算子</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--trust-remote-code</span>
+    <span class="param-type">flag</span>
+    <span class="param-default">默认: False</span>
+    <p>允许执行模型仓库中的自定义 Python 代码。大部分非标准架构模型（如 Qwen 系列、DeepSeek 系列）需要开启。</p>
+    <div class="danger">
+      <strong>安全风险：</strong>恶意模型仓库可能在自定义代码中嵌入恶意逻辑。仅在信任的模型来源上使用。
+    </div>
+    <p><span class="scenario">Qwen/DeepSeek/ChatGLM等</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--served-model-name NAME [NAME ...]</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: 同 --model</span>
+    <p>API 中返回的模型名称。支持多个别名，第一个为主名称。用于在 API 响应和 Prometheus 指标中呈现。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--seed SEED</span>
+    <span class="param-type">int</span>
+    <span class="param-default">默认: 0</span>
+    <p>随机种子。在多卡 TP 模式下确保各 worker 采样一致。设为固定值可复现结果。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--tokenizer-mode {auto,hf,slow,mistral,deepseek_v32}</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: auto</span>
+    <p>分词器模式。<code>auto</code> 优先使用快速分词器。<code>slow</code> 强制使用慢速分词器（某些特殊模型需要）。
+    <code>deepseek_v32</code> 使用 DeepSeek 定制分词器。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--generation-config {auto,vllm,path}</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: auto</span>
+    <p><code>auto</code> 从模型目录加载 generation_config.json（包含默认 temperature、top_p 等）。
+    <code>vllm</code> 忽略模型的生成配置，使用 vLLM 默认值。也可指定自定义配置目录路径。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--override-generation-config JSON</span>
+    <span class="param-type">dict</span>
+    <span class="param-default">默认: {}</span>
+    <p>覆盖生成参数。例如 <code>--override-generation-config '{"temperature": 0.7}'</code>。
+    与 <code>--generation-config auto</code> 配合时，覆盖项与默认项合并。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--model-impl {auto,vllm,transformers}</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: auto</span>
+    <p>模型实现方式。<code>auto</code> 优先用 vLLM 内置实现（性能最优），回退到 Transformers。
+    当 vLLM 尚未适配某模型时可切到 <code>transformers</code>（性能略低但兼容性更好）。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--kv-cache-dtype {auto,fp8,fp8_e4m3,fp8_e5m2,bfloat16,float16}</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: auto</span>
+    <span class="impact-high">影响: 显存 / 精度</span>
+    <p>KV 缓存数据类型。<code>auto</code> 使用模型精度。设为 <code>fp8</code> 可将 KV 缓存大小减半，
+    在 H100/H200 等 Hopper GPU 上几乎无精度损失。<strong>显存受限时最有效的优化手段之一。</strong></p>
+    <p><span class="scenario">长上下文</span> <span class="scenario">高并发</span> <span class="scenario">H100/H200</span></p>
+  </div>
+</div>
+
+<!-- ======== 3. CacheConfig ======== -->
+<div class="section" id="sec-cache">
+  <h2>三、CacheConfig — KV 缓存配置</h2>
+  <p>KV 缓存是 vLLM 最核心的资源。<strong>更多 KV 缓存 = 更多并发序列 = 更高吞吐</strong>。</p>
+
+  <div class="figure">
+    <svg viewBox="0 0 780 220" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <text x="390" y="20" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1a2e">GPU 显存分配示意</text>
+      <defs><marker id="ar" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5Z" fill="#64748b"/></marker></defs>
+      <!-- Total GPU bar -->
+      <rect x="40" y="45" width="700" height="50" rx="6" fill="#f1f5f9" stroke="#cbd5e1"/>
+      <text x="390" y="38" text-anchor="middle" font-size="10" fill="#64748b">GPU 总显存 (例: H200 = 141 GB)</text>
+      <!-- Model Weights -->
+      <rect x="40" y="45" width="200" height="50" rx="6" fill="#3b82f6" opacity="0.7"/>
+      <text x="140" y="75" text-anchor="middle" font-size="11" fill="white" font-weight="600">模型权重</text>
+      <text x="140" y="88" text-anchor="middle" font-size="9" fill="white">~27GB (FP8)</text>
+      <!-- KV Cache -->
+      <rect x="240" y="45" width="420" height="50" rx="6" fill="#22c55e" opacity="0.6"/>
+      <text x="450" y="68" text-anchor="middle" font-size="11" fill="white" font-weight="600">KV 缓存 (PagedAttention)</text>
+      <text x="450" y="85" text-anchor="middle" font-size="9.5" fill="white">gpu_memory_utilization 控制的部分 → 决定并发能力</text>
+      <!-- Overhead -->
+      <rect x="660" y="45" width="80" height="50" rx="6" fill="#f59e0b" opacity="0.5"/>
+      <text x="700" y="75" text-anchor="middle" font-size="10" fill="white">开销</text>
+      <!-- Annotations -->
+      <line x1="240" y1="100" x2="240" y2="130" stroke="#64748b" stroke-dasharray="3,3"/>
+      <line x1="660" y1="100" x2="660" y2="130" stroke="#64748b" stroke-dasharray="3,3"/>
+      <line x1="240" y1="130" x2="660" y2="130" stroke="#64748b"/>
+      <text x="450" y="148" text-anchor="middle" font-size="10" fill="#475569">这段空间由 --gpu-memory-utilization 控制</text>
+      <text x="450" y="165" text-anchor="middle" font-size="10" fill="#475569">越大 → KV 缓存越多 → 支持更多并发 / 更长序列</text>
+      <!-- Formula -->
+      <rect x="120" y="180" width="540" height="30" rx="6" fill="#f0f9ff" stroke="#0891b2"/>
+      <text x="390" y="200" text-anchor="middle" font-size="11" fill="#0e7490">KV cache 容量 ≈ (总显存 × utilization - 权重 - 开销) / 每 token KV 大小</text>
+    </svg>
+    <div class="caption">图 2：GPU 显存分配。gpu-memory-utilization 控制可用于 KV 缓存的显存比例。</div>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--gpu-memory-utilization GPU_MEMORY_UTILIZATION</span>
+    <span class="param-type">float [0, 1]</span>
+    <span class="param-default">默认: 0.90</span>
+    <span class="impact-high">影响: 并发 / 稳定性</span>
+    <p>GPU 显存使用上限比例。vLLM 启动时先加载模型权重，然后将剩余显存（在此上限内）全部分配给 KV 缓存。</p>
+    <table>
+      <tr><th>值</th><th>适用场景</th><th>风险</th></tr>
+      <tr><td><code>0.85</code></td><td>与其他进程共享 GPU</td><td>KV cache 较少，并发受限</td></tr>
+      <tr><td><code>0.90</code></td><td>默认值，适合大多数场景</td><td>低</td></tr>
+      <tr><td><code>0.95</code></td><td>独占 GPU，追求最大并发</td><td>接近 OOM 边界</td></tr>
+      <tr><td><code>0.98</code></td><td>极限压榨（不推荐）</td><td>可能因碎片化 OOM</td></tr>
+    </table>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--enable-prefix-caching</span>
+    <span class="param-type">flag</span>
+    <span class="param-default">默认: None（自动）</span>
+    <span class="impact-mid">影响: prefill 速度</span>
+    <p>启用前缀缓存。当多个请求共享相同的系统提示词或前缀时，
+    KV 缓存可复用，避免重复计算。<strong>适合系统提示词固定的 API 服务</strong>。</p>
+    <div class="highlight">
+      <strong>何时有用：</strong>所有请求使用相同的 system prompt（如 ChatBot 场景），命中率高时 prefill 速度提升数倍。<br>
+      <strong>何时无用：</strong>每个请求输入完全不同（如视频理解），命中率为 0%，开启反而有管理开销。
+    </div>
+    <p><span class="scenario">ChatBot API</span> <span class="scenario">RAG 服务</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--block-size BLOCK_SIZE</span>
+    <span class="param-type">int</span>
+    <span class="param-default">默认: 自动（通常 16）</span>
+    <p>PagedAttention 的块大小。每个 KV cache 块存储的 token 数。较大值减少块管理开销但增加内部碎片。
+    一般不需要手动调整。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--kv-cache-memory-bytes SIZE</span>
+    <span class="param-type">int | str</span>
+    <span class="param-default">默认: None（自动）</span>
+    <p>直接指定 KV 缓存大小（字节），比 <code>gpu-memory-utilization</code> 更精确。
+    设置后忽略 utilization。支持 <code>10G</code>、<code>50G</code> 等格式。</p>
+    <p><span class="scenario">精确控制显存</span> <span class="scenario">多实例共享 GPU</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--prefix-caching-hash-algo {sha256,xxhash,...}</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: sha256</span>
+    <p>前缀缓存的哈希算法。<code>xxhash</code> 更快但非密码学安全（多租户场景有碰撞风险）。
+    单租户场景可用 <code>xxhash</code> 提升缓存查找速度。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--calculate-kv-scales</span>
+    <span class="param-type">flag</span>
+    <span class="param-default">默认: False</span>
+    <p>FP8 KV cache 时动态计算缩放因子（而非使用 checkpoint 中的静态值）。
+    可能提升精度但有少量计算开销。</p>
+  </div>
+</div>
+
+<!-- ======== 4. SchedulerConfig ======== -->
+<div class="section" id="sec-scheduler">
+  <h2>四、SchedulerConfig — 调度器配置</h2>
+  <p>调度器决定每次 GPU 迭代处理哪些请求、多少 token。<strong>对吞吐影响最直接</strong>。</p>
+
+  <div class="param-block">
+    <span class="param-name">--max-num-batched-tokens MAX_NUM_BATCHED_TOKENS</span>
+    <span class="param-type">int | str</span>
+    <span class="param-default">默认: 自动（通常 = max_model_len 或 2048）</span>
+    <span class="impact-high">影响: 吞吐 / GPU利用率</span>
+    <p><strong>单次调度迭代中允许处理的最大 token 总数。</strong>这是影响吞吐的最重要参数之一。</p>
+    <ul>
+      <li>设太小（如 4096）→ GPU 每步只处理少量 token，算力空闲</li>
+      <li>设太大（如 131072）→ 长 prefill 独占 GPU，decode 请求被阻塞，延迟抖动大</li>
+      <li>推荐值：<code>16384</code>~<code>32768</code>（平衡吞吐和延迟）</li>
+    </ul>
+    <div class="success">
+      <strong>经验法则：</strong>对于 decode-heavy 场景（高并发短输出），设大到 32K+；
+      对于 prefill-heavy 场景（少量长输入），配合 chunked-prefill 使用，设 8K~16K。
+    </div>
+    <p><span class="scenario">吞吐优化</span> <span class="scenario">所有场景</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--max-num-seqs MAX_NUM_SEQS</span>
+    <span class="param-type">int</span>
+    <span class="param-default">默认: 自动（通常 256）</span>
+    <span class="impact-mid">影响: 并发 / 延迟</span>
+    <p>单次迭代中允许调度的最大序列数。设大则更多请求同时处理（吞吐高），
+    设小则每个请求分到更多计算资源（延迟低）。</p>
+    <p><span class="scenario">高并发</span> <span class="scenario">低延迟</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--enable-chunked-prefill</span>
+    <span class="param-type">flag</span>
+    <span class="param-default">默认: None（自动）</span>
+    <span class="impact-high">影响: 延迟稳定性 / TTFT</span>
+    <p>启用分块预填充。将长 prompt 的 prefill 拆成多个 chunk，与 decode 请求交错执行。</p>
+    <div class="highlight">
+      <strong>关键好处：</strong>防止一个长 prompt（如 10 万 token 的视频输入）独占 GPU 数秒，
+      导致其他正在 decode 的请求被阻塞。启用后 TTFT 抖动大幅减小。<br>
+      <strong>几乎所有生产环境都应开启</strong>，代价极小（极少量调度开销）。
+    </div>
+    <p><span class="scenario">在线服务</span> <span class="scenario">多模态</span> <span class="scenario">长上下文</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--max-num-partial-prefills</span>
+    <span class="param-type">int</span>
+    <span class="param-default">默认: 1</span>
+    <p>同时进行分块预填充的最大序列数。增大可提升 prefill 并行度，
+    但多个长 prefill 同时进行会挤占 decode 带宽。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--max-long-partial-prefills</span>
+    <span class="param-type">int</span>
+    <span class="param-default">默认: 1</span>
+    <p>同时进行分块预填充的"长"序列最大数量。长序列的判定阈值由
+    <code>--long-prefill-token-threshold</code> 控制。设 &lt; max-num-partial-prefills
+    可让短请求"插队"到长请求前面。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--async-scheduling</span>
+    <span class="param-type">flag</span>
+    <span class="param-default">默认: None（自动开启）</span>
+    <span class="impact-mid">影响: 吞吐 / GPU利用率</span>
+    <p>异步调度。调度器在 GPU 执行当前 batch 时并行准备下一个 batch，
+    消除调度延迟导致的 GPU 空闲气泡。<strong>推荐开启</strong>。</p>
+    <p><span class="scenario">高吞吐</span> <span class="scenario">所有场景</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--scheduling-policy {fcfs,priority}</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: fcfs</span>
+    <p><code>fcfs</code>（先来先服务）按到达顺序调度。<code>priority</code> 支持按优先级调度（低值优先），
+    通过 API 请求中的 <code>priority</code> 字段指定。</p>
+    <p><span class="scenario">优先级队列</span> <span class="scenario">VIP 用户优先</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--disable-chunked-mm-input</span>
+    <span class="param-type">flag</span>
+    <span class="param-default">默认: False</span>
+    <p>禁止将多模态 token（如图像 token）拆分到不同 chunk 中。
+    开启后保证一个图像的所有 token 在同一轮处理，避免部分调度导致的问题。</p>
+    <p><span class="scenario">多模态模型</span></p>
+  </div>
+</div>
+
+<!-- ======== 5. ParallelConfig ======== -->
+<div class="section" id="sec-parallel">
+  <h2>五、ParallelConfig — 并行策略配置</h2>
+  <p>控制多卡推理的并行模式。vLLM 支持张量并行（TP）、流水线并行（PP）、数据并行（DP）和专家并行（EP）。</p>
+
+  <div class="figure">
+    <svg viewBox="0 0 780 200" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <text x="390" y="18" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1a2e">四种并行策略对比</text>
+      <!-- TP -->
+      <rect x="20" y="35" width="175" height="150" rx="8" fill="#ede9fe" stroke="#8b5cf6"/>
+      <text x="107" y="58" text-anchor="middle" font-size="11" font-weight="600" fill="#6d28d9">张量并行 (TP)</text>
+      <text x="107" y="78" text-anchor="middle" font-size="9" fill="#7c3aed">每层权重切分到多卡</text>
+      <rect x="35" y="90" width="65" height="25" rx="4" fill="#8b5cf6" opacity="0.3"/><text x="67" y="107" text-anchor="middle" font-size="8" fill="#4c1d95">GPU 0: 左半</text>
+      <rect x="115" y="90" width="65" height="25" rx="4" fill="#8b5cf6" opacity="0.3"/><text x="147" y="107" text-anchor="middle" font-size="8" fill="#4c1d95">GPU 1: 右半</text>
+      <text x="107" y="138" text-anchor="middle" font-size="8.5" fill="#64748b">降低单卡显存需求</text>
+      <text x="107" y="152" text-anchor="middle" font-size="8.5" fill="#64748b">每步需 AllReduce 通信</text>
+      <text x="107" y="168" text-anchor="middle" font-size="8.5" fill="#ef4444">延迟增加但可用更大模型</text>
+      <!-- PP -->
+      <rect x="210" y="35" width="175" height="150" rx="8" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="297" y="58" text-anchor="middle" font-size="11" font-weight="600" fill="#92400e">流水线并行 (PP)</text>
+      <text x="297" y="78" text-anchor="middle" font-size="9" fill="#b45309">不同层放到不同卡</text>
+      <rect x="225" y="90" width="65" height="25" rx="4" fill="#f59e0b" opacity="0.3"/><text x="257" y="107" text-anchor="middle" font-size="8" fill="#78350f">GPU 0: L0-31</text>
+      <rect x="305" y="90" width="65" height="25" rx="4" fill="#f59e0b" opacity="0.3"/><text x="337" y="107" text-anchor="middle" font-size="8" fill="#78350f">GPU 1: L32-63</text>
+      <text x="297" y="138" text-anchor="middle" font-size="8.5" fill="#64748b">通信量小 (仅传激活值)</text>
+      <text x="297" y="152" text-anchor="middle" font-size="8.5" fill="#64748b">气泡效应降低利用率</text>
+      <text x="297" y="168" text-anchor="middle" font-size="8.5" fill="#64748b">适合跨节点</text>
+      <!-- DP -->
+      <rect x="400" y="35" width="175" height="150" rx="8" fill="#ecfdf5" stroke="#10b981"/>
+      <text x="487" y="58" text-anchor="middle" font-size="11" font-weight="600" fill="#065f46">数据并行 (DP)</text>
+      <text x="487" y="78" text-anchor="middle" font-size="9" fill="#059669">每卡完整模型副本</text>
+      <rect x="415" y="90" width="65" height="25" rx="4" fill="#10b981" opacity="0.3"/><text x="447" y="107" text-anchor="middle" font-size="8" fill="#064e3b">GPU 0: 全模型</text>
+      <rect x="495" y="90" width="65" height="25" rx="4" fill="#10b981" opacity="0.3"/><text x="527" y="107" text-anchor="middle" font-size="8" fill="#064e3b">GPU 1: 全模型</text>
+      <text x="487" y="138" text-anchor="middle" font-size="8.5" fill="#64748b">线性扩展吞吐量</text>
+      <text x="487" y="152" text-anchor="middle" font-size="8.5" fill="#64748b">无通信开销</text>
+      <text x="487" y="168" text-anchor="middle" font-size="8.5" fill="#22c55e">吞吐最大化的首选</text>
+      <!-- EP -->
+      <rect x="590" y="35" width="175" height="150" rx="8" fill="#fff1f2" stroke="#f43f5e"/>
+      <text x="677" y="58" text-anchor="middle" font-size="11" font-weight="600" fill="#e11d48">专家并行 (EP)</text>
+      <text x="677" y="78" text-anchor="middle" font-size="9" fill="#be123c">MoE 专家分散到多卡</text>
+      <rect x="605" y="90" width="65" height="25" rx="4" fill="#f43f5e" opacity="0.3"/><text x="637" y="107" text-anchor="middle" font-size="8" fill="#881337">GPU 0: E0-127</text>
+      <rect x="685" y="90" width="65" height="25" rx="4" fill="#f43f5e" opacity="0.3"/><text x="717" y="107" text-anchor="middle" font-size="8" fill="#881337">GPU 1: E128-255</text>
+      <text x="677" y="138" text-anchor="middle" font-size="8.5" fill="#64748b">仅适用 MoE 模型</text>
+      <text x="677" y="152" text-anchor="middle" font-size="8.5" fill="#64748b">All-to-All 通信</text>
+      <text x="677" y="168" text-anchor="middle" font-size="8.5" fill="#64748b">与 DP 联合使用 (DP+EP)</text>
+    </svg>
+    <div class="caption">图 3：四种并行策略对比。单模型装不下用 TP/PP，装得下优先用 DP 扩展吞吐。</div>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--tensor-parallel-size TP, -tp TP</span>
+    <span class="param-type">int</span>
+    <span class="param-default">默认: 1</span>
+    <span class="impact-high">影响: 显存 / 延迟</span>
+    <p>张量并行度。将每一层的权重矩阵按列/行切分到多张 GPU 上。</p>
+    <table>
+      <tr><th>场景</th><th>推荐 TP</th><th>说明</th></tr>
+      <tr><td>27B FP8, 单卡 H200</td><td><code>1</code></td><td>单卡装得下，不需要 TP</td></tr>
+      <tr><td>70B FP16, 2×H100</td><td><code>2</code></td><td>70B FP16 ≈ 140GB，需要 2 卡</td></tr>
+      <tr><td>405B FP8, 8×H100</td><td><code>8</code></td><td>405B FP8 ≈ 200GB+，需要 8 卡</td></tr>
+    </table>
+    <div class="warning">
+      TP 越大，卡间通信开销越大（每层 2 次 AllReduce）。
+      <strong>能用 1 就不用 2</strong>——优先用量化降显存需求，而非加 TP。
+    </div>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--pipeline-parallel-size PP, -pp PP</span>
+    <span class="param-type">int</span>
+    <span class="param-default">默认: 1</span>
+    <p>流水线并行度。将模型层分到不同 GPU 组。通信量小于 TP（仅传隐状态而非全矩阵），
+    适合跨节点部署。但存在气泡效应，需要较大 batch 填满流水线。</p>
+    <p><span class="scenario">跨节点</span> <span class="scenario">超大模型</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--data-parallel-size DP, -dp DP</span>
+    <span class="param-type">int</span>
+    <span class="param-default">默认: 1</span>
+    <span class="impact-high">影响: 吞吐</span>
+    <p>数据并行度。每个 DP rank 运行完整模型副本，请求在 rank 间负载均衡。
+    <strong>吞吐线性增长，无通信开销</strong>（除 MoE EP 场景）。</p>
+    <p>例：4×H200 跑 27B FP8，设 <code>-dp 4</code> 吞吐 ≈ 4 × 单卡吞吐。</p>
+    <p><span class="scenario">多卡高吞吐</span> <span class="scenario">模型单卡可装下时</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--enable-expert-parallel, -ep</span>
+    <span class="param-type">flag</span>
+    <span class="param-default">默认: False</span>
+    <p>启用专家并行。仅用于 MoE 模型（如 Qwen3-235B-A22B、DeepSeek-V4 等），
+    将路由专家分散到多张 GPU 上。通常与 DP 联合使用（DP+EP）。</p>
+    <p><span class="scenario">MoE 模型</span> <span class="scenario">DeepSeek/Qwen3 MoE</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--all2all-backend</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: allgather_reducescatter</span>
+    <p>MoE 专家并行的 All-to-All 通信后端。可选 <code>deepep_high_throughput</code>、
+    <code>deepep_low_latency</code>（DeepSeek 开源内核）、<code>flashinfer_nvlink_*</code> 等。
+    NVLink 互联时 <code>flashinfer_nvlink_two_sided</code> 性能最优。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--decode-context-parallel-size DCP, -dcp DCP</span>
+    <span class="param-type">int</span>
+    <span class="param-default">默认: 1</span>
+    <p>解码上下文并行度。将 KV 缓存沿序列长度维度拆分到多张 GPU，
+    降低单卡 KV cache 显存需求。适合超长上下文（如 1M token）场景。
+    需要 TP > 1 且 TP 能被 DCP 整除。</p>
+    <p><span class="scenario">百万级上下文</span></p>
+  </div>
+</div>
+
+<!-- ======== 6. MultiModalConfig ======== -->
+<div class="section" id="sec-mm">
+  <h2>六、MultiModalConfig — 多模态配置</h2>
+  <p>控制图像、视频等多模态输入的处理行为。<strong>对多模态模型的推理效率和显存至关重要</strong>。</p>
+
+  <div class="param-block">
+    <span class="param-name">--media-io-kwargs JSON</span>
+    <span class="param-type">dict</span>
+    <span class="param-default">默认: {}</span>
+    <span class="impact-high">影响: 视觉token数 / 速度</span>
+    <p>传递给媒体处理器的额外参数。最重要的用途是<strong>控制视频帧数</strong>：</p>
+    <pre><span class="cmt"># 提取全部帧（慢！10秒视频可能产生 10万+ 视觉 token）</span>
+<span class="flag">--media-io-kwargs</span> <span class="str">'{"video": {"num_frames": -1}}'</span>
+
+<span class="cmt"># 固定采样 64 帧（推荐大多数场景）</span>
+<span class="flag">--media-io-kwargs</span> <span class="str">'{"video": {"num_frames": 64}}'</span>
+
+<span class="cmt"># 短视频场景，32 帧足够</span>
+<span class="flag">--media-io-kwargs</span> <span class="str">'{"video": {"num_frames": 32}}'</span></pre>
+    <div class="danger">
+      <strong>性能陷阱：</strong><code>num_frames: -1</code> 是视频推理最常见的性能杀手。
+      全帧提取时视觉 token 数随视频时长线性增长，prefill 时间可达数十秒。
+    </div>
+    <p><span class="scenario">视频理解</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--mm-processor-kwargs JSON</span>
+    <span class="param-type">dict</span>
+    <span class="param-default">默认: None</span>
+    <span class="impact-mid">影响: 视觉token数</span>
+    <p>传递给模型图像/视频处理器的参数，覆盖 AutoProcessor 的默认配置。常用于<strong>控制图像分辨率</strong>：</p>
+    <pre><span class="cmt"># 限制最大像素数（降低高分辨率图像的 token 数量）</span>
+<span class="flag">--mm-processor-kwargs</span> <span class="str">'{"max_pixels": 1003520}'</span>
+
+<span class="cmt"># Phi-3-Vision 示例：控制裁剪数量</span>
+<span class="flag">--mm-processor-kwargs</span> <span class="str">'{"num_crops": 4}'</span></pre>
+    <p><span class="scenario">图像理解</span> <span class="scenario">文档OCR</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--limit-mm-per-prompt JSON</span>
+    <span class="param-type">dict</span>
+    <span class="param-default">默认: 每种模态 999</span>
+    <span class="impact-mid">影响: 显存 / 安全</span>
+    <p>每个请求中各模态输入的最大数量。防止用户发送过多图像/视频导致 OOM。</p>
+    <pre><span class="cmt"># 每个请求最多 1 个视频、5 张图像</span>
+<span class="flag">--limit-mm-per-prompt</span> <span class="str">'{"video": 1, "image": 5}'</span>
+
+<span class="cmt"># 高级格式：同时限制数量和分辨率</span>
+<span class="flag">--limit-mm-per-prompt</span> <span class="str">'{"video": {"count": 1, "num_frames": 32}, "image": {"count": 5, "width": 512, "height": 512}}'</span></pre>
+    <p><span class="scenario">多模态API服务</span> <span class="scenario">安全防护</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--video-pruning-rate RATE</span>
+    <span class="param-type">float [0, 1)</span>
+    <span class="param-default">默认: None</span>
+    <p>视频 token 剪枝率。例如设为 0.5 则丢弃 50% 的视觉 token，在质量和速度之间取得折中。
+    基于 Efficient Video Sampling 策略，优先保留信息量高的 token。</p>
+    <p><span class="scenario">视频理解加速</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--mm-encoder-tp-mode {weights,data}</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: weights</span>
+    <p>多模态编码器的 TP 模式。<code>weights</code> 按标准 TP 切分权重；
+    <code>data</code> 每个 TP rank 持有完整权重但切分 batch 数据（类似编码器级别的 DP）。
+    批量图像/视频较多时 <code>data</code> 模式可能更快。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--language-model-only</span>
+    <span class="param-type">flag</span>
+    <span class="param-default">默认: False</span>
+    <p>禁用所有多模态输入，将多模态模型当作纯语言模型使用。不加载视觉编码器，节省显存。</p>
+    <p><span class="scenario">仅用语言能力</span></p>
+  </div>
+</div>
+
+<!-- ======== 7. SpeculativeConfig ======== -->
+<div class="section" id="sec-spec">
+  <h2>七、SpeculativeConfig — 投机解码配置</h2>
+  <p>投机解码通过"小模型猜测、大模型验证"的方式加速自回归生成。</p>
+
+  <div class="figure">
+    <svg viewBox="0 0 780 220" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs><marker id="ar2" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5Z" fill="#0891b2"/></marker></defs>
+      <text x="390" y="18" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1a2e">投机解码原理</text>
+      <!-- Normal decode -->
+      <rect x="30" y="40" width="340" height="75" rx="8" fill="#f1f5f9" stroke="#94a3b8"/>
+      <text x="200" y="60" text-anchor="middle" font-size="11" font-weight="600" fill="#475569">普通自回归解码</text>
+      <g transform="translate(50,72)">
+        <rect width="50" height="25" rx="4" fill="#94a3b8" opacity="0.4"/><text x="25" y="17" text-anchor="middle" font-size="9" fill="#334155">step1</text>
+        <rect x="60" width="50" height="25" rx="4" fill="#94a3b8" opacity="0.4"/><text x="85" y="17" text-anchor="middle" font-size="9" fill="#334155">step2</text>
+        <rect x="120" width="50" height="25" rx="4" fill="#94a3b8" opacity="0.4"/><text x="145" y="17" text-anchor="middle" font-size="9" fill="#334155">step3</text>
+        <rect x="180" width="50" height="25" rx="4" fill="#94a3b8" opacity="0.4"/><text x="205" y="17" text-anchor="middle" font-size="9" fill="#334155">step4</text>
+        <text x="260" y="17" font-size="9" fill="#64748b">4 步 = 4 token</text>
+      </g>
+      <!-- Speculative decode -->
+      <rect x="410" y="40" width="340" height="160" rx="8" fill="#f0f9ff" stroke="#0891b2"/>
+      <text x="580" y="60" text-anchor="middle" font-size="11" font-weight="600" fill="#0e7490">投机解码 (k=2)</text>
+      <g transform="translate(425,70)">
+        <text x="0" y="0" font-size="9" fill="#64748b">Step 1:</text>
+        <rect x="55" width="40" height="22" rx="3" fill="#0891b2" opacity="0.3"/><text x="75" y="15" text-anchor="middle" font-size="8" fill="#0e7490">draft</text>
+        <rect x="100" width="40" height="22" rx="3" fill="#0891b2" opacity="0.3"/><text x="120" y="15" text-anchor="middle" font-size="8" fill="#0e7490">draft</text>
+        <rect x="150" width="90" height="22" rx="3" fill="#0891b2" opacity="0.7"/><text x="195" y="15" text-anchor="middle" font-size="8" fill="white">verify 3 pos</text>
+        <text x="250" y="15" font-size="8" fill="#22c55e">→ 2~3 token</text>
+      </g>
+      <g transform="translate(425,105)">
+        <text x="0" y="0" font-size="9" fill="#64748b">Step 2:</text>
+        <rect x="55" width="40" height="22" rx="3" fill="#0891b2" opacity="0.3"/><text x="75" y="15" text-anchor="middle" font-size="8" fill="#0e7490">draft</text>
+        <rect x="100" width="40" height="22" rx="3" fill="#0891b2" opacity="0.3"/><text x="120" y="15" text-anchor="middle" font-size="8" fill="#0e7490">draft</text>
+        <rect x="150" width="90" height="22" rx="3" fill="#0891b2" opacity="0.7"/><text x="195" y="15" text-anchor="middle" font-size="8" fill="white">verify 3 pos</text>
+        <text x="250" y="15" font-size="8" fill="#22c55e">→ 2~3 token</text>
+      </g>
+      <text x="580" y="155" text-anchor="middle" font-size="10" fill="#0e7490">2 步 ≈ 4~6 token（如果猜对率高）</text>
+      <text x="580" y="172" text-anchor="middle" font-size="9" fill="#64748b">关键指标：接受率 &gt; 70% 才有正收益</text>
+      <text x="580" y="188" text-anchor="middle" font-size="9" fill="#ef4444">接受率 &lt; 60% 时反而降低吞吐！</text>
+    </svg>
+    <div class="caption">图 4：投机解码原理。Draft 模型快速猜测 k 个 token，主模型一次验证。</div>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--speculative-config JSON</span>
+    <span class="param-type">dict</span>
+    <span class="param-default">默认: None（不使用投机解码）</span>
+    <span class="impact-high">影响: 延迟 / 吞吐</span>
+    <p>投机解码完整配置。常用配置示例：</p>
+    <pre><span class="cmt"># 使用 Qwen3.5 内置 MTP 头（最轻量，无需额外模型）</span>
+<span class="flag">--speculative-config</span> <span class="str">'{"method":"qwen3_next_mtp","num_speculative_tokens":2}'</span>
+
+<span class="cmt"># 使用独立 Draft 模型</span>
+<span class="flag">--speculative-config</span> <span class="str">'{"model":"Qwen/Qwen3-0.6B","num_speculative_tokens":3}'</span>
+
+<span class="cmt"># 使用 N-gram 匹配（无模型开销，适合重复性强的文本）</span>
+<span class="flag">--speculative-config</span> <span class="str">'{"method":"ngram","num_speculative_tokens":3,"ngram_prompt_lookup_max":4}'</span></pre>
+
+    <h4>关键子参数</h4>
+    <table>
+      <tr><th>参数</th><th>说明</th></tr>
+      <tr><td><code>method</code></td><td>投机解码方法：<code>qwen3_next_mtp</code>（MTP头）、<code>ngram</code>、<code>draft_model</code> 等</td></tr>
+      <tr><td><code>num_speculative_tokens</code></td><td>每步猜测的 token 数量。越大潜在加速越高，但拒绝开销也越大</td></tr>
+      <tr><td><code>model</code></td><td>Draft 模型路径（仅 draft_model 方法需要）</td></tr>
+    </table>
+
+    <div class="warning">
+      <strong>何时不该使用投机解码：</strong><br>
+      1. 高并发场景 — decode 已通过 batching 加速，投机解码的边际收益小<br>
+      2. 接受率 &lt; 60% — 拒绝开销 &gt; 加速收益，反而降速<br>
+      3. Prefill 瓶颈场景（如视频输入）— 投机解码只加速 decode 阶段
+    </div>
+  </div>
+</div>
+
+<!-- ======== 8. LoRAConfig ======== -->
+<div class="section" id="sec-lora">
+  <h2>八、LoRAConfig — LoRA 适配器配置</h2>
+  <p>支持在推理时动态加载/切换多个 LoRA 适配器，实现单基座模型服务多任务。</p>
+
+  <div class="param-block">
+    <span class="param-name">--enable-lora</span>
+    <span class="param-type">flag</span>
+    <span class="param-default">默认: None</span>
+    <p>启用 LoRA 支持。开启后可在 API 请求中通过 <code>model</code> 字段指定不同的 LoRA 适配器。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--max-loras MAX_LORAS</span>
+    <span class="param-type">int</span>
+    <span class="param-default">默认: 1</span>
+    <p>单个 batch 中同时激活的最大 LoRA 数量。多 LoRA 场景下增大此值。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--max-lora-rank {1,8,16,32,64,128,256,320,512}</span>
+    <span class="param-type">int</span>
+    <span class="param-default">默认: 16</span>
+    <p>允许加载的最大 LoRA 秩。需 &ge; 所有 LoRA adapter 的实际 rank。rank 越大显存占用越多。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--lora-modules NAME=PATH [...]</span>
+    <span class="param-type">list</span>
+    <p>预加载 LoRA 模块。格式：<code>--lora-modules chat=/path/to/chat-lora code=/path/to/code-lora</code>。
+    客户端通过 <code>model: "chat"</code> 指定使用哪个 LoRA。</p>
+    <p><span class="scenario">多任务服务</span> <span class="scenario">个性化模型</span></p>
+  </div>
+</div>
+
+<!-- ======== 9. CompilationConfig ======== -->
+<div class="section" id="sec-compile">
+  <h2>九、CompilationConfig — 编译与 CUDA Graph</h2>
+  <p>控制 <code>torch.compile</code> 和 CUDA Graph 捕获行为。对启动时间和推理速度有显著影响。</p>
+
+  <div class="param-block">
+    <span class="param-name">--compilation-config, -cc</span>
+    <span class="param-type">dict</span>
+    <span class="param-default">默认: 自动</span>
+    <p>编译配置。支持 JSON 格式或点号缩写：</p>
+    <pre><span class="cmt"># 完全禁用编译和 CUDA Graph（调试用）</span>
+<span class="flag">-cc</span> <span class="str">'{"mode": 0}'</span>
+
+<span class="cmt"># 默认模式：CUDA Graph + 基本编译</span>
+<span class="flag">-cc</span> <span class="str">'{"mode": 2}'</span>
+
+<span class="cmt"># 最激进的编译优化（启动慢但推理快）</span>
+<span class="flag">-cc</span> <span class="str">'{"mode": 3}'</span>
+
+<span class="cmt"># 简写形式</span>
+<span class="flag">-cc.mode</span> <span class="val">3</span></pre>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--performance-mode {balanced,interactivity,throughput}</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: balanced</span>
+    <span class="impact-mid">影响: 延迟 vs 吞吐</span>
+    <p>运行时性能策略：</p>
+    <ul>
+      <li><code>balanced</code>：默认平衡模式</li>
+      <li><code>interactivity</code>：优化低延迟，更细粒度 CUDA Graph，适合对话场景</li>
+      <li><code>throughput</code>：优化总吞吐，更大 CUDA Graph + 更激进 batching，适合离线批量处理</li>
+    </ul>
+    <p><span class="scenario">在线服务vs离线推理</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--gdn-prefill-backend {flashinfer,triton}</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: None（自动）</span>
+    <p>Gated DeltaNet 层的 prefill 计算后端。<code>flashinfer</code> 通常更快，
+    <code>triton</code> 兼容性更好。仅对使用 DeltaNet 架构的模型（如 Qwen3.5）有效。</p>
+    <p><span class="scenario">Qwen3.5 系列</span></p>
+  </div>
+</div>
+
+<!-- ======== 10. LoadConfig ======== -->
+<div class="section" id="sec-load">
+  <h2>十、LoadConfig — 模型加载配置</h2>
+
+  <div class="param-block">
+    <span class="param-name">--load-format {auto,safetensors,pt,gguf,dummy,...}</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: auto</span>
+    <p>模型权重加载格式。<code>auto</code> 优先使用 safetensors（更快更安全）。
+    <code>dummy</code> 用随机权重初始化，仅用于性能分析。<code>gguf</code> 支持 GGML 量化格式。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--safetensors-load-strategy {lazy,eager,prefetch}</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: lazy</span>
+    <p>safetensors 加载策略：</p>
+    <ul>
+      <li><code>lazy</code>：内存映射按需加载（本地 SSD 最快）</li>
+      <li><code>eager</code>：全部读入 CPU 内存再加载（<strong>网络文件系统推荐</strong>，如 NFS/Lustre）</li>
+      <li><code>prefetch</code>：预读到 OS page cache，加速后续加载</li>
+    </ul>
+    <p><span class="scenario">网络存储</span> <span class="scenario">启动加速</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--download-dir DIR</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: HuggingFace 默认缓存目录</span>
+    <p>模型下载和缓存目录。适用于从 HuggingFace Hub 下载模型的场景。</p>
+  </div>
+</div>
+
+<!-- ======== 11. OffloadConfig ======== -->
+<div class="section" id="sec-offload">
+  <h2>十一、OffloadConfig — 权重卸载配置</h2>
+
+  <div class="param-block">
+    <span class="param-name">--cpu-offload-gb GB</span>
+    <span class="param-type">float</span>
+    <span class="param-default">默认: 0（不卸载）</span>
+    <span class="impact-mid">影响: 显存 / 速度</span>
+    <p>将指定大小的模型权重卸载到 CPU 内存，相当于虚拟扩展 GPU 显存。
+    例如 24GB GPU 设 <code>10</code>，等效于 34GB GPU。
+    <strong>需要高速 CPU-GPU 互联</strong>（PCIe 4.0/5.0 或 NVLink），否则推理速度大幅下降。</p>
+    <p><span class="scenario">显存不足</span> <span class="scenario">大模型小卡</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--cpu-offload-params PARAMS</span>
+    <span class="param-type">list</span>
+    <span class="param-default">默认: 空（非选择性卸载）</span>
+    <p>指定要卸载的参数名段。例如 <code>--cpu-offload-params experts</code> 仅卸载 MoE 专家权重，
+    保留注意力和 FFN 的非专家权重在 GPU 上。对 MoE 模型效果最好。</p>
+  </div>
+</div>
+
+<!-- ======== 12. Frontend ======== -->
+<div class="section" id="sec-frontend">
+  <h2>十二、Frontend — 前端服务配置</h2>
+
+  <div class="param-block">
+    <span class="param-name">--host HOST / --port PORT</span>
+    <span class="param-type">str / int</span>
+    <span class="param-default">默认: None / 8000</span>
+    <p>API 服务器监听地址。<code>--host 0.0.0.0</code> 允许外部访问，<code>127.0.0.1</code> 仅本地。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--api-key KEY [KEY ...]</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: None（不鉴权）</span>
+    <p>API 认证密钥。设置后客户端必须在 Header 中携带 <code>Authorization: Bearer KEY</code>。
+    支持多个密钥。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--chat-template TEMPLATE</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: 模型自带模板</span>
+    <p>自定义 chat 模板（Jinja2 格式）。可以是文件路径或内联模板字符串。
+    覆盖模型 tokenizer_config.json 中的默认模板。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--tool-call-parser {hermes,llama3_json,qwen3_coder,...}</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: None</span>
+    <p>工具调用解析器。不同模型使用不同的 function calling 格式：</p>
+    <table>
+      <tr><th>模型</th><th>推荐 parser</th></tr>
+      <tr><td>Qwen3/3.5</td><td><code>qwen3_coder</code> 或 <code>hermes</code></td></tr>
+      <tr><td>Llama 3/4</td><td><code>llama3_json</code> / <code>llama4_json</code></td></tr>
+      <tr><td>DeepSeek V3</td><td><code>deepseek_v3</code></td></tr>
+      <tr><td>Mistral</td><td><code>mistral</code></td></tr>
+    </table>
+    <p><span class="scenario">Function Calling</span> <span class="scenario">Agent</span></p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--enable-auto-tool-choice</span>
+    <span class="param-type">flag</span>
+    <p>启用后，模型可以自动决定是否调用工具，而不需要客户端显式设置 <code>tool_choice: "auto"</code>。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--disable-frontend-multiprocessing</span>
+    <span class="param-type">flag</span>
+    <span class="param-default">默认: False</span>
+    <p>禁用前端多进程。调试时有用，但生产环境应保持多进程以处理高并发 HTTP 请求。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--api-server-count COUNT, -asc</span>
+    <span class="param-type">int</span>
+    <span class="param-default">默认: data_parallel_size</span>
+    <p>API 服务器进程数。多进程可提升 HTTP 请求处理能力和 tokenization 并行度。</p>
+  </div>
+</div>
+
+<!-- ======== 13. Observability ======== -->
+<div class="section" id="sec-observe">
+  <h2>十三、ObservabilityConfig — 可观测性配置</h2>
+
+  <div class="param-block">
+    <span class="param-name">--disable-log-stats</span>
+    <span class="param-type">flag</span>
+    <span class="param-default">默认: False</span>
+    <p>禁用统计日志输出（如每秒 token 数、KV cache 使用率等）。生产环境建议保留以监控性能。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--enable-log-requests</span>
+    <span class="param-type">flag</span>
+    <span class="param-default">默认: False</span>
+    <p>记录每个请求的 ID、参数和 LoRA 信息。DEBUG 级别下还输出 prompt 内容。用于调试和审计。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--otlp-traces-endpoint URL</span>
+    <span class="param-type">str</span>
+    <span class="param-default">默认: None</span>
+    <p>OpenTelemetry 追踪端点。将 trace 数据发送到 Jaeger、Zipkin 等后端，用于分布式链路追踪。</p>
+  </div>
+
+  <div class="param-block">
+    <span class="param-name">--enable-mfu-metrics</span>
+    <span class="param-type">flag</span>
+    <p>启用 MFU（Model FLOPs Utilization）指标，监控 GPU 算力利用率。</p>
+  </div>
+</div>
+
+<!-- ======== 14. 场景化调优 ======== -->
+<div class="section" id="sec-recipes">
+  <h2>十四、场景化调优方案</h2>
+
+  <h3>场景 A：高并发在线 API 服务（纯文本）</h3>
+  <pre><span class="cmt"># 目标: 最大化 QPS，可接受适度延迟</span>
+vllm serve /path/to/model \
+  <span class="flag">--max-model-len</span> <span class="val">8192</span>            <span class="cmt"># 缩短序列上限，释放显存给并发</span>
+  <span class="flag">--max-num-batched-tokens</span> <span class="val">32768</span>    <span class="cmt"># 大 batch 饱和 GPU</span>
+  <span class="flag">--max-num-seqs</span> <span class="val">512</span>              <span class="cmt"># 高并发</span>
+  <span class="flag">--gpu-memory-utilization</span> <span class="val">0.95</span>    <span class="cmt"># 压榨显存</span>
+  <span class="flag">--enable-prefix-caching</span>          <span class="cmt"># 复用系统提示词 KV cache</span>
+  <span class="flag">--enable-chunked-prefill</span>         <span class="cmt"># 防止长 prefill 阻塞 decode</span>
+  <span class="flag">--kv-cache-dtype</span> <span class="val">fp8</span>             <span class="cmt"># KV cache 减半，并发翻倍</span>
+  <span class="flag">--performance-mode</span> <span class="val">throughput</span>    <span class="cmt"># 吞吐优先</span></pre>
+
+  <h3>场景 B：低延迟对话服务</h3>
+  <pre><span class="cmt"># 目标: 最小化 TTFT 和每 token 延迟</span>
+vllm serve /path/to/model \
+  <span class="flag">--max-model-len</span> <span class="val">4096</span>
+  <span class="flag">--max-num-batched-tokens</span> <span class="val">8192</span>
+  <span class="flag">--max-num-seqs</span> <span class="val">64</span>               <span class="cmt"># 少并发，每个请求分到更多资源</span>
+  <span class="flag">--enable-chunked-prefill</span>
+  <span class="flag">--performance-mode</span> <span class="val">interactivity</span> <span class="cmt"># 延迟优先</span>
+  <span class="flag">--speculative-config</span> <span class="str">'{"method":"qwen3_next_mtp","num_speculative_tokens":2}'</span> <span class="cmt"># 投机解码降低延迟</span></pre>
+
+  <h3>场景 C：视频/多模态推理</h3>
+  <pre><span class="cmt"># 目标: 处理视频输入，优化 prefill 速度</span>
+vllm serve /path/to/model \
+  <span class="flag">--max-model-len</span> <span class="val">32768</span>
+  <span class="flag">--max-num-batched-tokens</span> <span class="val">32768</span>   <span class="cmt"># 大 batch 容纳视觉 token</span>
+  <span class="flag">--max-num-seqs</span> <span class="val">32</span>               <span class="cmt"># 视频请求占用大，少并发</span>
+  <span class="flag">--gpu-memory-utilization</span> <span class="val">0.95</span>
+  <span class="flag">--enable-chunked-prefill</span>         <span class="cmt"># 必须开启：视觉 token 很长</span>
+  <span class="flag">--media-io-kwargs</span> <span class="str">'{"video":{"num_frames":64}}'</span>  <span class="cmt"># 限制帧数！</span>
+  <span class="flag">--limit-mm-per-prompt</span> <span class="str">'{"video":1,"image":5}'</span>
+  <span class="cmt"># 不开 --speculative-config（prefill 为瓶颈，投机解码无用）</span>
+  <span class="cmt"># 不开 --enable-prefix-caching（视频输入无共享前缀）</span></pre>
+
+  <h3>场景 D：长上下文文档处理</h3>
+  <pre><span class="cmt"># 目标: 支持 128K+ 上下文</span>
+vllm serve /path/to/model \
+  <span class="flag">--max-model-len</span> <span class="val">131072</span>          <span class="cmt"># 128K 上下文</span>
+  <span class="flag">--max-num-batched-tokens</span> <span class="val">16384</span>
+  <span class="flag">--max-num-seqs</span> <span class="val">16</span>               <span class="cmt"># 长上下文下并发自然低</span>
+  <span class="flag">--gpu-memory-utilization</span> <span class="val">0.95</span>
+  <span class="flag">--kv-cache-dtype</span> <span class="val">fp8</span>             <span class="cmt"># 关键！128K的KV cache非常大</span>
+  <span class="flag">--enable-chunked-prefill</span></pre>
+
+  <h3>场景 E：多卡高吞吐（模型单卡可装）</h3>
+  <pre><span class="cmt"># 4 张 H100/H200 跑 27B FP8：用 DP 而不是 TP</span>
+vllm serve /path/to/model \
+  <span class="flag">-tp</span> <span class="val">1</span> <span class="flag">-dp</span> <span class="val">4</span>                    <span class="cmt"># 4 路数据并行，吞吐 ≈ 4x</span>
+  <span class="flag">--max-num-batched-tokens</span> <span class="val">32768</span>
+  <span class="flag">--gpu-memory-utilization</span> <span class="val">0.95</span></pre>
+
+  <h3>场景 F：多 LoRA 多任务服务</h3>
+  <pre>vllm serve /path/to/base-model \
+  <span class="flag">--enable-lora</span>
+  <span class="flag">--max-loras</span> <span class="val">4</span>                    <span class="cmt"># 同时激活 4 个 LoRA</span>
+  <span class="flag">--max-lora-rank</span> <span class="val">64</span>
+  <span class="flag">--lora-modules</span> <span class="val">chat=/lora/chat code=/lora/code math=/lora/math</span></pre>
+
+  <div class="highlight">
+    <strong>调优决策树：</strong><br>
+    1. <strong>模型装不下一张卡？</strong> → 先试 FP8/AWQ 量化，仍不行再加 TP<br>
+    2. <strong>模型装得下，多卡？</strong> → 用 DP 而不是 TP（吞吐线性增长，无通信开销）<br>
+    3. <strong>吞吐不够？</strong> → 增大 max-num-batched-tokens + max-num-seqs<br>
+    4. <strong>延迟抖动大？</strong> → 开启 chunked-prefill + async-scheduling<br>
+    5. <strong>KV cache 不够？</strong> → kv-cache-dtype=fp8，或缩小 max-model-len<br>
+    6. <strong>视频太慢？</strong> → 减少 num_frames，关闭投机解码
+  </div>
+</div>
+
+<div class="footer">
+  vLLM Serve 参数完全指南 &middot; 基于 vLLM v0.9+ (2026) 帮助文档整理 &middot; 仅供参考，以官方文档为准
+</div>
+
+</div>
+</body>
+</html>

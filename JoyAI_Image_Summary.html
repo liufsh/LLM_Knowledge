@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JoyAI-Image 技术报告总结</title>
+<style>
+  :root{--primary:#1a1a2e;--accent:#0f3460;--highlight-bg:#f0f4ff;--highlight-border:#4a7dff;--text:#222;--border:#e0e0e0}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text);line-height:1.8;background:#fafafa}
+  .container{max-width:920px;margin:0 auto;padding:20px}
+  .cover{text-align:center;padding:70px 20px 50px;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);color:white;border-radius:12px;margin-bottom:40px}
+  .cover h1{font-size:2em;margin-bottom:12px;font-weight:700}
+  .cover .subtitle{font-size:1em;color:#aab;margin-bottom:24px}
+  .cover .badge{display:inline-block;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:8px 24px;font-size:.9em;color:#dde;margin:4px}
+  .section{background:white;border-radius:10px;padding:36px 40px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid var(--border)}
+  h2{font-size:1.5em;color:var(--primary);margin-bottom:6px;padding-bottom:10px;border-bottom:2px solid var(--highlight-border)}
+  h3{font-size:1.15em;color:var(--accent);margin:22px 0 10px}
+  h4{font-size:1em;color:var(--accent);margin:14px 0 8px}
+  p{margin:12px 0;text-align:justify}
+  .highlight{background:var(--highlight-bg);border-left:4px solid var(--highlight-border);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .highlight strong{color:var(--accent)}
+  .warning{background:#fff8f0;border-left:4px solid #f0a500;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .success{background:#f0fff4;border-left:4px solid #2a9d8f;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  ul,ol{padding-left:24px;margin:10px 0} li{margin:6px 0}
+  .formula{text-align:center;padding:18px 20px;margin:18px 0;background:#f8f9ff;border-radius:8px;border:1px solid #e8eaf0;font-size:1.05em;font-family:"Times New Roman","STIX",serif;overflow-x:auto}
+  .figure{text-align:center;margin:24px 0;padding:16px;background:#fafafa;border-radius:8px;border:1px solid #eee}
+  .figure img{max-width:100%;height:auto;border-radius:4px}
+  .figure .caption{font-size:.88em;color:#666;margin-top:10px;font-style:italic}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.88em}
+  th,td{padding:9px 11px;text-align:left;border-bottom:1px solid #eee}
+  th{background:var(--primary);color:white;font-weight:600} tr:hover{background:#f8f9ff}
+  td code{background:#f0f0f5;padding:2px 6px;border-radius:3px;font-size:.9em}
+  .card-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .card{background:linear-gradient(135deg,#f8f9ff,#f0f4ff);border:1px solid #d8e0f0;border-radius:10px;padding:20px 24px}
+  .card .num{display:inline-block;background:var(--highlight-border);color:white;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-size:.85em;font-weight:700;margin-right:8px}
+  .card h4{display:inline;color:var(--accent);font-size:1.05em;margin:0}
+  .card p{margin-top:8px;font-size:.93em}
+  .stats-row{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}
+  .stat-pill{background:#f0f4ff;border:1px solid #d8e0f0;border-radius:20px;padding:8px 18px;font-size:.9em;font-weight:600;color:var(--accent)}
+  .footer{text-align:center;color:#999;font-size:.85em;padding:30px 0;border-top:1px solid #eee;margin-top:20px}
+  @media(max-width:640px){.section{padding:24px 20px}.cover h1{font-size:1.5em}.card-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ===== Cover ===== -->
+<div class="cover">
+  <h1>JoyAI-Image</h1>
+  <div class="subtitle">
+    Awakening Spatial Intelligence in Unified Multimodal Understanding and Generation<br>
+    Joy Future Academy, JD.com
+  </div>
+  <div>
+    <span class="badge">MLLM + MMDiT</span>
+    <span class="badge">统一理解/生成/编辑</span>
+    <span class="badge">16B MMDiT</span>
+    <span class="badge">OpenSpatial-3M</span>
+    <span class="badge">空间智能</span>
+    <span class="badge">双语长文本</span>
+  </div>
+</div>
+
+<!-- ===== 一、概述 ===== -->
+<div class="section">
+  <h2>一、工作概述</h2>
+  <p>
+    <strong>JoyAI-Image</strong> 是京东 Joy Future Academy 发布的一个<strong>统一多模态基础模型</strong>，
+    将图像<strong>理解、生成、编辑</strong>三个任务整合到一个框架中。与以往把这些任务拼接在一起的方案不同，
+    JoyAI-Image 的核心主张是<strong>"唤醒空间智能"（awakening spatial intelligence）</strong>——
+    把 3D/空间理解作为贯穿三个任务的第一类属性，而非事后补充的模块。
+  </p>
+
+  <div class="stats-row">
+    <div class="stat-pill">MLLM：Qwen3-VL-8B-Instruct（spatial fine-tuned）</div>
+    <div class="stat-pill">MMDiT：16B 参数</div>
+    <div class="stat-pill">VAE：Wan-2.1-VAE</div>
+    <div class="stat-pill">OpenSpatial-3M 数据集</div>
+    <div class="stat-pill">训练数据：11.3M samples</div>
+  </div>
+
+  <div class="figure">
+    <img src="joyai_image_figures/fig1_capability_radar.png" alt="Capability radar">
+    <div class="caption">图 1：JoyAI-Image 在 13+ 空间理解和生成 / 编辑基准上的能力雷达图。
+    左：空间理解（VSI、BLINK、MMSI、CV-3D、ERQA、VST 等）——JoyAI-Image 达到新 SOTA；
+    右：生成 + 编辑（LongText-EN/ZH、CVTG、OneIG、DPG、SpatialEdit、GEdit 等）——在长文本渲染和空间编辑上全面领先。</div>
+  </div>
+
+  <div class="highlight">
+    <strong>核心贡献：</strong>
+    <ol>
+      <li><strong>统一多模态底座</strong>：MLLM + MMDiT 紧耦合，支持理解、T2I、instruction-based editing</li>
+      <li><strong>可复现的数据与训练配方</strong>：五阶段 T2I 流水线、多层次 captioning、spatial editing 数据引擎</li>
+      <li><strong>空间智能觉醒</strong>：OpenSpatial 3D box 数据引擎 + spatial SFT + RL + TwNV 推理范式</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ===== 二、架构 ===== -->
+<div class="section">
+  <h2>二、整体架构</h2>
+
+  <div class="figure">
+    <img src="joyai_image_figures/fig4_architecture.png" alt="JoyAI-Image architecture">
+    <div class="caption">图 2：JoyAI-Image 整体架构。三条路径共享同一组件：
+    <strong>Understanding</strong>（MLLM 直接生成文本回答）；
+    <strong>Generation</strong>（MLLM 解析 prompt → MMDiT 去噪 → VAE 解码）；
+    <strong>Editing</strong>（MLLM 联合解析 instruction + source image → MMDiT 以 VAE-encoded 图像 + LLM prior + 噪声 token 为条件生成目标图像）。
+    右侧放大了 MMDiT block 的双流结构（文本流 + 视觉流），含 self-attention、QK-Norm、Scale&Shift modulation、gated residual 等组件。</div>
+  </div>
+
+  <h3>2.1 三个核心模块</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>MLLM（认知大脑）</h4>
+      <p>基于 <strong>Qwen3-VL-8B-Instruct</strong>，经过空间专门 SFT 强化。
+      双重角色：(1) <strong>独立理解引擎</strong>处理纯 VQA/spatial reasoning；
+      (2) <strong>意图解析中介</strong>为 MMDiT 提供语义和空间先验。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>VAE（潜空间桥梁）</h4>
+      <p>采用 <strong>Wan-2.1-VAE</strong>，利用因果 3D 卷积实现优越的时空压缩。
+      保留高频细节（小文本、细纹理），这对 text-rendering 至关重要。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>MMDiT（生成引擎）</h4>
+      <p>16B 参数的双流 Multi-Modal Diffusion Transformer。40 层，32 attention heads，
+      hidden dim 4096，<strong>使用 MRoPE 替代 Qwen-Image 的 MSRoPE</strong>，
+      更好地与空间条件对齐。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>渐进训练</h4>
+      <p>先 SFT MLLM 强化空间理解 → 从头训练 MMDiT（用 MLLM prior 作为条件）→
+      最后微调整个框架支持 instruction-based editing。</p>
+    </div>
+  </div>
+
+  <h3>2.2 MMDiT 超参数</h3>
+  <table>
+    <tr><th>参数</th><th>值</th><th>参数</th><th>值</th></tr>
+    <tr><td>Input/Output Dim</td><td>16</td><td>Attention Heads</td><td>32</td></tr>
+    <tr><td>Patch Size</td><td>1 × 2 × 2</td><td>Modulation</td><td>WanX</td></tr>
+    <tr><td>Number of Layers</td><td>40</td><td>Position Embedding</td><td>MRoPE</td></tr>
+    <tr><td>Hidden Dim</td><td>4096</td><td>RoPE Base θ</td><td>10,000</td></tr>
+    <tr><td>Text Hidden Dim</td><td>4096</td><td>RoPE Dim List</td><td>[16, 56, 56]</td></tr>
+  </table>
+</div>
+
+<!-- ===== 三、空间理解 ===== -->
+<div class="section">
+  <h2>三、空间理解：OpenSpatial-3M 数据引擎</h2>
+
+  <h3>3.1 核心挑战</h3>
+  <p>
+    现有 VLM 普遍缺乏 3D 空间智能——真实场景本质上由<strong>物体布局、相对几何、视角变化、跨视图一致性</strong>塑造，
+    而传统 2D 标注无法有效监督这些维度。
+    JoyAI-Image 的解法是构建一个<strong>以 3D box 为中心</strong>的数据引擎 <strong>OpenSpatial</strong>。
+  </p>
+
+  <div class="figure">
+    <img src="joyai_image_figures/fig5_openspatial_engine.png" alt="OpenSpatial engine">
+    <div class="caption">图 3：OpenSpatial 引擎流程。输入 3D 重建场景（ScanNet、Matterport3D、ARKitScenes、ScanNet++、Hypersim 等），
+    通过<strong>人工标注 + 3D lifting</strong>得到 scene-level 3D oriented bounding box (OBB)，
+    然后通过严格的投影、可见性过滤、mask 细化管线，产生 <strong>object-frame 索引</strong>——
+    包含 3D/2D box、instance mask、partial point cloud 和 metric 元数据。
+    下游分为 <strong>Single-view QA</strong>（从 per-frame scene graph 提取细粒度查询）和
+    <strong>Multi-view QA</strong>（跨重叠帧的视角不变推理）两个分支。</div>
+  </div>
+
+  <h3>3.2 OpenSpatial-3M 的五大能力分类</h3>
+
+  <div class="figure">
+    <img src="joyai_image_figures/fig6_openspatial_taxonomy.png" alt="OpenSpatial taxonomy">
+    <div class="caption">图 4：OpenSpatial 数据集的五类任务样例：
+    (1) <strong>Spatial Measurement (SM)</strong>：尺寸估计、距离、3D grounding；
+    (2) <strong>Spatial Relationship (SR)</strong>：方位、前后、高低、多视角物体位置；
+    (3) <strong>Camera Perception (CP)</strong>：相机运动、深度序、相机姿态；
+    (4) <strong>Multi-view Consistency (MC)</strong>：跨视图对应、物体一致性；
+    (5) <strong>Scene-Aware Reasoning (SAR)</strong>：场景描述、路径规划。
+    共 19 个子任务，300 万训练样本。</div>
+  </div>
+
+  <h3>3.3 数据组成</h3>
+  <div class="figure">
+    <img src="joyai_image_figures/fig7_data_recipe.png" alt="Data recipe">
+    <div class="caption">图 5：JoyAI-Image 理解训练数据构成（总 11.3M 样本）。
+    左：总体分布——General Understanding 6.1M (54.25%)、Spatial Understanding 3.4M (29.65%)、
+    Prompt Enhancement 1.5M (13.2%)、Others 328K (2.9%)；
+    右：OpenSpatial 3.4M 的细分——Distance、Size、Position、Depth、Camera Pose Estimation 等。</div>
+  </div>
+
+  <h3>3.4 训练目标：SFT + 在线知识蒸馏</h3>
+  <div class="formula">
+    L = L<sub>SFT</sub> + λ · L<sub>KL</sub>
+    <br><br>
+    λ = 10, L<sub>KL</sub> 使用冻结的 teacher 模型对中间隐藏状态做层平均的 KL 正则
+  </div>
+  <p>
+    关键设计：<strong>KL 正则只对 general-purpose 数据应用，对 spatial 数据关闭</strong>。
+    因为基座模型的空间能力本来就有限，KL 约束会阻碍新的空间知识获取；
+    而 general domain 的原始能力需要保护以防遗忘。
+  </p>
+
+  <h3>3.5 空间理解评估结果</h3>
+  <table>
+    <tr><th>Benchmark</th><th>Gemini-2.5-Pro</th><th>Qwen3-VL-8B-Instruct (base)</th><th>JoyAI-Image-Und</th><th>vs Base</th></tr>
+    <tr><td><strong>Spatial Avg (9 benchmarks)</strong></td><td>64.4</td><td>59.1</td><td><strong>64.4</strong></td><td><strong>+5.3</strong></td></tr>
+    <tr><td>VSI-Bench</td><td>48.4</td><td>55.6</td><td>60.1</td><td>+4.5</td></tr>
+    <tr><td>AllAnglesBench</td><td>61.3</td><td>49.5</td><td>61.0</td><td>+11.5</td></tr>
+    <tr><td>BLINK</td><td>70.6</td><td>66.1</td><td>69.6</td><td>+3.5</td></tr>
+    <tr><td>3DSR_C</td><td>57.6</td><td>52.8</td><td>60.5</td><td>+7.7</td></tr>
+    <tr><td>CV-2D</td><td>80.4</td><td>78.6</td><td>81.0</td><td>+2.4</td></tr>
+    <tr><td>CV-3D</td><td>91.3</td><td>90.8</td><td>92.7</td><td>+1.9</td></tr>
+    <tr><td>ERQA</td><td>55.8</td><td>40.1</td><td>45.0</td><td>+4.9</td></tr>
+    <tr><td>RealWorldQA</td><td>77.3</td><td>70.7</td><td>74.0</td><td>+3.3</td></tr>
+    <tr><td>MMSI</td><td>36.9</td><td>28.1</td><td>35.8</td><td>+7.7</td></tr>
+    <tr><td>General Avg (MMB/MathVista/MMStar/OCRB)</td><td>—</td><td>86.6</td><td>84.3</td><td>-2.3</td></tr>
+  </table>
+
+  <div class="success">
+    <strong>关键结果：</strong>JoyAI-Image 的空间理解平均分达到 <strong>64.4</strong>，与 Gemini-2.5-Pro 持平，
+    <strong>超出基座模型 5.3 分</strong>，并在 9 项空间基准中的 6 项上超过 Gemini-2.5-Pro。
+    更重要的是，通用理解能力仅轻微下降（-2.3），表明空间专化没有以牺牲通用能力为代价。
+  </div>
+</div>
+
+<!-- ===== 四、图像生成 ===== -->
+<div class="section">
+  <h2>四、图像生成：JoyAI-Image T2I</h2>
+
+  <h3>4.1 五阶段数据流水线</h3>
+  <p>
+    T2I 训练数据管线是一个<strong>渐进式多阶段系统</strong>，共 5 个核心模块：
+  </p>
+
+  <table>
+    <tr><th>模块</th><th>目的</th><th>关键技术</th></tr>
+    <tr><td><strong>1. Data Filtering</strong></td><td>从数十亿原始图像中筛选高质量样本</td><td>In-house IQA（4 low-level + NIQE + CLIP-IQA + MUSIQ）；Caption-based 内容过滤</td></tr>
+    <tr><td><strong>2. Captioning</strong></td><td>生成多层次、高保真的文本描述</td><td>Short / Long / Extended Long / Structured JSON 四级 caption；<strong>OCR-aware</strong> 双语 captioning</td></tr>
+    <tr><td><strong>3. Rebalancing</strong></td><td>矫正长尾分布偏差</td><td>285K-tag 分类树 + embedding tagging + 逆对数下采样</td></tr>
+    <tr><td><strong>4. Annotating</strong></td><td>人工标注高质量 SFT 数据</td><td>三维评分：Aesthetics (50%) + Information Density (30%) + Style Purity (20%)</td></tr>
+    <tr><td><strong>5. Multi-view Generation</strong></td><td>支持视角可控 T2I</td><td>Blender 4.5 渲染 ~1M 多视图图像，dense + structured JSON 双提示</td></tr>
+  </table>
+
+  <h3>4.2 OCR-Aware Captioning：文本渲染的关键</h3>
+
+  <div class="figure">
+    <img src="joyai_image_figures/fig8_ocr_captioning.png" alt="OCR captioning pipeline">
+    <div class="caption">图 6：OCR-conditioned captioning 管线。
+    对含文本的图像，先用 OCR-specialized 模型提取所有文字 token，
+    再让 caption model 基于视觉特征 + 识别的文字生成描述。
+    后过滤检查三个方面：(1) Text Coverage（所有 OCR 文字都被包含）、
+    (2) Language Integrity（原语言和措辞保留）、(3) Hallucination（文字准确）。
+    不满足的 caption 被丢弃。</div>
+  </div>
+
+  <h3>4.3 Annotation 三维评分标准</h3>
+
+  <div class="figure">
+    <img src="joyai_image_figures/tab5_scoring_rubric.png" alt="Scoring rubric">
+    <div class="caption">表 1：人工标注的维度特定评分标准（0/3/4/5 四档）。
+    Aesthetics (50%) 关注视觉吸引力、构图、光照；
+    Information Density (30%) 关注主体+对象+环境+交互的丰富度；
+    Style Purity (20%) 关注风格一致性和是否有"AI 生成"痕迹。</div>
+  </div>
+
+  <h3>4.4 训练：Pre-Training + Continue + SFT + RL</h3>
+  <p>JoyAI-Image T2I 采用<strong>流匹配（flow matching）</strong>目标：</p>
+  <div class="formula">
+    L = E<sub>t, z<sub>0</sub>, z<sub>1</sub>, y</sub> [ || f<sub>θ</sub>(z<sub>t</sub>, y, t) − (z<sub>1</sub> − z<sub>0</sub>) ||² ]
+    <br>
+    其中 z<sub>t</sub> = t·z<sub>1</sub> + (1−t)·z<sub>0</sub>，z<sub>1</sub> 是 VAE 潜变量，z<sub>0</sub> 是高斯噪声
+  </div>
+  <p>训练过程分 4 个阶段：</p>
+  <ol>
+    <li><strong>Pre-Training（三分辨率渐进）</strong>：208P → 512P → 1024P，
+    在 1024P 阶段加入多视图数据以培养 3D 意识</li>
+    <li><strong>Continue Training</strong>：用严格过滤的高质量子集"收窄分布"，稳定生成并抑制伪影</li>
+    <li><strong>SFT</strong>：task-oriented 数据，强化<strong>复杂文本渲染</strong>和<strong>多视图生成</strong></li>
+    <li><strong>Reinforcement Learning (Flow-GRPO)</strong>：
+    基于 group-relative advantage，使用 aesthetic reward + text-image alignment reward 双重信号</li>
+  </ol>
+
+  <div class="formula">
+    J<sub>Flow-GRPO</sub>(θ) = E [ (1/G) Σ min(r<sub>t</sub>·Â<sub>t</sub>, clip(r<sub>t</sub>, 1−ε, 1+ε)·Â<sub>t</sub>) − β·D<sub>KL</sub>(π<sub>θ</sub> || π<sub>ref</sub>) ]
+    <br><br>
+    Â<sub>t</sub> = (R(x<sub>0</sub>, c) − mean(R)) / std(R)
+  </div>
+
+  <h3>4.5 T2I 基准评估</h3>
+
+  <h4>LongText-Bench：双语长文本渲染</h4>
+  <table>
+    <tr><th>Model</th><th>LongText-EN ↑</th><th>LongText-ZH ↑</th></tr>
+    <tr><td>FLUX.1 [Dev]</td><td>0.607</td><td>0.005</td></tr>
+    <tr><td>GPT Image 1 [High]</td><td>0.956</td><td>0.619</td></tr>
+    <tr><td>Z-Image</td><td>0.935</td><td>0.936</td></tr>
+    <tr><td>Qwen-Image</td><td>0.943</td><td>0.946</td></tr>
+    <tr><td><strong>JoyAI-Image</strong></td><td><strong>0.963</strong></td><td><strong>0.963</strong></td></tr>
+  </table>
+
+  <div class="success">
+    <strong>关键结果：</strong>JoyAI-Image 在 LongText-Bench 的<strong>英文和中文上均达到 0.963</strong>，
+    双语均取得 SOTA。相比之下，GPT Image 1 英文（0.956）和中文（0.619）差距巨大，
+    体现了 JoyAI-Image 在双语一致性上的优势——这得益于 OCR-aware 双语 captioning 管线。
+  </div>
+
+  <h4>CVTG-2K：复杂视觉文本生成</h4>
+  <table>
+    <tr><th>Model</th><th>NED</th><th>CLIPScore</th><th>Word Acc ↑</th></tr>
+    <tr><td>Seedream 3.0</td><td>0.8537</td><td>0.7821</td><td>0.5924</td></tr>
+    <tr><td>GPT Image 1 [High]</td><td><strong>0.9478</strong></td><td>0.7982</td><td>0.8569</td></tr>
+    <tr><td>Qwen-Image</td><td>0.9116</td><td><strong>0.8017</strong></td><td>0.8288</td></tr>
+    <tr><td><strong>JoyAI-Image</strong></td><td>0.9369</td><td>0.7990</td><td><strong>0.8739</strong></td></tr>
+  </table>
+
+  <h4>T2I-CoReBench：组合与推理</h4>
+  <div class="figure">
+    <img src="joyai_image_figures/fig3_text_rendering.png" alt="Text rendering showcase">
+    <div class="caption">图 7：JoyAI-Image 的高级文本渲染能力展示——多面板漫画、密集多行文字、
+    多语言（中日英）内容、长表单布局、真实场景 text（包装、海报）、手写风格等复杂场景。</div>
+  </div>
+
+  <p>
+    JoyAI-Image 在 <strong>T2I-CoReBench 的 Composition mean 上取得 94.2</strong>（超过所有对比模型，
+    GPT Image 1 High 仅 79.8），同时 Reasoning mean 55.9 排名第二。
+    Composition 的领先说明模型在<strong>布局 + 文本 + 视觉外观的联合建模</strong>上有显著优势。
+  </p>
+</div>
+
+<!-- ===== 五、图像编辑 ===== -->
+<div class="section">
+  <h2>五、图像编辑：JoyAI-Image-Edit</h2>
+
+  <h3>5.1 编辑数据组成</h3>
+
+  <div class="figure">
+    <img src="joyai_image_figures/fig9_editing_data.png" alt="Editing data distribution">
+    <div class="caption">图 8：JoyAI-Image-Edit 训练数据构成。
+    <strong>Open-domain Edit (46.72%)</strong>——来自视频帧的自然发生变化，覆盖人体动作、物体位移等；
+    <strong>Spatial Edit (28.09%)</strong>——几何感知的编辑（Camera 12.72% + Rotation 7.98% + Moving 7.39%）；
+    <strong>General Edit (25.20%)</strong>——含 IP Edit、Text Render 等 long-tail 任务。</div>
+  </div>
+
+  <h3>5.2 Spatial Edit 数据引擎：Blender 合成管线</h3>
+
+  <div class="figure">
+    <img src="joyai_image_figures/fig10_spatial_engine.png" alt="Spatial editing data engine">
+    <div class="caption">图 9：空间编辑数据生成管线，包含两个互补分支：
+    <strong>Dynamic-Camera Viewpoint Transformation</strong>——固定 3D 场景，变化相机位置
+    （Yaw90、Pitch45、Pitch45+Zoom In 等），产生跨视图编辑对；
+    <strong>Static-Camera Object Transformation</strong>——固定相机，对 3D 物体做旋转/平移/缩放，
+    使用 inpainting 保持背景一致性。两类数据共同提供了几何感知编辑的精确监督。</div>
+  </div>
+
+  <p>
+    传统 2D 图像编辑数据很难提供<strong>几何上无歧义</strong>的监督——自然图像对中的视角变化、物体移动
+    大多是隐含的、不完全标注的。JoyAI-Image 通过 Blender 4.5 显式渲染 3D 场景，
+    把相机 6-DOF 运动和物体变换都作为<strong>可执行的指令模板</strong>，保证 source-target 对的几何一致性。
+  </p>
+
+  <h3>5.3 训练：Pre-Training → Continue → SFT → DiffusionNFT</h3>
+  <p>
+    编辑模型使用与 T2I 相同的 MMDiT 架构，但输入多了 source image 的 VAE 编码作为条件。
+    训练也分 4 个阶段：
+  </p>
+  <ol>
+    <li><strong>Pre-Training</strong>：从大规模生成先验初始化，引入粗粒度编辑监督（来自视频帧对）</li>
+    <li><strong>Continue Training</strong>：高质量编辑数据 + 专业分支（spatial、text、multi-image）</li>
+    <li><strong>SFT</strong>：针对指令遵循、文本准确性、空间精度、长尾 case 的精细调整</li>
+    <li><strong>RL (DiffusionNFT)</strong>：使用双奖励模型——
+      <ul>
+        <li><strong>Gemini-3-Flash</strong> 作为 instruction-following + consistency 的 judge</li>
+        <li><strong>HPSv3</strong> 作为 naturalness（感知质量）的 scorer</li>
+        <li>采用 instruction-prioritized 线性混合，防止 reward hacking</li>
+      </ul>
+    </li>
+  </ol>
+
+  <p>DiffusionNFT 目标函数：</p>
+  <div class="formula">
+    L<sub>NFT</sub> = E[ r · || v<sub>θ</sub><sup>+</sup>(x<sub>r</sub>, x<sub>t</sub>, c, t) − v ||² + (1−r) · || v<sub>θ</sub><sup>−</sup>(x<sub>r</sub>, x<sub>t</sub>, c, t) − v ||² ]
+    <br><br>
+    r ∈ [0,1] 是 sampled edit 的 optimality 概率
+  </div>
+
+  <h3>5.4 编辑基准评估</h3>
+
+  <h4>SpatialEdit-Bench（几何准确性）</h4>
+  <table>
+    <tr><th>Method</th><th>Moving Score ↑</th><th>Rotation Score ↑</th><th>Viewpoint Error ↓</th><th>Framing Error ↓</th><th>Obj Overall ↑</th><th>Cam Overall ↓</th></tr>
+    <tr><td>Nano-Banana-Pro</td><td>0.099</td><td>0.420</td><td>0.845</td><td>0.708</td><td>0.260</td><td>0.777</td></tr>
+    <tr><td>Seedream4</td><td>0.163</td><td>0.482</td><td>0.839</td><td>0.701</td><td>0.323</td><td>0.770</td></tr>
+    <tr><td>QwenImageEdit</td><td>0.311</td><td>0.531</td><td>0.922</td><td>0.692</td><td>0.421</td><td>0.807</td></tr>
+    <tr><td>LongCatImage-Edit</td><td>0.373</td><td>0.505</td><td>0.802</td><td>0.684</td><td>0.439</td><td>0.743</td></tr>
+    <tr><td><strong>JoyAI-Image-Edit</strong></td><td><strong>0.652</strong></td><td><strong>0.646</strong></td><td><strong>0.290</strong></td><td><strong>0.568</strong></td><td><strong>0.649</strong></td><td><strong>0.429</strong></td></tr>
+  </table>
+
+  <div class="success">
+    <strong>突破性结果：</strong>在 SpatialEdit-Bench 上，JoyAI-Image-Edit 的 Moving Score <strong>0.652</strong>
+    是下一名 LongCatImage-Edit (0.373) 的 1.75×，Viewpoint Error 从 0.802 降到 <strong>0.290</strong>（64% 降低）。
+    这是首个在空间编辑上显著超越 Nano-Banana-Pro、Seedream4 等闭源模型的开放方案。
+    甚至<strong>超过了 Veo3.1、Kling-V2.5 等视频世界模型</strong>的相机控制精度。
+  </div>
+
+  <h4>GEdit-Bench（通用指令编辑）</h4>
+  <table>
+    <tr><th>Model</th><th>G_SC (EN)</th><th>G_PQ (EN)</th><th>G_O (EN)</th><th>G_O (CN)</th></tr>
+    <tr><td>Nano-Banana-Pro</td><td>8.102</td><td>8.344</td><td>7.738</td><td>7.799</td></tr>
+    <tr><td>Qwen-Image-Edit-2511</td><td>8.297</td><td>8.202</td><td>7.877</td><td>7.819</td></tr>
+    <tr><td>FireRed-Image-Edit</td><td>8.363</td><td>8.245</td><td>7.943</td><td>7.887</td></tr>
+    <tr><td><strong>JoyAI-Image-Edit w/ PE</strong></td><td>8.806</td><td>8.273</td><td><strong>8.290</strong></td><td><strong>8.208</strong></td></tr>
+  </table>
+
+  <h4>人工评估（AB 测试）</h4>
+  <div class="figure">
+    <img src="joyai_image_figures/fig12_human_eval.png" alt="Human evaluation">
+    <div class="caption">图 10：人工评估 AB 对比。
+    vs Flux.2 [DEV]：JoyAI-Image-Edit 在 Instruction Following (40.1% vs 13.8%)、Consistency (56.3% vs 18.5%)、
+    Overall (60.8% vs 23.2%) 全面领先；
+    vs Qwen-Image-Edit-2511：在语义跟随和一致性上领先，但 Naturalness 略输；
+    vs Nano-Banana-2：naturalness 是主要差距（24.7% vs 48.1%），其他维度接近。</div>
+  </div>
+</div>
+
+<!-- ===== 六、编辑促进推理 ===== -->
+<div class="section">
+  <h2>六、应用：Thinking with Novel Views（TwNV）</h2>
+
+  <h3>6.1 核心思想：把图像编辑当作推理工具</h3>
+  <p>
+    这是 JoyAI-Image 最有趣的创新之一——提出了一个<strong>生成式"视觉思维链"范式</strong>。
+    传统 VLM 回答空间问题时只能看一张固定的图，但有些空间关系<strong>从单视角本质上无法判断</strong>
+    （例如物体的背面、被遮挡的部分、视差下的高度关系）。
+  </p>
+
+  <div class="figure">
+    <img src="joyai_image_figures/fig13_twnv_pipeline.png" alt="TwNV pipeline">
+    <div class="caption">图 11：TwNV 三阶段管线。输入一张图 I<sub>0</sub> 和空间问题 Q，
+    <strong>Stage 1: Planner</strong>（MLLM）输出 6-DOF 相机运动指令；
+    <strong>Stage 2: Synthesizer</strong>（JoyAI-Image-Edit）渲染新视角 I<sub>1</sub>；
+    <strong>Stage 3: Reasoner</strong>（MLLM）联合观察 {I<sub>0</sub>, I<sub>1</sub>} 回答问题。</div>
+  </div>
+
+  <h3>6.2 TwNV 实验结果</h3>
+
+  <h4>不同 Synthesizer 对比（固定 GPT-5 作为 Reasoner）</h4>
+  <table>
+    <tr><th>Editor</th><th>Orientation</th><th>Location</th><th>Multi-Obj</th><th>Overall</th></tr>
+    <tr><td>None (w/o NV, baseline)</td><td>63.6</td><td>80.9</td><td>60.5</td><td>68.8</td></tr>
+    <tr><td>Qwen-Image-Edit</td><td>61.8</td><td>77.8</td><td>61.5</td><td>67.4</td></tr>
+    <tr><td>Nano-Banana-Pro</td><td>60.9</td><td>83.0</td><td>63.6</td><td>69.5</td></tr>
+    <tr><td><strong>JoyAI-Image-Edit</strong></td><td><strong>65.3</strong></td><td>82.6</td><td><strong>66.2</strong></td><td><strong>71.7</strong></td></tr>
+  </table>
+
+  <h4>不同 Reasoner 通用性</h4>
+  <table>
+    <tr><th>Reasoner</th><th>w/o NV</th><th>JoyAI-Image (w/ NV)</th><th>Δ</th><th>Rel. 提升</th></tr>
+    <tr><td>Gemini-3-Flash</td><td>75.5</td><td>77.2</td><td>+1.7</td><td>+2.3%</td></tr>
+    <tr><td>GPT-5</td><td>68.8</td><td>71.7</td><td>+2.9</td><td>+4.2%</td></tr>
+    <tr><td>Qwen3-VL-235B</td><td>58.6</td><td>61.8</td><td>+3.2</td><td>+5.5%</td></tr>
+    <tr><td><strong>Qwen3-VL-32B</strong></td><td>56.2</td><td>60.6</td><td><strong>+4.4</strong></td><td><strong>+7.8%</strong></td></tr>
+  </table>
+
+  <div class="highlight">
+    <strong>"小模型红利"（Small-Model Dividend）现象：</strong>
+    相对提升随着 reasoner 规模<strong>变小而变大</strong>——Qwen3-VL-32B 获得 7.8% 提升，
+    而 Gemini-3-Flash 只有 2.3%。这说明生成新视角作为 CoT 工具，
+    <strong>为参数受限的模型提供了额外的"视觉思维空间"</strong>，
+    让它们能达到超越自身原始能力的性能。这与 GPT o1 的 "test-time compute" 哲学高度一致。
+  </div>
+
+  <div class="figure">
+    <img src="joyai_image_figures/fig14_twnv_cases.png" alt="TwNV cases">
+    <div class="caption">图 12：TwNV 的两个代表性案例。
+    <strong>Case 1（高度比较）</strong>：查询"钟塔和房子哪个更高"，
+    JoyAI-Image-Edit 生成的新视角（pitch 20°）清晰显示钟塔低于房屋（GT: House），
+    而 Qwen-Image-Edit 和 Nano-Banana-Pro 的视角变化不忠实于指令。
+    <strong>Case 2（垂直关系消歧）</strong>：查询"交通灯是否直接在伞上方"，
+    JoyAI-Image-Edit 通过 yaw -20° 的相机运动展示出"not directly above"的关系。
+    高保真的新视角生成让原本模棱两可的空间关系变得清晰可判。</div>
+  </div>
+
+  <h3>6.3 3D 重建增强</h3>
+  <p>
+    TwNV 还被证明对<strong>下游 3D 重建</strong>有帮助。单张图输入 VGGT（feed-forward 3D reconstruction 模型）
+    得到稀疏、不完整的几何；<strong>用 JoyAI-Image-Edit 生成的多视图一起输入</strong>，
+    重建的点云明显更密集、更完整。
+  </p>
+
+  <div class="success">
+    <strong>间接验证空间一致性：</strong>如果生成的视角只是"局部看起来对"但相机运动不一致，
+    VGGT 会产生几何冲突并降低重建质量；但<strong>JoyAI-Image-Edit 的多视图一致提升了重建</strong>，
+    说明模型真的学到了跨视图几何一致性，而非仅仅的像素空间伪造。
+    这对 world model / embodied 应用意义重大。
+  </div>
+</div>
+
+<!-- ===== 七、能力综合展示 ===== -->
+<div class="section">
+  <h2>七、能力综合展示</h2>
+
+  <div class="figure">
+    <img src="joyai_image_figures/fig2_showcase.png" alt="JoyAI-Image showcase">
+    <div class="caption">图 13：JoyAI-Image 的综合能力展示。
+    包括<strong>多视角生成</strong>（室内场景不同视角、角色多面视图）、
+    <strong>几何感知变换</strong>（yaw/pitch 相机控制）、
+    <strong>位置特定编辑</strong>（精准的物体插入/移除）、
+    <strong>pitch/yaw/zoom 的组合相机运动</strong>等。</div>
+  </div>
+</div>
+
+<!-- ===== 八、核心贡献总结 ===== -->
+<div class="section">
+  <h2>八、核心贡献总结</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>统一的 MLLM+MMDiT 架构</h4>
+      <p>不是模块拼接，而是紧耦合的<strong>双向协作范式</strong>——MLLM 既是独立理解引擎，
+      又是 MMDiT 的 intent 解析器；understanding 提升 generation/editing，
+      而 generation 产生的多视角反过来增强 spatial reasoning。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>OpenSpatial-3M 数据引擎</h4>
+      <p>以 3D box 为几何锚点，从 ScanNet/Matterport3D 等源头 lifting，
+      支持 single-view + multi-view 的 19 个子任务，
+      覆盖 Measurement/Relationship/Camera/Consistency/Reasoning 五大能力类别。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>OCR-Aware 双语 Captioning</h4>
+      <p>两阶段 OCR-conditioned 生成 + 三维后过滤（Text Coverage、Language Integrity、Hallucination），
+      让 LongText-Bench EN/ZH 均达到 0.963 双 SOTA。
+      中英双语一致性远超 GPT Image 1（EN 0.956 / ZH 0.619）。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>Blender Spatial Edit 引擎</h4>
+      <p>3D 驱动的编辑数据合成：Static-Camera Object Transformation + Dynamic-Camera Viewpoint，
+      提供<strong>几何上无歧义</strong>的 source-target 对，
+      使 SpatialEdit-Bench 的 Moving Score 达到 0.652（次名的 1.75×）。</p>
+    </div>
+    <div class="card">
+      <span class="num">5</span>
+      <h4>Thinking with Novel Views 范式</h4>
+      <p>把图像编辑作为"视觉思维链"工具——Planner/Synthesizer/Reasoner 三阶段流水线
+      解决单视角空间推理的本质盲区。在参数受限的 reasoner 上获得 7.8% 相对提升（Small-Model Dividend）。</p>
+    </div>
+    <div class="card">
+      <span class="num">6</span>
+      <h4>双重 RL + DiffusionNFT</h4>
+      <p>T2I 用 Flow-GRPO（aesthetic + alignment 双奖励）；
+      编辑用 DiffusionNFT + Gemini-3-Flash + HPSv3 双 reward，
+      instruction-prioritized 混合防止 reward hacking。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 九、结论 ===== -->
+<div class="section">
+  <h2>九、结论与意义</h2>
+  <p>
+    JoyAI-Image 代表了统一多模态模型的一个新方向：<strong>把空间智能作为第一类属性</strong>，
+    而不是事后增加的模块。三个任务（理解、生成、编辑）共享同一个空间底座，
+    使得它们可以互相强化——更强的理解驱动更精确的生成，而生成的多视角反过来
+    为 reasoning 提供新的视觉证据。
+  </p>
+
+  <div class="highlight">
+    <strong>一句话总结：</strong>
+    JoyAI-Image 不仅是一个性能更强的统一多模态模型，更是一个<strong>空间智能觉醒的实践蓝图</strong>——
+    通过 3D box 为中心的数据引擎、几何感知的训练任务、和闭环的 understanding↔generation 耦合，
+    让 VLM 从"看图说话"走向"能够通过生成来推理几何"。
+    Thinking with Novel Views 的范式尤其有潜力——
+    它预示着未来的 multimodal AI 可能不只是"理解现有图像"，
+    更能<strong>主动生成视觉证据来解决问题</strong>，这为 VLA（视觉-语言-动作）系统和世界模型
+    奠定了重要的基础。
+  </div>
+
+  <h3>未来方向</h3>
+  <ul>
+    <li><strong>VLA 系统</strong>：将 spatial edit 能力嵌入机器人决策闭环，提供 "what-if" 视觉推理</li>
+    <li><strong>World Models</strong>：更长 horizon 的多视图一致性，支持动态场景演化</li>
+    <li><strong>Embodied Reasoning</strong>：主动探索策略，让 agent 根据不确定性主动生成"假设视角"</li>
+    <li><strong>更细粒度控制</strong>：从相机 6-DOF 到物体级关节运动、光照变换等</li>
+  </ul>
+</div>
+
+<div class="footer">
+  论文总结报告 &middot; JoyAI-Image (JD.com Joy Future Academy, 2026)
+</div>
+
+</div>
+</body>
+</html>

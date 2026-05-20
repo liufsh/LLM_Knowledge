@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>深度学习基础：激活函数详解</title>
+<style>
+  :root {
+    --primary: #1a1a2e;
+    --accent: #0f3460;
+    --highlight-bg: #f0f4ff;
+    --highlight-border: #4a7dff;
+    --text: #222;
+    --text-light: #555;
+    --border: #e0e0e0;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: var(--text);
+    line-height: 1.8;
+    background: #fafafa;
+  }
+  .container {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  /* Cover */
+  .cover {
+    text-align: center;
+    padding: 70px 20px 50px;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    color: white;
+    border-radius: 12px;
+    margin-bottom: 40px;
+  }
+  .cover h1 { font-size: 2.2em; margin-bottom: 12px; font-weight: 700; letter-spacing: 1px; }
+  .cover .subtitle { font-size: 1.05em; color: #aab; margin-bottom: 24px; }
+  .cover .tags { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+  .cover .tag {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 20px;
+    padding: 6px 18px;
+    font-size: 0.9em;
+    color: #dde;
+  }
+
+  /* Sections */
+  .section {
+    background: white;
+    border-radius: 10px;
+    padding: 36px 40px;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    border: 1px solid var(--border);
+  }
+  h2 {
+    font-size: 1.5em;
+    color: var(--primary);
+    margin-bottom: 6px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--highlight-border);
+  }
+  h3 { font-size: 1.15em; color: var(--accent); margin: 20px 0 10px; }
+  p { margin: 12px 0; text-align: justify; }
+
+  .highlight {
+    background: var(--highlight-bg);
+    border-left: 4px solid var(--highlight-border);
+    padding: 16px 20px;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0;
+  }
+  .highlight strong { color: var(--accent); }
+
+  .warning {
+    background: #fff8f0;
+    border-left: 4px solid #f0a500;
+    padding: 16px 20px;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0;
+  }
+
+  .success {
+    background: #f0fff4;
+    border-left: 4px solid #2a9d8f;
+    padding: 16px 20px;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0;
+  }
+
+  ul, ol { padding-left: 24px; margin: 10px 0; }
+  li { margin: 6px 0; }
+
+  /* Math formula */
+  .formula {
+    text-align: center;
+    padding: 18px 20px;
+    margin: 18px 0;
+    background: #f8f9ff;
+    border-radius: 8px;
+    border: 1px solid #e8eaf0;
+    font-size: 1.15em;
+    font-family: "Times New Roman", "STIX", serif;
+    letter-spacing: 0.5px;
+    overflow-x: auto;
+  }
+
+  /* Figures */
+  .figure {
+    text-align: center;
+    margin: 24px 0;
+    padding: 16px;
+    background: #fafafa;
+    border-radius: 8px;
+    border: 1px solid #eee;
+  }
+  .figure img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+  }
+  .figure .caption {
+    font-size: 0.88em;
+    color: #666;
+    margin-top: 10px;
+    font-style: italic;
+  }
+
+  /* Comparison table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+  }
+  th {
+    background: var(--primary);
+    color: white;
+    font-weight: 600;
+  }
+  tr:hover { background: #f8f9ff; }
+  td code {
+    background: #f0f0f5;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.9em;
+  }
+
+  /* Timeline / evolution cards */
+  .timeline {
+    position: relative;
+    padding-left: 30px;
+    margin: 20px 0;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(to bottom, #e63946, #2a9d8f, #6a4c93, #f0a500);
+    border-radius: 2px;
+  }
+  .timeline-item {
+    position: relative;
+    margin-bottom: 20px;
+    padding: 16px 20px;
+    background: white;
+    border: 1px solid #e8e8e8;
+    border-radius: 8px;
+  }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -26px;
+    top: 20px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid white;
+  }
+  .timeline-item:nth-child(1)::before { background: #e63946; }
+  .timeline-item:nth-child(2)::before { background: #2a9d8f; }
+  .timeline-item:nth-child(3)::before { background: #6a4c93; }
+  .timeline-item:nth-child(4)::before { background: #f0a500; }
+  .timeline-item .year { font-size: 0.8em; color: #999; font-weight: 600; }
+  .timeline-item h4 { margin: 4px 0 8px; color: var(--accent); }
+
+  /* Pros/Cons */
+  .pros-cons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .pros, .cons {
+    padding: 16px;
+    border-radius: 8px;
+  }
+  .pros {
+    background: #f0fff4;
+    border: 1px solid #c8e6c9;
+  }
+  .cons {
+    background: #fff8f0;
+    border: 1px solid #ffe0b2;
+  }
+  .pros h4 { color: #2e7d32; margin-bottom: 8px; }
+  .cons h4 { color: #e65100; margin-bottom: 8px; }
+  .pros li, .cons li { font-size: 0.93em; }
+
+  /* Cards for SwiGLU */
+  .card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .card {
+    background: linear-gradient(135deg, #f8f9ff 0%, #f0f4ff 100%);
+    border: 1px solid #d8e0f0;
+    border-radius: 10px;
+    padding: 20px 24px;
+  }
+  .card .num {
+    display: inline-block;
+    background: var(--highlight-border);
+    color: white;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 28px;
+    font-size: 0.85em;
+    font-weight: 700;
+    margin-right: 8px;
+  }
+  .card h4 { display: inline; color: var(--accent); font-size: 1.05em; }
+  .card p { margin-top: 8px; font-size: 0.93em; }
+
+  .footer {
+    text-align: center;
+    color: #999;
+    font-size: 0.85em;
+    padding: 30px 0;
+    border-top: 1px solid #eee;
+    margin-top: 20px;
+  }
+
+  @media (max-width: 640px) {
+    .section { padding: 24px 20px; }
+    .cover h1 { font-size: 1.6em; }
+    .pros-cons, .card-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+<!-- ===== Cover ===== -->
+<div class="cover">
+  <h1>深度学习基础：激活函数详解</h1>
+  <div class="subtitle">从 Sigmoid 到 SwiGLU —— 激活函数的演化之路</div>
+  <div class="tags">
+    <span class="tag">Sigmoid</span>
+    <span class="tag">ReLU</span>
+    <span class="tag">SiLU / Swish</span>
+    <span class="tag">SwiGLU</span>
+  </div>
+</div>
+
+<!-- ===== 引言 ===== -->
+<div class="section">
+  <h2>引言：为什么需要激活函数？</h2>
+  <p>
+    在神经网络中，如果每一层都只做线性变换（矩阵乘法 + 偏置），那么无论堆叠多少层，
+    整个网络的表达能力等价于一个单层线性模型。<strong>激活函数</strong>为网络引入
+    <strong>非线性</strong>，使其能够拟合任意复杂的函数关系。
+  </p>
+  <div class="highlight">
+    <strong>直觉理解：</strong>线性变换只能画直线（或超平面），而激活函数让网络能够
+    "弯曲"决策边界，从而区分非线性可分的数据。
+  </div>
+  <p>
+    一个好的激活函数需要平衡以下几点：计算效率、梯度传播能力、非线性表达力。
+    接下来我们将按时间线逐一介绍五种代表性的激活函数。
+  </p>
+
+  <div class="timeline">
+    <div class="timeline-item">
+      <span class="year">1943 / 经典</span>
+      <h4>Sigmoid</h4>
+      <p>最早的激活函数之一，将输出压缩到 (0, 1) 区间，模拟生物神经元的"激发"行为。</p>
+    </div>
+    <div class="timeline-item">
+      <span class="year">2010 / 突破</span>
+      <h4>ReLU</h4>
+      <p>极其简单的"取正值"操作，彻底改变了深度学习的训练方式，至今仍是最广泛使用的激活函数。</p>
+    </div>
+    <div class="timeline-item">
+      <span class="year">2015 / 改进</span>
+      <h4>ELU</h4>
+      <p>用指数曲线修复 ReLU 的负半轴，实现零均值输出和非零梯度，是 GELU 的思想前身。</p>
+    </div>
+    <div class="timeline-item">
+      <span class="year">2017 / 平滑</span>
+      <h4>SiLU (Swish)</h4>
+      <p>由 Google Brain 通过自动搜索发现，结合了 Sigmoid 的平滑性和 ReLU 的无上界特性。</p>
+    </div>
+    <div class="timeline-item">
+      <span class="year">2020 / 门控</span>
+      <h4>SwiGLU</h4>
+      <p>门控线性单元与 Swish 的结合，被 LLaMA、PaLM 等现代大语言模型采用。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 1. Sigmoid ===== -->
+<div class="section">
+  <h2>一、Sigmoid 函数</h2>
+
+  <h3>1.1 数学定义</h3>
+  <div class="formula">
+    &sigma;(x) = 1 / (1 + e<sup>-x</sup>)
+  </div>
+  <p>
+    Sigmoid 函数将任意实数映射到 <strong>(0, 1)</strong> 区间。当输入趋向正无穷时输出趋近 1，
+    趋向负无穷时输出趋近 0，x = 0 时输出恰好为 0.5。
+  </p>
+
+  <h3>1.2 直觉理解</h3>
+  <p>
+    可以把 Sigmoid 想象成一个"软开关"：
+  </p>
+  <ul>
+    <li><strong>x 很大（正数）：</strong>开关几乎完全打开 &rarr; 输出接近 1</li>
+    <li><strong>x 很小（负数）：</strong>开关几乎完全关闭 &rarr; 输出接近 0</li>
+    <li><strong>x 在 0 附近：</strong>开关处于中间状态 &rarr; 输出在 0.5 左右</li>
+  </ul>
+  <p>
+    这种"S 形"曲线也常用于概率建模（如逻辑回归的输出层），将实数"挤压"为概率值。
+  </p>
+
+  <div class="figure">
+    <img src="dl_figures/sigmoid.png" alt="Sigmoid function and gradient">
+    <div class="caption">图 1：Sigmoid 函数（左）及其梯度（右）。注意梯度最大值仅为 0.25，且在两端迅速趋近于 0。</div>
+  </div>
+
+  <h3>1.3 梯度特性</h3>
+  <div class="formula">
+    &sigma;'(x) = &sigma;(x) &middot; (1 - &sigma;(x))
+  </div>
+  <p>
+    Sigmoid 的导数有一个优美的性质：它可以用自身来表示。但最大梯度值仅为 <strong>0.25</strong>
+    （在 x=0 处），且在输入绝对值较大时梯度迅速衰减至接近 0。
+  </p>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; 优点</h4>
+      <ul>
+        <li>输出范围 (0,1)，可直接解释为概率</li>
+        <li>处处可导，函数平滑</li>
+        <li>导数可用自身表示，计算方便</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; 缺点</h4>
+      <ul>
+        <li><strong>梯度消失：</strong>梯度最大仅 0.25，深层网络中梯度指数衰减</li>
+        <li><strong>输出非零中心：</strong>输出恒正，导致参数更新呈锯齿形</li>
+        <li><strong>计算代价：</strong>涉及指数运算</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="warning">
+    <strong>梯度消失问题：</strong>如果网络有 10 层，每层梯度最多乘以 0.25，
+    那么回传到第一层时梯度至多只剩 0.25<sup>10</sup> &asymp; 10<sup>-6</sup>，
+    几乎无法有效更新参数。这就是 Sigmoid 在深层网络中被淘汰的根本原因。
+  </div>
+</div>
+
+<!-- ===== 2. ReLU ===== -->
+<div class="section">
+  <h2>二、ReLU 函数</h2>
+
+  <h3>2.1 数学定义</h3>
+  <div class="formula">
+    ReLU(x) = max(0, x)
+  </div>
+  <p>
+    ReLU（Rectified Linear Unit，修正线性单元）的定义极其简洁：
+    负数输出为 0，正数原样输出。它于 2010 年左右被广泛应用于深度学习中，
+    是推动深度网络训练取得突破的关键因素之一。
+  </p>
+
+  <h3>2.2 直觉理解</h3>
+  <p>
+    ReLU 就像一个"硬开关"或者"单向阀门"：
+  </p>
+  <ul>
+    <li><strong>输入为正：</strong>信号完全通过，没有任何变形</li>
+    <li><strong>输入为负：</strong>信号被完全阻断，输出为 0</li>
+  </ul>
+  <p>
+    这种"要么全开、要么全关"的方式让网络产生<strong>稀疏激活</strong>——
+    在任意时刻，只有部分神经元是"活跃"的，这类似于生物神经网络的工作方式。
+  </p>
+
+  <div class="figure">
+    <img src="dl_figures/relu.png" alt="ReLU function and gradient">
+    <div class="caption">图 2：ReLU 函数（左）及其梯度（右）。梯度只有两个值：0 或 1。负值区域的梯度恒为 0（"死亡区"）。</div>
+  </div>
+
+  <h3>2.3 梯度特性</h3>
+  <div class="formula">
+    ReLU'(x) = { 0, &nbsp; x &lt; 0 &nbsp;;&nbsp; 1, &nbsp; x &gt; 0 }
+  </div>
+  <p>
+    ReLU 的梯度非常"干净"：在正半轴恒为 1，完美避免了梯度消失。
+    这意味着在正值路径上，梯度可以无损地从输出层传回输入层。
+  </p>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; 优点</h4>
+      <ul>
+        <li><strong>无梯度消失：</strong>正区间梯度恒为 1</li>
+        <li><strong>计算极快：</strong>仅需一次比较操作</li>
+        <li><strong>稀疏激活：</strong>约 50% 的神经元输出为 0</li>
+        <li><strong>收敛速度快：</strong>比 Sigmoid 快约 6 倍</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; 缺点</h4>
+      <ul>
+        <li><strong>神经元死亡：</strong>一旦输入始终为负，梯度永远为 0，该神经元永久失活</li>
+        <li><strong>输出非零中心：</strong>输出恒 &ge; 0</li>
+        <li><strong>不可导点：</strong>x=0 处不可导（实践中通常定义为 0 或 1）</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="warning">
+    <strong>"Dying ReLU" 问题：</strong>当学习率过大时，参数更新可能使某个神经元的输入
+    始终为负值。此后该神经元的梯度永远为 0，参数无法继续更新，相当于这个神经元"死了"。
+    实验中曾观察到多达 40% 的神经元出现这一问题。
+  </div>
+</div>
+
+<!-- ===== 3. ELU ===== -->
+<div class="section">
+  <h2>三、ELU 函数</h2>
+
+  <h3>3.1 数学定义</h3>
+  <div class="formula">
+    ELU(x) = { x, &nbsp; x &gt; 0 &nbsp;;&nbsp; &alpha;(e<sup>x</sup> - 1), &nbsp; x &le; 0 }
+  </div>
+  <p>
+    ELU（Exponential Linear Unit，Clevert et al., 2015）是对 ReLU 的一种改进：
+    正半轴与 ReLU 完全相同，负半轴不再直接截断为 0，而是使用一条<strong>指数曲线</strong>
+    平滑地趋近于 -&alpha;。超参数 &alpha;（通常取 1.0）控制负饱和值。
+  </p>
+
+  <h3>3.2 直觉理解</h3>
+  <p>
+    ELU 可以看作 ReLU 的"升级版"——保留了 ReLU 正半轴的全部优点，同时修复了其两大缺陷：
+  </p>
+  <ul>
+    <li><strong>负值不再截断：</strong>当输入为负时，ELU 输出一个小的负值（而非硬性的 0），
+    使得<strong>均值更接近零</strong>。这减少了前向传播中的偏移，加速收敛。</li>
+    <li><strong>梯度不再"死亡"：</strong>负半轴的梯度为 &alpha;&middot;e<sup>x</sup>，
+    虽然很小但<strong>始终非零</strong>，避免了 ReLU 中神经元永久失活的问题。</li>
+    <li><strong>零点处平滑：</strong>ELU 在 x=0 处连续且可导（一阶导数连续），
+    优化景观比 ReLU 更平滑。</li>
+  </ul>
+
+  <div class="figure">
+    <img src="dl_figures/elu.png" alt="ELU function and gradient">
+    <div class="caption">图 3：ELU 函数（左）及其梯度（右）。不同 &alpha; 值控制负饱和程度。
+    与 ReLU 对比：负半轴梯度始终非零，零点处平滑过渡。</div>
+  </div>
+
+  <h3>3.3 梯度特性</h3>
+  <div class="formula">
+    ELU'(x) = { 1, &nbsp; x &gt; 0 &nbsp;;&nbsp; &alpha; &middot; e<sup>x</sup> = ELU(x) + &alpha;, &nbsp; x &le; 0 }
+  </div>
+  <p>
+    正半轴梯度恒为 1（与 ReLU 相同），负半轴梯度从 &alpha;（x=0 时）指数衰减至 0（x&rarr;-&infin;）。
+    注意：负半轴的梯度可以用 ELU 自身的输出值来表示（ELU(x) + &alpha;），这使得反向传播的计算更高效。
+  </p>
+
+  <h3>3.4 ELU 的变体</h3>
+  <table>
+    <tr><th>变体</th><th>负半轴定义</th><th>关键改进</th><th>代表应用</th></tr>
+    <tr>
+      <td><strong>SELU</strong><br>(Scaled ELU)</td>
+      <td>&lambda; &middot; &alpha;(e<sup>x</sup> - 1)</td>
+      <td>精心选择 &lambda;=1.0507, &alpha;=1.6733，使网络自归一化（self-normalizing）——
+      无需 BatchNorm 即可维持激活值的均值和方差稳定</td>
+      <td>全连接深层网络</td>
+    </tr>
+    <tr>
+      <td><strong>CELU</strong><br>(Continuously Differentiable ELU)</td>
+      <td>&alpha;(e<sup>x/&alpha;</sup> - 1)</td>
+      <td>保证二阶导数也连续（ELU 仅一阶连续），优化更平滑</td>
+      <td>需要高阶优化的场景</td>
+    </tr>
+    <tr>
+      <td><strong>GELU</strong><br>(Gaussian Error LU)</td>
+      <td>x &middot; &Phi;(x)</td>
+      <td>用高斯 CDF 替代指数，输出更平滑。被 BERT、GPT-2 广泛采用，
+      可视为 ELU 到 SiLU 之间的过渡</td>
+      <td>BERT, GPT-2, ViT</td>
+    </tr>
+  </table>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; 优点</h4>
+      <ul>
+        <li><strong>无死亡神经元：</strong>负半轴梯度非零</li>
+        <li><strong>输出接近零均值：</strong>负值输出使均值偏移减小，加速收敛</li>
+        <li><strong>零点平滑：</strong>一阶导数连续（CELU 达到二阶连续）</li>
+        <li><strong>正半轴无梯度消失：</strong>梯度恒为 1</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; 缺点</h4>
+      <ul>
+        <li><strong>计算代价：</strong>涉及指数运算 e<sup>x</sup>，比 ReLU 慢</li>
+        <li><strong>负饱和：</strong>x 很小时梯度趋近于 0，仍有轻微梯度消失</li>
+        <li><strong>非单调：</strong>与 ReLU 相同为单调函数（不如 SiLU 灵活）</li>
+        <li><strong>已被 SiLU/GELU 超越：</strong>在现代 LLM 中使用较少</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="highlight">
+    <strong>ELU 的历史地位：</strong>ELU 是从 ReLU 到 SiLU/GELU 的重要"桥梁"。
+    它首次证明了负半轴的非零输出和梯度对训练的积极影响（零均值、无死亡神经元），
+    这些思想被后续的 GELU（BERT）和 SiLU（LLaMA）继承并进一步发展。
+    在当前的 LLM 领域，ELU 本身已较少直接使用，但其变体 GELU 仍是 BERT 系模型的标准激活函数。
+  </div>
+</div>
+
+<!-- ===== 4. SiLU ===== -->
+<div class="section">
+  <h2>四、SiLU / Swish 函数</h2>
+
+  <h3>3.1 数学定义</h3>
+  <div class="formula">
+    SiLU(x) = x &middot; &sigma;(x) = x / (1 + e<sup>-x</sup>)
+  </div>
+  <p>
+    SiLU（Sigmoid Linear Unit）也被称为 <strong>Swish</strong>，由 Google Brain 团队
+    于 2017 年通过<strong>自动搜索</strong>（强化学习搜索激活函数空间）发现。
+    它是 Sigmoid 和恒等函数的乘积，看似简单，却在多项任务中持续优于 ReLU。
+  </p>
+
+  <h3>3.2 直觉理解</h3>
+  <p>
+    SiLU 可以看作一个"自门控"机制：
+  </p>
+  <ul>
+    <li><strong>x 很大（正数）：</strong>&sigma;(x) &asymp; 1，SiLU(x) &asymp; x，行为类似 ReLU</li>
+    <li><strong>x 很小（负数）：</strong>&sigma;(x) &asymp; 0，SiLU(x) &asymp; 0，信号被抑制</li>
+    <li><strong>x 在 0 附近：</strong>输出 &asymp; x/2，信号被"半开"通过</li>
+  </ul>
+  <p>
+    关键区别在于：SiLU 在负值区域并非完全为 0，而是有一个<strong>小的负值凹陷</strong>
+    （最低点约在 x &asymp; -1.28 处，值约为 -0.28）。这种<strong>非单调性</strong>
+    是 SiLU 优于 ReLU 的重要原因——它允许少量负值信号通过，
+    类似于一种隐式的正则化效果。
+  </p>
+
+  <div class="figure">
+    <img src="dl_figures/silu.png" alt="SiLU function and gradient">
+    <div class="caption">图 4：SiLU (Swish) 函数（左）及其梯度（右）。注意函数在 x &lt; 0 时不完全为零，梯度处处非零。虚线为 ReLU 参考。</div>
+  </div>
+
+  <h3>3.3 梯度特性</h3>
+  <div class="formula">
+    SiLU'(x) = &sigma;(x) + x &middot; &sigma;(x) &middot; (1 - &sigma;(x)) = &sigma;(x) &middot; (1 + x &middot; (1 - &sigma;(x)))
+  </div>
+  <p>
+    与 ReLU 不同，SiLU 的梯度<strong>处处非零</strong>——即使在负值区域，
+    梯度也不会完全消失。这意味着不存在"死亡神经元"的问题。同时，
+    梯度在正值区域可以超过 1（最大约 1.1），有利于梯度传播。
+  </p>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; 优点</h4>
+      <ul>
+        <li><strong>无死亡神经元：</strong>梯度处处非零</li>
+        <li><strong>平滑可导：</strong>处处连续可微，优化景观更平滑</li>
+        <li><strong>非单调：</strong>小的负值区域提供隐式正则化</li>
+        <li><strong>自门控：</strong>输入自身控制信息通过的比例</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; 缺点</h4>
+      <ul>
+        <li><strong>计算代价：</strong>需要 Sigmoid 运算，比 ReLU 慢</li>
+        <li><strong>无稀疏性：</strong>输出不会精确为 0</li>
+        <li><strong>非零中心：</strong>仍然不完全以零为中心</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="success">
+    <strong>为什么搜索发现了 Swish？</strong>Google Brain 使用强化学习在激活函数的组合空间中搜索，
+    评估标准是在 CIFAR-10 等任务上的验证准确率。最终搜索到的最优函数 f(x) = x &middot; &sigma;(&beta;x)
+    在 &beta;=1 时就是 SiLU，表明这种"自门控"模式确实是一种自然而优良的非线性选择。
+  </div>
+</div>
+
+<!-- ===== 4. SwiGLU ===== -->
+<div class="section">
+  <h2>五、SwiGLU 激活函数</h2>
+
+  <h3>4.1 前置知识：GLU（门控线性单元）</h3>
+  <p>
+    要理解 SwiGLU，需要先理解 <strong>GLU（Gated Linear Unit）</strong>的核心思想。
+    GLU 由 Dauphin 等人于 2017 年提出，核心理念是：<strong>让网络学习"该通过多少信息"</strong>。
+  </p>
+  <div class="formula">
+    GLU(x, W, V, b, c) = (xW + b) &otimes; &sigma;(xV + c)
+  </div>
+  <p>
+    其中 &otimes; 表示逐元素乘法。输入 x 经过两组不同的线性变换：
+  </p>
+  <ul>
+    <li><strong>内容路径 (xW + b)：</strong>提取"信息内容"</li>
+    <li><strong>门控路径 &sigma;(xV + c)：</strong>生成 0~1 之间的"门控信号"，决定每个维度上通过多少信息</li>
+  </ul>
+  <p>
+    两者逐元素相乘，就像为每个特征维度安装了一个独立的"音量旋钮"。
+  </p>
+
+  <h3>4.2 SwiGLU 定义</h3>
+  <p>
+    <strong>SwiGLU</strong>（Shazeer, 2020）将 GLU 中的 Sigmoid 门控替换为 <strong>SiLU (Swish)</strong>：
+  </p>
+  <div class="formula">
+    SwiGLU(x, W, V, b, c) = (SiLU(xW + b)) &otimes; (xV + c)
+  </div>
+  <p>
+    更直观的理解：
+  </p>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>两条并行路径</h4>
+      <p>输入 x 被送入两组独立的线性变换，各自提取不同的特征表示。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>SiLU 激活</h4>
+      <p>其中一条路径经过 SiLU 激活，引入非线性并产生门控信号。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>逐元素相乘</h4>
+      <p>两条路径的输出逐元素相乘，实现信息的选择性通过。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>维度调整</h4>
+      <p>LLaMA 中使用 2/3 &times; 4d 维度（而非 4d），抵消双路径带来的额外参数。</p>
+    </div>
+  </div>
+
+  <div class="figure">
+    <img src="dl_figures/swiglu.png" alt="SwiGLU variants comparison">
+    <div class="caption">图 5：GLU 变体对比（左）——不同门控函数的输出形态；门控函数对比（右）——Sigmoid、ReLU、SiLU 作为门控的行为差异。</div>
+  </div>
+
+  <h3>4.3 为什么 SwiGLU 更好？</h3>
+  <p>
+    Shazeer（2020）在论文中实验对比了多种 GLU 变体，发现 SwiGLU 在 Transformer 的 FFN 层中
+    持续优于其他变体。核心原因包括：
+  </p>
+  <ol>
+    <li><strong>自适应特征选择：</strong>门控机制让模型学会对每个特征维度进行"软选择"，
+    而非像 ReLU 那样粗暴地截断负值。</li>
+    <li><strong>平滑梯度景观：</strong>SiLU 的平滑性使得优化过程更稳定，减少训练中的震荡。</li>
+    <li><strong>双路径增强表达力：</strong>两组独立参数让模型有更大的自由度来建模复杂映射。</li>
+    <li><strong>非单调门控：</strong>SiLU 的非单调特性（小的负值区域）提供了额外的灵活性。</li>
+  </ol>
+
+  <div class="success">
+    <strong>实际应用：</strong>SwiGLU 被 LLaMA、PaLM、Gemma、Mistral 等现代大语言模型广泛采用，
+    已成为 Transformer FFN 层的事实标准。在 LLaMA 中，使用 SwiGLU 替换传统的 ReLU FFN
+    后，模型在多个基准上获得了一致的性能提升。
+  </div>
+</div>
+
+<!-- ===== 5. 综合对比 ===== -->
+<div class="section">
+  <h2>六、综合对比</h2>
+
+  <div class="figure">
+    <img src="dl_figures/comparison.png" alt="Activation functions comparison">
+    <div class="caption">图 6：Sigmoid、ReLU、ELU、SiLU 四种激活函数的直观对比</div>
+  </div>
+
+  <table>
+    <tr>
+      <th>特性</th>
+      <th>Sigmoid</th>
+      <th>ReLU</th>
+      <th>ELU</th>
+      <th>SiLU (Swish)</th>
+      <th>SwiGLU</th>
+    </tr>
+    <tr>
+      <td><strong>公式</strong></td>
+      <td><code>1/(1+e^-x)</code></td>
+      <td><code>max(0,x)</code></td>
+      <td><code>x&gt;0?x:&alpha;(e^x-1)</code></td>
+      <td><code>x&middot;&sigma;(x)</code></td>
+      <td><code>SiLU(xW)&otimes;xV</code></td>
+    </tr>
+    <tr>
+      <td><strong>输出范围</strong></td>
+      <td>(0, 1)</td>
+      <td>[0, +&infin;)</td>
+      <td>[-&alpha;, +&infin;)</td>
+      <td>(&asymp;-0.28, +&infin;)</td>
+      <td>(-&infin;, +&infin;)</td>
+    </tr>
+    <tr>
+      <td><strong>单调性</strong></td>
+      <td>单调递增</td>
+      <td>单调递增</td>
+      <td>单调递增</td>
+      <td>非单调</td>
+      <td>非单调</td>
+    </tr>
+    <tr>
+      <td><strong>梯度消失</strong></td>
+      <td>严重</td>
+      <td>无（正区间）</td>
+      <td>轻微（负饱和）</td>
+      <td>轻微</td>
+      <td>轻微</td>
+    </tr>
+    <tr>
+      <td><strong>死亡神经元</strong></td>
+      <td>无</td>
+      <td>有</td>
+      <td>无</td>
+      <td>无</td>
+      <td>无</td>
+    </tr>
+    <tr>
+      <td><strong>计算复杂度</strong></td>
+      <td>中</td>
+      <td>极低</td>
+      <td>中</td>
+      <td>中</td>
+      <td>中高</td>
+    </tr>
+    <tr>
+      <td><strong>可微性</strong></td>
+      <td>处处可微</td>
+      <td>x=0 不可微</td>
+      <td>一阶连续可微</td>
+      <td>处处可微</td>
+      <td>处处可微</td>
+    </tr>
+    <tr>
+      <td><strong>典型应用</strong></td>
+      <td>输出层/门控</td>
+      <td>CNN / 通用</td>
+      <td>深层全连接/GELU 变体用于 BERT</td>
+      <td>现代架构</td>
+      <td>LLM FFN 层</td>
+    </tr>
+    <tr>
+      <td><strong>提出时间</strong></td>
+      <td>经典</td>
+      <td>~2010</td>
+      <td>2015</td>
+      <td>2017</td>
+      <td>2020</td>
+    </tr>
+  </table>
+
+  <h3>梯度传播能力对比</h3>
+  <div class="figure">
+    <img src="dl_figures/vanishing_gradient.png" alt="Gradient flow comparison">
+    <div class="caption">图 7：梯度在网络层间的传播衰减对比（对数刻度）。Sigmoid 的梯度指数级衰减，ReLU 在活跃路径上保持恒定，SiLU 介于两者之间。</div>
+  </div>
+</div>
+
+<!-- ===== 6. 总结 ===== -->
+<div class="section">
+  <h2>七、演化脉络与总结</h2>
+  <p>
+    激活函数的演化反映了深度学习领域对<strong>梯度流</strong>和<strong>表达能力</strong>的持续追求：
+  </p>
+  <ol>
+    <li><strong>Sigmoid</strong> 开启了神经网络的非线性之旅，但梯度消失问题限制了网络深度。</li>
+    <li><strong>ReLU</strong> 以极简的设计解决了梯度消失，使训练数百层的深度网络成为可能，
+    但引入了"死亡神经元"的代价。</li>
+    <li><strong>ELU</strong> 用指数曲线修复了 ReLU 的负半轴，实现了零均值输出和非零梯度，
+    其思想被 GELU（BERT 的标准激活函数）继承发扬。</li>
+    <li><strong>SiLU (Swish)</strong> 通过"自门控"机制在 ReLU 的基础上实现了平滑性和非单调性，
+    消除了死亡神经元问题，在多项任务上取得了更好的效果。</li>
+    <li><strong>SwiGLU</strong> 将 SiLU 的优势与门控线性单元的双路径结构相结合，
+    为大语言模型的 FFN 层提供了更强的特征选择和表达能力，成为当前 LLM 的主流选择。</li>
+  </ol>
+  <div class="highlight">
+    <strong>核心启示：</strong>没有"万能"的激活函数。选择取决于具体任务和架构——
+    CNN 中 ReLU 仍然高效可靠；大语言模型的 FFN 层首选 SwiGLU；
+    输出层的概率预测仍需 Sigmoid / Softmax。理解每种函数的优缺点，
+    才能在设计网络时做出最佳选择。
+  </div>
+</div>
+
+<div class="footer">
+  深度学习基础系列 &middot; 激活函数详解
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MoE 架构详解：混合专家模型的原理与实践</title>
+<style>
+  :root{--primary:#1a1a2e;--accent:#0f3460;--highlight-bg:#f0f4ff;--highlight-border:#4a7dff;--text:#222;--border:#e0e0e0}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text);line-height:1.8;background:#fafafa}
+  .container{max-width:920px;margin:0 auto;padding:20px}
+  .cover{text-align:center;padding:70px 20px 50px;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);color:white;border-radius:12px;margin-bottom:40px}
+  .cover h1{font-size:2.1em;margin-bottom:12px;font-weight:700}
+  .cover .subtitle{font-size:1.05em;color:#aab;margin-bottom:24px}
+  .cover .tags{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}
+  .cover .tag{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:20px;padding:6px 18px;font-size:.9em;color:#dde}
+  .section{background:white;border-radius:10px;padding:36px 40px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid var(--border)}
+  h2{font-size:1.5em;color:var(--primary);margin-bottom:6px;padding-bottom:10px;border-bottom:2px solid var(--highlight-border)}
+  h3{font-size:1.15em;color:var(--accent);margin:22px 0 10px}
+  p{margin:12px 0;text-align:justify}
+  .highlight{background:var(--highlight-bg);border-left:4px solid var(--highlight-border);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .highlight strong{color:var(--accent)}
+  .warning{background:#fff8f0;border-left:4px solid #f0a500;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .success{background:#f0fff4;border-left:4px solid #2a9d8f;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  ul,ol{padding-left:24px;margin:10px 0} li{margin:6px 0}
+  .formula{text-align:center;padding:18px 20px;margin:18px 0;background:#f8f9ff;border-radius:8px;border:1px solid #e8eaf0;font-size:1.1em;font-family:"Times New Roman","STIX",serif;overflow-x:auto}
+  .figure{text-align:center;margin:24px 0;padding:16px;background:#fafafa;border-radius:8px;border:1px solid #eee}
+  .figure img{max-width:100%;height:auto;border-radius:4px}
+  .figure .caption{font-size:.88em;color:#666;margin-top:10px;font-style:italic}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.9em}
+  th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #eee}
+  th{background:var(--primary);color:white;font-weight:600} tr:hover{background:#f8f9ff}
+  td code{background:#f0f0f5;padding:2px 6px;border-radius:3px;font-size:.9em}
+  .card-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .card{background:linear-gradient(135deg,#f8f9ff,#f0f4ff);border:1px solid #d8e0f0;border-radius:10px;padding:20px 24px}
+  .card .num{display:inline-block;background:var(--highlight-border);color:white;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-size:.85em;font-weight:700;margin-right:8px}
+  .card h4{display:inline;color:var(--accent);font-size:1.05em}
+  .card p{margin-top:8px;font-size:.93em}
+  .pros-cons{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .pros,.cons{padding:16px;border-radius:8px}
+  .pros{background:#f0fff4;border:1px solid #c8e6c9} .cons{background:#fff8f0;border:1px solid #ffe0b2}
+  .pros h4{color:#2e7d32;margin-bottom:8px} .cons h4{color:#e65100;margin-bottom:8px}
+  .model-card{background:white;border:2px solid #ddd;border-radius:12px;padding:24px;margin:16px 0}
+  .model-card h4{color:var(--primary);font-size:1.1em;margin-bottom:8px}
+  .model-card .meta{font-size:.85em;color:#888;margin-bottom:10px}
+  .model-card .stats{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0}
+  .model-card .stat{background:#f0f4ff;padding:6px 14px;border-radius:6px;font-size:.9em;font-weight:600;color:var(--accent)}
+  .footer{text-align:center;color:#999;font-size:.85em;padding:30px 0;border-top:1px solid #eee;margin-top:20px}
+  @media(max-width:640px){.section{padding:24px 20px}.cover h1{font-size:1.6em}.pros-cons,.card-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="cover">
+  <h1>MoE 架构详解<br>混合专家模型的原理与实践</h1>
+  <div class="subtitle">用 1/4 的计算成本获得 4 倍参数量的模型能力</div>
+  <div class="tags">
+    <span class="tag">Mixture of Experts</span>
+    <span class="tag">Sparse Activation</span>
+    <span class="tag">Router / Gating</span>
+    <span class="tag">Load Balancing</span>
+    <span class="tag">Expert Parallelism</span>
+  </div>
+</div>
+
+<!-- ===== 1. 概述 ===== -->
+<div class="section">
+  <h2>一、什么是 MoE？</h2>
+  <p>
+    MoE（Mixture of Experts，混合专家）是一种<strong>稀疏激活</strong>的模型架构：
+    将 Transformer 的 FFN 层替换为<strong>多个并行的"专家"（Expert）FFN</strong>，
+    每个 token 只激活其中少数几个专家，而非使用全部参数。
+  </p>
+  <div class="highlight">
+    <strong>核心价值：</strong>MoE 让模型拥有<strong>巨大的总参数量</strong>（存储更多知识），
+    同时保持<strong>与小模型相当的推理计算量</strong>（每个 token 只用少数专家）。
+    这打破了"更多参数 = 更多计算"的线性关系。
+  </div>
+
+  <div class="figure">
+    <img src="moe_figures/dense_vs_moe.png" alt="Dense vs MoE">
+    <div class="caption">图 1：Dense FFN（左）vs MoE FFN（右）。Dense 模型中所有 token 通过同一个 FFN；
+    MoE 模型中 Router 为每个 token 选择 Top-2 个专家，只有被选中的专家参与计算。
+    总参数量是 Dense 的 8 倍，但每个 token 的计算量几乎相同。</div>
+  </div>
+
+  <div class="figure">
+    <img src="moe_figures/timeline.png" alt="MoE timeline">
+    <div class="caption">图 2：MoE 在大语言模型中的发展时间线。从 2021 年 Google 的 Switch Transformer 到 2025 年 Meta 的 Llama 4 Maverick。</div>
+  </div>
+</div>
+
+<!-- ===== 2. 架构 ===== -->
+<div class="section">
+  <h2>二、MoE 架构详解</h2>
+
+  <h3>2.1 整体结构</h3>
+  <p>
+    MoE 模型的结构与标准 Transformer 几乎相同——<strong>唯一的区别是将部分或全部层的 FFN 替换为 MoE 层</strong>。
+    注意力层完全不变。
+  </p>
+
+  <div class="figure">
+    <img src="moe_figures/moe_block.png" alt="MoE Transformer Block" style="max-width:520px">
+    <div class="caption">图 3：完整的 MoE Transformer Block。上半部分（Self-Attention）与标准 Transformer 完全相同；
+    下半部分将单一 FFN 替换为 Router + N 个专家 FFN + 可选的共享专家。</div>
+  </div>
+
+  <h3>2.2 核心公式</h3>
+  <div class="formula">
+    MoE(h) = &sum;<sub>i &isin; TopK</sub> g<sub>i</sub>(h) &middot; Expert<sub>i</sub>(h)
+    <br><br>
+    g(h) = Softmax(h &middot; W<sub>r</sub>)  &nbsp; → &nbsp; 保留 Top-k 个，其余设为 0 并重新归一化
+  </div>
+  <p>其中：</p>
+  <ul>
+    <li><strong>h</strong>：当前 token 的隐藏状态 &isin; R<sup>d</sup></li>
+    <li><strong>W<sub>r</sub></strong>：Router 权重矩阵 &isin; R<sup>d &times; N<sub>e</sub></sup>（N<sub>e</sub> = 专家数）</li>
+    <li><strong>g<sub>i</sub>(h)</strong>：token h 对专家 i 的路由权重（Top-k 选择后重新归一化）</li>
+    <li><strong>Expert<sub>i</sub></strong>：第 i 个专家，结构与标准 SwiGLU FFN 完全相同</li>
+  </ul>
+</div>
+
+<!-- ===== 3. Router ===== -->
+<div class="section">
+  <h2>三、Router（路由 / 门控网络）</h2>
+
+  <h3>3.1 工作流程</h3>
+
+  <div class="figure">
+    <img src="moe_figures/router.png" alt="Router mechanism">
+    <div class="caption">图 4：Router 工作流程示例（Top-2）。Token 的隐藏状态经线性投影得到 8 个专家的 logits，
+    Softmax 后选出概率最高的 2 个专家（E0=35%，E1=25%），重新归一化后作为加权系数。</div>
+  </div>
+
+  <h3>3.2 路由策略变体</h3>
+  <table>
+    <tr><th>策略</th><th>描述</th><th>激活率</th><th>代表模型</th></tr>
+    <tr><td><strong>Top-1</strong></td><td>每 token 只激活 1 个专家</td><td>1/N</td><td>Switch Transformer</td></tr>
+    <tr><td><strong>Top-2</strong></td><td>每 token 激活 2 个专家，加权求和</td><td>2/N</td><td>Mixtral, DeepSeek-V2/V3</td></tr>
+    <tr><td><strong>Top-k + Shared</strong></td><td>Top-k 路由专家 + 1 个始终激活的共享专家</td><td>(k+1)/N</td><td>DeepSeek-V2/V3</td></tr>
+    <tr><td><strong>Expert Choice</strong></td><td>由专家选择 token（而非 token 选择专家）</td><td>固定</td><td>Google Expert Choice</td></tr>
+    <tr><td><strong>Fine-grained MoE</strong></td><td>更多更小的专家（如 64 个小专家），每次激活更多</td><td>k/N (k 较大)</td><td>DeepSeek-V3 (256 experts)</td></tr>
+  </table>
+
+  <h3>3.3 负载均衡</h3>
+  <p>
+    如果 Router 将大部分 token 路由到少数"热门"专家，会导致：(1) 这些专家的 GPU 过载；
+    (2) 其他专家得不到训练，逐渐退化。
+  </p>
+
+  <div class="figure">
+    <img src="moe_figures/load_balance.png" alt="Load balancing">
+    <div class="caption">图 5：负载均衡的效果。左图：无均衡时专家负载极不均匀（E0 承担 35% 的 token）；
+    右图：加入负载均衡损失后，各专家的 token 分配趋于均匀。</div>
+  </div>
+
+  <div class="formula">
+    L<sub>balance</sub> = &alpha; &middot; N<sub>e</sub> &middot; &sum;<sub>i</sub> f<sub>i</sub> &middot; P<sub>i</sub>
+    <br><br>
+    f<sub>i</sub> = 专家 i 实际接收的 token 比例, &nbsp; P<sub>i</sub> = 所有 token 对专家 i 的平均路由概率
+  </div>
+  <p>
+    这个<strong>辅助负载均衡损失</strong>与主 loss 一起优化，鼓励 Router 均匀分配 token。
+    超参数 &alpha; 控制均衡力度（通常 0.01-0.1）。
+  </p>
+
+  <div class="warning">
+    <strong>Token Dropping：</strong>当某个专家接收的 token 超过其<strong>容量因子</strong>（capacity factor）时，
+    溢出的 token 直接走残差通道跳过 MoE 层。这保证了计算的可预测性，
+    但可能导致部分 token 得不到专家处理。现代模型（如 DeepSeek-V3）通过无 Token Dropping 的设计避免此问题。
+  </div>
+</div>
+
+<!-- ===== 4. 共享专家 ===== -->
+<div class="section">
+  <h2>四、共享专家与细粒度 MoE</h2>
+
+  <h3>4.1 共享专家（Shared Expert）</h3>
+  <p>
+    DeepSeek-V2 引入了<strong>共享专家</strong>机制：除了 N 个路由专家外，
+    额外设置 1-2 个<strong>始终激活的共享专家</strong>，所有 token 都通过它们。
+  </p>
+  <div class="formula">
+    MoE(h) = SharedExpert(h) + &sum;<sub>i &isin; TopK</sub> g<sub>i</sub>(h) &middot; Expert<sub>i</sub>(h)
+  </div>
+  <div class="success">
+    <strong>共享专家的价值：</strong>
+    (1) 捕获所有 token 共享的通用知识（如语法结构、常见模式），路由专家专注于领域知识；
+    (2) 稳定训练——即使路由不完美，共享专家也保证每个 token 有基本的处理；
+    (3) 减少专家间的冗余——通用能力集中在共享专家，路由专家可以更好地特化。
+  </div>
+
+  <h3>4.2 细粒度 MoE</h3>
+  <p>
+    DeepSeek-V3 使用 <strong>256 个路由专家 + 1 个共享专家</strong>，每 token 激活 Top-8 个路由专家。
+    相比 Mixtral 的 8 个大专家，这种"更多更小的专家"设计带来更精细的路由选择和更好的负载均衡。
+  </p>
+  <table>
+    <tr><th>模型</th><th>路由专家数</th><th>共享专家</th><th>Top-k</th><th>每专家参数</th><th>设计思路</th></tr>
+    <tr><td>Mixtral 8x7B</td><td>8</td><td>无</td><td>2</td><td>~7B</td><td>少量大专家</td></tr>
+    <tr><td>DeepSeek-V2</td><td>160</td><td>2</td><td>6</td><td>~0.13B</td><td>大量小专家</td></tr>
+    <tr><td>DeepSeek-V3</td><td>256</td><td>1</td><td>8</td><td>~0.37B</td><td>超细粒度</td></tr>
+    <tr><td>Qwen2.5-MoE</td><td>60</td><td>4</td><td>4</td><td>~0.25B</td><td>中等粒度</td></tr>
+  </table>
+</div>
+
+<!-- ===== 5. 专家特化 ===== -->
+<div class="section">
+  <h2>五、专家特化与知识分布</h2>
+  <p>
+    研究发现，MoE 模型中的专家会<strong>自然地产生领域特化</strong>——
+    某些专家更擅长数学推理，某些擅长代码生成，某些处理多语言文本。
+    这种特化是通过训练<strong>自动涌现</strong>的，而非手动设计。
+  </p>
+
+  <div class="figure">
+    <img src="moe_figures/specialization.png" alt="Expert specialization">
+    <div class="caption">图 6：专家特化模式（示意图）。不同专家在不同任务类别上的路由权重分布不同——
+    Expert 0 擅长数学和代码，Expert 3 擅长翻译，Expert 5 是通才。</div>
+  </div>
+</div>
+
+<!-- ===== 6. 主流 MoE 模型 ===== -->
+<div class="section">
+  <h2>六、主流 MoE 模型详细介绍</h2>
+
+  <div class="figure">
+    <img src="moe_figures/params_comparison.png" alt="MoE model parameters">
+    <div class="caption">图 7：主流 MoE 模型的总参数量 vs 激活参数量对比。DeepSeek-V3 拥有 671B 总参数，
+    但每个 token 只激活 37B——比 LLaMA-3 70B 的计算成本还低。</div>
+  </div>
+
+  <!-- Mixtral -->
+  <div class="model-card" style="border-color:#e63946">
+    <h4 style="color:#e63946">Mixtral 8x7B — 开源 MoE 的里程碑</h4>
+    <div class="meta">Mistral AI | 2023.12 | 开源</div>
+    <div class="stats">
+      <span class="stat">总参数: 46.7B</span>
+      <span class="stat">激活参数: 12.9B</span>
+      <span class="stat">专家: 8 个</span>
+      <span class="stat">Top-k: 2</span>
+      <span class="stat">上下文: 32K</span>
+    </div>
+    <p>
+      <strong>架构：</strong>32 层 Transformer，每层的 FFN 被替换为 8 个完整 FFN 专家。
+      每个专家与 Mistral 7B 的 FFN 结构相同（SwiGLU，中间维度 14336）。
+      使用 GQA（8 个 KV 头）和滑动窗口注意力（w=4096）。
+    </p>
+    <p>
+      <strong>创新：</strong>(1) 首个高质量开源 MoE LLM，性能匹配 LLaMA-2 70B 但推理速度快 6 倍；
+      (2) 证明了 MoE 在中等规模也非常有效——不一定需要千亿参数才能受益。
+    </p>
+    <p>
+      <strong>性能：</strong>在 MMLU（70.6%）、GSM8K（74.4%）、HumanEval（40.2%）等基准上
+      匹配甚至超越 LLaMA-2 70B，但推理时只激活 12.9B 参数。
+    </p>
+  </div>
+
+  <!-- DeepSeek-V2 -->
+  <div class="model-card" style="border-color:#2a9d8f">
+    <h4 style="color:#2a9d8f">DeepSeek-V2 — MLA + Fine-grained MoE</h4>
+    <div class="meta">DeepSeek AI | 2024.05 | 开源</div>
+    <div class="stats">
+      <span class="stat">总参数: 236B</span>
+      <span class="stat">激活参数: 21B</span>
+      <span class="stat">路由专家: 160</span>
+      <span class="stat">共享专家: 2</span>
+      <span class="stat">Top-k: 6</span>
+    </div>
+    <p>
+      <strong>架构创新：</strong>(1) <strong>Multi-head Latent Attention (MLA)</strong>——
+      用低秩压缩替代 GQA，KV Cache 降至标准 MHA 的 5-13%；
+      (2) <strong>细粒度 MoE</strong>——160 个小专家 + 2 个共享专家，
+      相比 Mixtral 的 8 个大专家，路由更精细、负载更均衡；
+      (3) <strong>Device-Limited Routing</strong>——限制每个 token 最多路由到 M 个设备上的专家，
+      减少 All-to-All 通信。
+    </p>
+    <p>
+      <strong>性能：</strong>在多数基准上与 LLaMA-3 70B 持平，但推理成本只有约 1/3。
+      训练成本仅为 LLaMA-3 70B 的约 1/10。
+    </p>
+  </div>
+
+  <!-- DeepSeek-V3 -->
+  <div class="model-card" style="border-color:#6a4c93">
+    <h4 style="color:#6a4c93">DeepSeek-V3 — 671B 超大 MoE</h4>
+    <div class="meta">DeepSeek AI | 2024.12 | 开源</div>
+    <div class="stats">
+      <span class="stat">总参数: 671B</span>
+      <span class="stat">激活参数: 37B</span>
+      <span class="stat">路由专家: 256</span>
+      <span class="stat">共享专家: 1</span>
+      <span class="stat">Top-k: 8</span>
+      <span class="stat">训练: 14.8T tokens</span>
+    </div>
+    <p>
+      <strong>架构：</strong>61 层，MLA 注意力 + 256 路由专家 MoE。
+      创新包括：(1) <strong>Multi-Token Prediction (MTP)</strong>——同时预测多个未来 token，
+      提升训练效率和推理速度（通过投机解码）；
+      (2) <strong>无辅助损失的负载均衡</strong>——用动态偏置替代辅助 loss，
+      避免辅助 loss 对主任务的干扰；
+      (3) <strong>FP8 混合精度训练</strong>——在 2048 块 H800 GPU 上完成训练。
+    </p>
+    <p>
+      <strong>性能：</strong>在 MMLU (88.5%)、MATH (90.2%)、Codeforces (51.6%) 等基准上
+      达到 GPT-4o 和 Claude 3.5 Sonnet 水平，训练成本仅约 557 万美元。
+    </p>
+  </div>
+
+  <!-- Qwen2.5-MoE -->
+  <div class="model-card" style="border-color:#f0a500">
+    <h4 style="color:#f0a500">Qwen2.5-MoE — 高效小型 MoE</h4>
+    <div class="meta">Alibaba Qwen Team | 2025.01 | 开源</div>
+    <div class="stats">
+      <span class="stat">总参数: 57.4B</span>
+      <span class="stat">激活参数: 3.7B</span>
+      <span class="stat">路由专家: 60</span>
+      <span class="stat">共享专家: 4</span>
+      <span class="stat">Top-k: 4</span>
+    </div>
+    <p>
+      <strong>特点：</strong>(1) 极高的参数效率——3.7B 激活参数达到 Qwen2.5-7B（Dense）的性能；
+      (2) 4 个共享专家，比 DeepSeek 更多，强化通用知识基座；
+      (3) 支持 128K 上下文窗口。
+    </p>
+  </div>
+
+  <!-- Llama 4 Maverick -->
+  <div class="model-card" style="border-color:#4a7dff">
+    <h4 style="color:#4a7dff">Llama 4 Maverick — Meta 的 MoE 探索</h4>
+    <div class="meta">Meta AI | 2025.04 | 开源</div>
+    <div class="stats">
+      <span class="stat">总参数: 400B</span>
+      <span class="stat">激活参数: 17B</span>
+      <span class="stat">路由专家: 128</span>
+      <span class="stat">Top-k: 1</span>
+      <span class="stat">上下文: 1M (10M 可选)</span>
+    </div>
+    <p>
+      <strong>特点：</strong>(1) Meta 首个公开的 MoE 模型，标志着 MoE 从"小众技术"变为行业标配；
+      (2) Top-1 路由——每 token 只激活 1 个专家，极致稀疏；
+      (3) 原生多模态支持（文本 + 图像）；
+      (4) 超长上下文 1M tokens。
+    </p>
+  </div>
+</div>
+
+<!-- ===== 7. 综合对比 ===== -->
+<div class="section">
+  <h2>七、主流 MoE 模型综合对比</h2>
+
+  <table>
+    <tr><th>模型</th><th>总参数</th><th>激活参数</th><th>激活率</th><th>专家数</th><th>Top-k</th><th>共享专家</th><th>注意力</th><th>训练数据</th></tr>
+    <tr><td><strong>Mixtral 8x7B</strong></td><td>46.7B</td><td>12.9B</td><td>28%</td><td>8</td><td>2</td><td>无</td><td>GQA + SWA</td><td>未公开</td></tr>
+    <tr><td><strong>DeepSeek-V2</strong></td><td>236B</td><td>21B</td><td>9%</td><td>160</td><td>6</td><td>2</td><td>MLA</td><td>8.1T</td></tr>
+    <tr><td><strong>DeepSeek-V3</strong></td><td>671B</td><td>37B</td><td>6%</td><td>256</td><td>8</td><td>1</td><td>MLA</td><td>14.8T</td></tr>
+    <tr><td><strong>Qwen2.5-MoE</strong></td><td>57.4B</td><td>3.7B</td><td>6%</td><td>60</td><td>4</td><td>4</td><td>GQA</td><td>18T</td></tr>
+    <tr><td><strong>Llama 4 Maverick</strong></td><td>400B</td><td>17B</td><td>4%</td><td>128</td><td>1</td><td>未知</td><td>GQA</td><td>30T+</td></tr>
+  </table>
+</div>
+
+<!-- ===== 8. 优缺点 ===== -->
+<div class="section">
+  <h2>八、MoE 的优势与挑战</h2>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; 优势</h4>
+      <ul>
+        <li><strong>参数效率：</strong>用远低于总参数量的计算量获得大模型的知识容量</li>
+        <li><strong>推理速度：</strong>激活参数少 → 每 token 计算量小 → 延迟低、吞吐高</li>
+        <li><strong>可扩展性：</strong>可以通过增加专家数扩展模型，计算量几乎不增加</li>
+        <li><strong>专家特化：</strong>不同专家自然分化为不同领域的"专家"</li>
+        <li><strong>训练效率：</strong>相同计算预算下，MoE 可以训练更大的模型，获得更好的性能</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; 挑战</h4>
+      <ul>
+        <li><strong>显存占用大：</strong>虽然激活参数少，但全部参数都要加载到 GPU</li>
+        <li><strong>通信开销：</strong>Expert Parallelism 需要 All-to-All 通信，延迟较高</li>
+        <li><strong>负载均衡：</strong>Router 容易出现"赢家通吃"，需要额外的均衡机制</li>
+        <li><strong>训练不稳定：</strong>稀疏路由引入离散决策，训练初期容易震荡</li>
+        <li><strong>微调困难：</strong>小数据集可能只训练到部分专家，其余专家退化</li>
+        <li><strong>批量推理效率：</strong>不同请求激活不同专家，GPU 计算不规则</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="highlight">
+    <strong>显存 vs 计算的权衡：</strong>MoE 模型的推理需要将<strong>全部参数</strong>加载到 GPU
+    （DeepSeek-V3 需要 ~1.3 TB FP16），即使每个 token 只用其中 6%。
+    这意味着 MoE 推理需要大量 GPU 来存放参数，但每张 GPU 的计算利用率较低。
+    这是 MoE 模型部署的核心矛盾，也是推动量化（INT4/INT8）和 offloading 技术发展的重要动力。
+  </div>
+</div>
+
+<!-- ===== 9. 通信 ===== -->
+<div class="section">
+  <h2>九、MoE 的并行与通信</h2>
+  <p>MoE 模型的训练和推理引入了一种专有的并行方式——<strong>专家并行（Expert Parallelism, EP）</strong>。</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>Expert Parallelism</h4>
+      <p>将 N 个专家分布到不同 GPU。每个 GPU 持有 N/EP_size 个专家。
+      Token 通过 <strong>All-to-All</strong> 通信路由到目标专家所在的 GPU。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>EP + TP 组合</h4>
+      <p>单个专家内部可以再做张量并行（TP）。常见配置：EP=8（跨节点），TP=4（节点内）。
+      注意力层仍用标准 TP。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>EP + PP 组合</h4>
+      <p>不同层组放在不同 pipeline 阶段。MoE 层和非 MoE 层可能在不同阶段，
+      需要平衡计算量。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>通信优化</h4>
+      <p>分层 All-to-All（先节点内再节点间）、通信-计算重叠、
+      限制跨节点路由（Device-Limited Routing）等。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 10. 总结 ===== -->
+<div class="section">
+  <h2>十、总结与趋势</h2>
+  <p>MoE 架构的演化呈现出几个清晰的趋势：</p>
+  <ol>
+    <li><strong>从少量大专家到大量小专家：</strong>Mixtral（8 个大专家）→ DeepSeek-V3（256 个小专家）。
+    更细粒度的专家带来更好的路由灵活性和负载均衡。</li>
+    <li><strong>共享专家成为标配：</strong>从无共享（Mixtral）到 1-4 个共享专家（DeepSeek/Qwen），
+    通用知识与领域知识的解耦成为共识。</li>
+    <li><strong>激活率越来越低：</strong>从 28%（Mixtral）到 4%（Llama 4），
+    模型参数越来越大，但每个 token 的计算量保持在等效 7B-37B 的水平。</li>
+    <li><strong>注意力层也在创新：</strong>MoE 往往与 GQA、MLA 等高效注意力结合，
+    在 KV Cache 和计算量两个维度同时优化。</li>
+    <li><strong>MoE 成为行业标配：</strong>从 Google 内部方案到 Mixtral 开源突破，
+    再到 Meta、阿里、DeepSeek 全面采用——MoE 已从"可选优化"变为"主流架构"。</li>
+  </ol>
+  <div class="highlight">
+    <strong>一句话理解 MoE：</strong>
+    让模型拥有"百科全书"般的参数量来存储海量知识，
+    但每次回答问题时只翻阅最相关的几页——
+    <strong>用稀疏激活实现"知识广度"与"计算效率"的兼得</strong>。
+  </div>
+</div>
+
+<div class="footer">
+  深度学习基础系列 &middot; MoE 架构详解：混合专家模型的原理与实践
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LoRA 详解：原理、训练、推理与框架支持</title>
+<style>
+  :root{--primary:#1a1a2e;--accent:#0f3460;--highlight-bg:#f0f4ff;--highlight-border:#4a7dff;--text:#222;--border:#e0e0e0}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text);line-height:1.8;background:#fafafa}
+  .container{max-width:920px;margin:0 auto;padding:20px}
+  .cover{text-align:center;padding:70px 20px 50px;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);color:white;border-radius:12px;margin-bottom:40px}
+  .cover h1{font-size:2.1em;margin-bottom:12px;font-weight:700}
+  .cover .subtitle{font-size:1.05em;color:#aab;margin-bottom:24px}
+  .cover .tags{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}
+  .cover .tag{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:20px;padding:6px 18px;font-size:.9em;color:#dde}
+  .section{background:white;border-radius:10px;padding:36px 40px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid var(--border)}
+  h2{font-size:1.5em;color:var(--primary);margin-bottom:6px;padding-bottom:10px;border-bottom:2px solid var(--highlight-border)}
+  h3{font-size:1.15em;color:var(--accent);margin:22px 0 10px}
+  h4{font-size:1em;color:var(--accent);margin:14px 0 8px}
+  p{margin:12px 0;text-align:justify}
+  .highlight{background:var(--highlight-bg);border-left:4px solid var(--highlight-border);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .highlight strong{color:var(--accent)}
+  .warning{background:#fff8f0;border-left:4px solid #f0a500;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .success{background:#f0fff4;border-left:4px solid #2a9d8f;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  ul,ol{padding-left:24px;margin:10px 0} li{margin:6px 0}
+  .formula{text-align:center;padding:18px 20px;margin:18px 0;background:#f8f9ff;border-radius:8px;border:1px solid #e8eaf0;font-size:1.1em;font-family:"Times New Roman","STIX",serif;overflow-x:auto}
+  .figure{text-align:center;margin:24px 0;padding:16px;background:#fafafa;border-radius:8px;border:1px solid #eee}
+  .figure img{max-width:100%;height:auto;border-radius:4px}
+  .figure .caption{font-size:.88em;color:#666;margin-top:10px;font-style:italic}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.9em}
+  th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #eee}
+  th{background:var(--primary);color:white;font-weight:600} tr:hover{background:#f8f9ff}
+  td code{background:#f0f0f5;padding:2px 6px;border-radius:3px;font-size:.9em}
+  .card-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .card{background:linear-gradient(135deg,#f8f9ff,#f0f4ff);border:1px solid #d8e0f0;border-radius:10px;padding:20px 24px}
+  .card .num{display:inline-block;background:var(--highlight-border);color:white;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-size:.85em;font-weight:700;margin-right:8px}
+  .card h4{display:inline;color:var(--accent);font-size:1.05em;margin:0}
+  .card p{margin-top:8px;font-size:.93em}
+  .pros-cons{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .pros,.cons{padding:16px;border-radius:8px}
+  .pros{background:#f0fff4;border:1px solid #c8e6c9} .cons{background:#fff8f0;border:1px solid #ffe0b2}
+  .pros h4{color:#2e7d32;margin-bottom:8px} .cons h4{color:#e65100;margin-bottom:8px}
+  .code-block{background:#1e1e2e;color:#cdd6f4;padding:20px 24px;border-radius:8px;margin:16px 0;overflow-x:auto;font-family:'Fira Code',monospace;font-size:.86em;line-height:1.6}
+  .code-block .comment{color:#6c7086}
+  .code-block .keyword{color:#cba6f7}
+  .code-block .func{color:#89b4fa}
+  .code-block .string{color:#a6e3a1}
+  .code-block .number{color:#fab387}
+  .footer{text-align:center;color:#999;font-size:.85em;padding:30px 0;border-top:1px solid #eee;margin-top:20px}
+  @media(max-width:640px){.section{padding:24px 20px}.cover h1{font-size:1.6em}.card-grid,.pros-cons{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ===== Cover ===== -->
+<div class="cover">
+  <h1>LoRA 详解<br>原理、训练、推理与框架支持</h1>
+  <div class="subtitle">
+    从低秩分解到 Multi-LoRA Serving —— 大模型时代最重要的参数高效微调技术
+  </div>
+  <div class="tags">
+    <span class="tag">Low-Rank Adaptation</span>
+    <span class="tag">PEFT</span>
+    <span class="tag">QLoRA</span>
+    <span class="tag">DoRA</span>
+    <span class="tag">Multi-LoRA Serving</span>
+    <span class="tag">vLLM / LoRAX / S-LoRA</span>
+  </div>
+</div>
+
+<!-- ===== 引言 ===== -->
+<div class="section">
+  <h2>引言：为什么需要 LoRA？</h2>
+  <p>
+    LLaMA-65B 的全参数 fine-tuning 需要约 <strong>780 GB 显存</strong>（参数 130GB + 梯度 130GB + Adam 状态 520GB），
+    这意味着即使是 10 张 A100 80GB 也不够。对于想要将 LLM 定制到特定领域的大多数团队来说，
+    全量微调在<strong>成本上不可承受</strong>。
+  </p>
+  <div class="highlight">
+    <strong>LoRA 的核心理念：</strong>fine-tuning 时权重的<strong>改变量 ΔW 具有很低的本征秩</strong>
+    （intrinsic rank）。Aghajanyan et al. (2020) 发现，把 fine-tuning 的更新限制在一个
+    随机的 200 维子空间中，就能达到全参数微调 90% 的性能。LoRA 把这个洞察工程化：
+    不直接学习 ΔW ∈ R<sup>d×k</sup>，而是将其<strong>参数化为两个低秩矩阵的乘积</strong> B·A，
+    其中 r ≪ min(d, k)。
+  </div>
+  <p>
+    这个简单的思路带来了三个革命性的效果：
+    (1) <strong>内存降低 100-200 倍</strong>——LoRA-r8 的 LLaMA-7B 只需 ~18 GB 训练；
+    (2) <strong>存储降低 1000 倍</strong>——每个 LoRA adapter 只有 30-200 MB；
+    (3) <strong>Multi-LoRA Serving</strong>——一个基座模型 + 数百个 LoRA 同时在线服务。
+  </p>
+</div>
+
+<!-- ===== 1. 核心思想 ===== -->
+<div class="section">
+  <h2>一、核心思想：低秩分解</h2>
+
+  <h3>1.1 全参数微调 vs LoRA 的直观对比</h3>
+  <p>
+    传统 fine-tuning 更新整个权重矩阵 W：<code>W ← W − η·∂L/∂W</code>，
+    需要为每个参数分配梯度和优化器状态。LoRA 则<strong>冻结 W</strong>，
+    只训练两个非常小的矩阵 A 和 B：
+  </p>
+
+  <div class="figure">
+    <img src="lora_figures/full_vs_lora.png" alt="Full FT vs LoRA">
+    <div class="caption">图 1：Full Fine-Tuning vs LoRA。左：所有权重可训练，内存占用巨大；
+    右：W 被冻结（灰色），只有两个小矩阵 B 和 A 可训练，训练参数减少约 200×。</div>
+  </div>
+
+  <h3>1.2 数学定义</h3>
+  <p>对一个预训练的线性层 <code>y = W·x</code>，LoRA 将其改写为：</p>
+  <div class="formula">
+    y = W·x + ΔW·x = W·x + (B·A)·x
+    <br><br>
+    其中 W ∈ R<sup>d×k</sup>（冻结），B ∈ R<sup>d×r</sup>，A ∈ R<sup>r×k</sup>，r ≪ min(d, k)
+  </div>
+
+  <div class="figure">
+    <img src="lora_figures/lora_math.png" alt="LoRA math decomposition">
+    <div class="caption">图 2：LoRA 的低秩分解。原本 d×k 的 ΔW 被表示为 d×r 的 B 乘以 r×k 的 A。
+    对 d=k=4096, r=8 的典型配置，参数量从 16.7M 降到 65K —— <strong>256 倍</strong>的减少。</div>
+  </div>
+
+  <h3>1.3 初始化与缩放因子</h3>
+  <p>LoRA 采用精心设计的初始化保证训练起点稳定：</p>
+  <ul>
+    <li><strong>A ~ Kaiming 正态分布</strong>（Gaussian）</li>
+    <li><strong>B = 0</strong> —— 初始时 B·A = 0，这意味着 ΔW = 0，<strong>模型初始就是原模型</strong></li>
+    <li>这避免了训练初期的"冷启动扰动"，让 LoRA 从恒等映射开始学习</li>
+  </ul>
+  <p>实际使用中，LoRA 还引入一个<strong>缩放因子 α/r</strong>：</p>
+  <div class="formula">
+    y = W·x + <strong>(α/r)</strong> · B·A·x
+  </div>
+  <p>
+    α 是一个超参数（常见值 8、16、32），除以 r 是为了让 scaling 不随 rank 变化太大。
+    这可以视作 LoRA 分支的"学习率调节"——增大 α/r 相当于让 LoRA 贡献更大，
+    调整 α/r 时不需要重新调 learning rate。
+  </p>
+
+  <div class="warning">
+    <strong>rsLoRA 的改进：</strong>后续研究发现 α/r 在大 r 时会让 ΔW 的幅度不稳定。
+    rsLoRA 提出用 <strong>α/√r</strong> 替代，使 rank 增加时数值行为更稳定——
+    这对 r>64 的大 LoRA 尤其重要。
+  </div>
+</div>
+
+<!-- ===== 2. 架构与放置 ===== -->
+<div class="section">
+  <h2>二、LoRA 在 Transformer 中的放置</h2>
+
+  <h3>2.1 可选的插入位置</h3>
+  <p>
+    Transformer 的每一层有 7 个线性投影：Q、K、V、O（attention 部分）和 gate、up、down（FFN 部分）。
+    LoRA 原则上可以加到任意一个或多个，但<strong>不同位置的效果差异很大</strong>。
+  </p>
+
+  <div class="figure">
+    <img src="lora_figures/lora_placement.png" alt="LoRA placement in Transformer" style="max-width:560px">
+    <div class="caption">图 3：LoRA 在 Transformer 层中的典型位置。最常见的是在 Q 和 V 上加 LoRA（Hu et al. 原论文配置），
+    因为这两者对下游任务最敏感；K 和 O 次之；FFN 层通常只在"大型" LoRA 配置中才使用。</div>
+  </div>
+
+  <h3>2.2 常见配置</h3>
+  <table>
+    <tr><th>配置</th><th>Target Modules</th><th>参数量 (LLaMA-7B, r=8)</th><th>适用场景</th></tr>
+    <tr><td><strong>Minimal</strong></td><td>q_proj, v_proj</td><td>~4M</td><td>小任务、快速实验</td></tr>
+    <tr><td><strong>Standard</strong></td><td>q_proj, k_proj, v_proj, o_proj</td><td>~8M</td><td>通用 LoRA 微调（推荐）</td></tr>
+    <tr><td><strong>Full Attention</strong></td><td>所有 attention 投影 + FFN</td><td>~16M</td><td>质量优先，有一定成本</td></tr>
+    <tr><td><strong>All Linear</strong></td><td>所有 7 个投影</td><td>~20M</td><td>复杂任务（代码、数学）</td></tr>
+  </table>
+
+  <div class="highlight">
+    <strong>经验法则：</strong>对于指令跟随、对话、简单领域适配等任务，标准的
+    "q+k+v+o" 配置通常已经足够；对于需要显著改变模型能力的任务（如数学推理、代码生成），
+    需要同时在 FFN 层加 LoRA。目标模块越多，参数量越大，效果越好但训练越慢。
+  </div>
+
+  <h3>2.3 超参数选择指南</h3>
+  <table>
+    <tr><th>超参数</th><th>典型值</th><th>说明</th></tr>
+    <tr><td><strong>rank (r)</strong></td><td>4, 8, 16, 32, 64</td><td>r=8 是最常用的起点；复杂任务可增大到 16-64</td></tr>
+    <tr><td><strong>alpha (α)</strong></td><td>16, 32 (α = 2r)</td><td>通常设为 2r；增大会放大 LoRA 贡献</td></tr>
+    <tr><td><strong>dropout</strong></td><td>0.05, 0.1</td><td>小数据集上有用，防止过拟合</td></tr>
+    <tr><td><strong>learning rate</strong></td><td>1e-4 ~ 3e-4</td><td>比全参 FT（~5e-6）大很多——LoRA 需要更大的 lr</td></tr>
+    <tr><td><strong>target modules</strong></td><td>q, k, v, o</td><td>或 all-linear 以追求更好效果</td></tr>
+  </table>
+</div>
+
+<!-- ===== 3. Training ===== -->
+<div class="section">
+  <h2>三、LoRA 的训练计算过程</h2>
+
+  <h3>3.1 前向传播</h3>
+  <p>
+    对于一个带 LoRA 的线性层，给定输入 <code>x ∈ R<sup>B×T×d</sup></code>，前向计算分两条路径：
+  </p>
+  <div class="formula">
+    <strong>冻结路径：</strong> h<sub>W</sub> = x · W<sup>T</sup>  （和原模型一样）
+    <br><br>
+    <strong>LoRA 路径：</strong> h<sub>A</sub> = x · A<sup>T</sup>  [B,T,d] → [B,T,r]
+    <br>
+    h<sub>LoRA</sub> = h<sub>A</sub> · B<sup>T</sup> · (α/r)  [B,T,r] → [B,T,k]
+    <br><br>
+    <strong>合并输出：</strong> y = h<sub>W</sub> + h<sub>LoRA</sub>
+  </div>
+
+  <div class="figure">
+    <img src="lora_figures/lora_training.png" alt="LoRA training flow">
+    <div class="caption">图 4：LoRA 训练时的前向和反向传播流程。前向时 W 和 LoRA 两条路径并行计算然后相加；
+    反向时只有 A 和 B 接收梯度，W 完全不需要梯度计算。</div>
+  </div>
+
+  <h3>3.2 反向传播</h3>
+  <p>
+    假设上游传来的梯度是 <code>∂L/∂y ∈ R<sup>B×T×k</sup></code>。根据链式法则：
+  </p>
+  <div class="formula">
+    <strong>对 B 的梯度：</strong>
+    ∂L/∂B = (α/r) · (∂L/∂y)<sup>T</sup> · h<sub>A</sub>
+    <br>
+    形状：[k, r] = [k, BT] · [BT, r]
+    <br><br>
+    <strong>对 A 的梯度：</strong>
+    ∂L/∂A = (α/r) · B<sup>T</sup> · (∂L/∂y)<sup>T</sup> · x
+    <br>
+    形状：[r, d] = [r, k] · [k, BT] · [BT, d]
+    <br><br>
+    <strong>对 W 的梯度：</strong> 不需要计算（W 被冻结）
+  </div>
+
+  <div class="success">
+    <strong>内存节省的本质：</strong>
+    (1) <strong>权重</strong>：只有 A 和 B 两个小矩阵（~65K 参数 vs 16.7M）；
+    (2) <strong>梯度</strong>：只有 A 和 B 的梯度；
+    (3) <strong>优化器状态</strong>：Adam 的 momentum/variance 只需为 A 和 B 分配；
+    (4) <strong>激活值</strong>：需要保存 x（计算 ∂A 需要）和 h<sub>A</sub>（计算 ∂B 需要），
+    这是 LoRA 相对 full FT 少数需要额外存储的量，但微不足道。
+  </div>
+
+  <h3>3.3 PyTorch 伪代码实现</h3>
+  <div class="code-block">
+<span class="keyword">import</span> torch
+<span class="keyword">import</span> torch.nn <span class="keyword">as</span> nn
+
+<span class="keyword">class</span> <span class="func">LoRALinear</span>(nn.Module):
+    <span class="keyword">def</span> <span class="func">__init__</span>(self, base_linear: nn.Linear, r=<span class="number">8</span>, alpha=<span class="number">16</span>, dropout=<span class="number">0.05</span>):
+        <span class="keyword">super</span>().__init__()
+        self.base = base_linear            <span class="comment"># frozen W</span>
+        self.base.weight.requires_grad = <span class="keyword">False</span>
+        <span class="keyword">if</span> self.base.bias <span class="keyword">is not None</span>:
+            self.base.bias.requires_grad = <span class="keyword">False</span>
+
+        d_in, d_out = base_linear.in_features, base_linear.out_features
+        self.r = r
+        self.scale = alpha / r
+
+        <span class="comment"># LoRA matrices (trainable)</span>
+        self.lora_A = nn.Parameter(torch.empty(r, d_in))
+        self.lora_B = nn.Parameter(torch.zeros(d_out, r))   <span class="comment"># B=0 → ΔW=0 at start</span>
+        nn.init.kaiming_uniform_(self.lora_A, a=<span class="number">5</span>**<span class="number">0.5</span>)
+
+        self.dropout = nn.Dropout(dropout)
+
+    <span class="keyword">def</span> <span class="func">forward</span>(self, x):
+        base_out = self.base(x)                                 <span class="comment"># [B,T,d_out]</span>
+        lora_out = self.dropout(x) @ self.lora_A.T              <span class="comment"># [B,T,r]</span>
+        lora_out = lora_out @ self.lora_B.T * self.scale        <span class="comment"># [B,T,d_out]</span>
+        <span class="keyword">return</span> base_out + lora_out
+  </div>
+
+  <h3>3.4 训练时的内存节省细节</h3>
+  <p>以 LLaMA-7B (BF16) 为例，对比 Full FT 与 LoRA-r8：</p>
+  <table>
+    <tr><th>内存项</th><th>Full FT</th><th>LoRA-r8</th><th>节省</th></tr>
+    <tr><td><strong>模型权重</strong></td><td>14 GB</td><td>14 GB</td><td>—</td></tr>
+    <tr><td><strong>梯度</strong></td><td>14 GB</td><td>0.08 GB</td><td>175×</td></tr>
+    <tr><td><strong>Adam momentum (FP32)</strong></td><td>28 GB</td><td>0.16 GB</td><td>175×</td></tr>
+    <tr><td><strong>Adam variance (FP32)</strong></td><td>28 GB</td><td>0.16 GB</td><td>175×</td></tr>
+    <tr><td><strong>FP32 master weights</strong></td><td>28 GB</td><td>0.16 GB</td><td>175×</td></tr>
+    <tr><td><strong>激活值</strong></td><td>~20 GB</td><td>~20 GB</td><td>—</td></tr>
+    <tr><td><strong>总计</strong></td><td>~132 GB</td><td><strong>~34 GB</strong></td><td><strong>4×</strong></td></tr>
+  </table>
+  <p>
+    注意激活值没有节省——这是因为 LoRA 仍需要全量的 forward pass（LoRA 只是在旁边加了支路）。
+    但总内存的 4× 节省让 LoRA-r8 可以在<strong>单卡 40GB A100 上</strong>微调 LLaMA-7B。
+  </p>
+</div>
+
+<!-- ===== 4. Inference ===== -->
+<div class="section">
+  <h2>四、LoRA 的推理计算过程</h2>
+  <p>
+    推理有<strong>两种不同的模式</strong>，各有优缺点，适用于不同场景。
+  </p>
+
+  <div class="figure">
+    <img src="lora_figures/lora_inference.png" alt="LoRA inference modes">
+    <div class="caption">图 5：两种推理模式。左：Unmerged——W 和 LoRA 两条路径并行计算然后相加，支持多 LoRA 切换但稍慢；
+    右：Merged——提前计算 W' = W + BA·α/r，推理零开销但每个 LoRA 占一份完整模型。</div>
+  </div>
+
+  <h3>4.1 模式 A：Unmerged（双路径计算）</h3>
+  <div class="formula">
+    每次前向：y = x·W<sup>T</sup> + x·A<sup>T</sup>·B<sup>T</sup>·(α/r)
+  </div>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; 优点</h4>
+      <ul>
+        <li><strong>快速切换</strong>：换 LoRA 只需换 A、B（几十 MB）</li>
+        <li><strong>支持 Multi-LoRA Serving</strong>：一个基座 + N 个 LoRA</li>
+        <li><strong>训练/推理对齐</strong>：和训练时完全相同的数值行为</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; 缺点</h4>
+      <ul>
+        <li><strong>每层 +2 个小 matmul</strong>：x·A<sup>T</sup> 和 ·B<sup>T</sup></li>
+        <li>对每个 token <strong>~10-20% 的推理延迟增加</strong></li>
+        <li>需要专用 kernel 才能在批处理中高效执行</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>4.2 模式 B：Merged（权重融合）</h3>
+  <div class="formula">
+    W' = W + (α/r) · B · A   (预计算一次，存储到新 W 里)
+    <br><br>
+    推理时：y = x · W'<sup>T</sup>  （和原模型完全一样，零额外开销）
+  </div>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; 优点</h4>
+      <ul>
+        <li><strong>零推理开销</strong>：与原模型完全同速</li>
+        <li>不需要特殊 kernel 支持</li>
+        <li>可以与标准 vLLM / TensorRT-LLM 直接使用</li>
+        <li>量化、编译、prefix caching 都可以正常工作</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; 缺点</h4>
+      <ul>
+        <li><strong>每个 LoRA 需要一份完整模型</strong>（LLaMA-7B 合并后还是 14 GB）</li>
+        <li>无法做 Multi-LoRA Serving</li>
+        <li>切换 LoRA 需要重新加载整个模型</li>
+        <li>合并后无法轻松"回滚"或与其他 LoRA 混合</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="highlight">
+    <strong>选择建议：</strong>
+    (1) 如果你只部署一个 LoRA 并追求极致性能 → <strong>Merged</strong>；
+    (2) 如果你需要同时服务多个 LoRA（不同用户、不同任务）→ <strong>Unmerged + 专用 kernel</strong>；
+    (3) 生产中常用的策略：<strong>Unmerged</strong>，因为 10-20% 的开销换取了灵活性是值得的。
+  </div>
+</div>
+
+<!-- ===== 5. Multi-LoRA Serving ===== -->
+<div class="section">
+  <h2>五、Multi-LoRA Serving：LoRA 真正的工程价值</h2>
+
+  <h3>5.1 需求场景</h3>
+  <p>
+    假设一家 SaaS 公司为每个客户 fine-tune 一个个性化模型。传统方案是为每个客户起一个实例
+    （LLaMA-7B 每个约 14 GB），100 个客户需要 100 个实例——<strong>1.4 TB 显存</strong>。
+    而 LoRA 下，100 个 adapter 总共只有 ~3 GB，加上一个共享的基座模型，<strong>单卡就能服务所有客户</strong>。
+  </p>
+
+  <div class="figure">
+    <img src="lora_figures/multi_lora.png" alt="Multi-LoRA serving">
+    <div class="caption">图 6：Multi-LoRA Serving 架构。一个基座模型（frozen）被所有请求共享，
+    LoRA 池存储着成百上千个小型 adapter。每个请求指定自己要使用的 LoRA，
+    推理引擎通过专用 kernel 在同一 batch 内并行处理不同 LoRA 的请求。</div>
+  </div>
+
+  <h3>5.2 技术挑战</h3>
+  <p>
+    Multi-LoRA Serving 的核心挑战是：<strong>一个 batch 内不同 sequence 使用不同的 LoRA</strong>。
+    朴素做法是为每个 LoRA 单独跑一遍前向——这让 batch size 变成 1，GPU 利用率崩溃。
+    需要一个特殊 kernel，能够在同一次 matmul 中对不同行应用不同的 LoRA 权重。
+  </p>
+
+  <h3>5.3 关键算法：Punica / SGMV Kernel</h3>
+  <p>
+    <strong>Punica</strong>（Chen et al., 2024）和 <strong>S-LoRA</strong>（Sheng et al., 2024）
+    提出了 <strong>SGMV（Segmented Gather Matrix-Vector multiplication）</strong>kernel。核心思想：
+  </p>
+  <div class="highlight">
+    <strong>SGMV 算法：</strong>
+    <ol>
+      <li>把 batch 按 LoRA ID 分组（相同 LoRA 的 token 放在一起）</li>
+      <li>为每个 token 准备 <strong>索引</strong> 指向它要用的 LoRA 的 A、B 矩阵</li>
+      <li>在一次 kernel 调用中，用 <strong>grouped GEMM</strong> 同时处理所有组</li>
+      <li>每组共享同一对 (A, B)，组间通过索引跳转</li>
+    </ol>
+  </div>
+  <p>
+    这让 Multi-LoRA 的额外开销从 "N 倍的 batch=1 延迟" 降低到 "单次 batched forward + 一点组调度开销"，
+    在实际 workload 下只有 ~10-20% 的延迟增加，而吞吐量几乎不受影响。
+  </p>
+
+  <h3>5.4 LoRA 池管理</h3>
+  <table>
+    <tr><th>策略</th><th>描述</th><th>适用场景</th></tr>
+    <tr><td><strong>All-in-GPU</strong></td><td>所有 LoRA 常驻 GPU 显存</td><td>LoRA 数量 &lt; 几十，响应延迟敏感</td></tr>
+    <tr><td><strong>LRU Cache (CPU ↔ GPU)</strong></td><td>热 LoRA 在 GPU，冷 LoRA 在 CPU 内存；按 LRU 换入</td><td>LoRA 数量数百到数千，允许首次请求稍慢</td></tr>
+    <tr><td><strong>Disk-backed</strong></td><td>冷 LoRA 在磁盘，按需加载</td><td>LoRA 上万，极大规模 SaaS</td></tr>
+  </table>
+</div>
+
+<!-- ===== 6. 推理框架支持 ===== -->
+<div class="section">
+  <h2>六、主流推理框架的 LoRA 支持</h2>
+
+  <h3>6.1 HuggingFace PEFT</h3>
+  <p>
+    <strong>PEFT</strong>（Parameter-Efficient Fine-Tuning）是 HuggingFace 官方的 LoRA 库，
+    主要用于<strong>训练</strong>和<strong>简单推理</strong>：
+  </p>
+  <div class="code-block">
+<span class="keyword">from</span> peft <span class="keyword">import</span> LoraConfig, get_peft_model, PeftModel
+<span class="keyword">from</span> transformers <span class="keyword">import</span> AutoModelForCausalLM
+
+<span class="comment"># Training: wrap base model with LoRA</span>
+base = AutoModelForCausalLM.from_pretrained(<span class="string">"meta-llama/Llama-2-7b"</span>)
+config = LoraConfig(
+    r=<span class="number">8</span>, lora_alpha=<span class="number">16</span>,
+    target_modules=[<span class="string">"q_proj"</span>, <span class="string">"k_proj"</span>, <span class="string">"v_proj"</span>, <span class="string">"o_proj"</span>],
+    lora_dropout=<span class="number">0.05</span>,
+    task_type=<span class="string">"CAUSAL_LM"</span>,
+)
+model = get_peft_model(base, config)
+model.print_trainable_parameters()   <span class="comment"># trainable: 8M / total: 7.01B (0.11%)</span>
+
+<span class="comment"># After training</span>
+model.save_pretrained(<span class="string">"./my-lora"</span>)   <span class="comment"># saves only ~30 MB</span>
+
+<span class="comment"># Inference (two modes):</span>
+<span class="comment"># Mode A: Load and run with LoRA active</span>
+model = PeftModel.from_pretrained(base, <span class="string">"./my-lora"</span>)
+
+<span class="comment"># Mode B: Merge LoRA into base for deployment</span>
+merged = model.merge_and_unload()    <span class="comment"># W' = W + BA·α/r</span>
+merged.save_pretrained(<span class="string">"./merged-model"</span>)
+  </div>
+
+  <h3>6.2 vLLM：生产级 Multi-LoRA Serving</h3>
+  <p>
+    <strong>vLLM</strong> 是目前最流行的开源 LLM 推理框架，内置了基于 Punica 的 Multi-LoRA 支持：
+  </p>
+  <div class="code-block">
+<span class="keyword">from</span> vllm <span class="keyword">import</span> LLM, SamplingParams
+<span class="keyword">from</span> vllm.lora.request <span class="keyword">import</span> LoRARequest
+
+<span class="comment"># Start vLLM with LoRA support enabled</span>
+llm = LLM(
+    model=<span class="string">"meta-llama/Llama-2-7b"</span>,
+    enable_lora=<span class="keyword">True</span>,
+    max_loras=<span class="number">16</span>,              <span class="comment"># max concurrent LoRAs</span>
+    max_lora_rank=<span class="number">16</span>,          <span class="comment"># max rank across all LoRAs</span>
+    max_cpu_loras=<span class="number">100</span>,         <span class="comment"># CPU LRU cache size</span>
+)
+
+<span class="comment"># Send requests with different LoRAs in the same batch</span>
+outputs = llm.generate(
+    prompts=[<span class="string">"法律咨询：..."</span>, <span class="string">"代码问题：..."</span>, <span class="string">"医学问题：..."</span>],
+    sampling_params=SamplingParams(temperature=<span class="number">0.7</span>, max_tokens=<span class="number">512</span>),
+    lora_request=[
+        LoRARequest(<span class="string">"legal-v1"</span>, <span class="number">1</span>, <span class="string">"/loras/legal"</span>),
+        LoRARequest(<span class="string">"code-v1"</span>, <span class="number">2</span>, <span class="string">"/loras/code"</span>),
+        LoRARequest(<span class="string">"medical-v1"</span>, <span class="number">3</span>, <span class="string">"/loras/medical"</span>),
+    ],
+)
+  </div>
+  <p>vLLM 的 LoRA 实现特性：</p>
+  <ul>
+    <li><strong>基于 Punica kernel</strong>：同 batch 内不同 LoRA 并行处理</li>
+    <li><strong>CPU ↔ GPU LRU 缓存</strong>：超过 <code>max_loras</code> 的 LoRA 在 CPU 上等待</li>
+    <li><strong>与 PagedAttention 兼容</strong>：不影响 KV cache 管理</li>
+    <li><strong>与 Continuous Batching 兼容</strong>：不同 LoRA 的请求可以动态组合</li>
+    <li><strong>推理开销</strong>：单 LoRA 约 10% 延迟增加，多 LoRA 场景吞吐基本无损</li>
+  </ul>
+
+  <h3>6.3 TensorRT-LLM：NVIDIA 企业级方案</h3>
+  <p>
+    <strong>TensorRT-LLM</strong> 通过其 <code>LoraManager</code> 提供 LoRA 支持：
+  </p>
+  <ul>
+    <li><strong>编译期注入 LoRA 结构</strong>：engine 在编译时预留 LoRA 槽位</li>
+    <li><strong>运行时动态切换</strong>：通过 API 注册和激活 LoRA</li>
+    <li><strong>与 FP8 量化兼容</strong>：LoRA 路径可以保持 FP16 而基座用 FP8</li>
+    <li><strong>Triton Inference Server 集成</strong>：支持 multi-adapter 服务</li>
+  </ul>
+
+  <h3>6.4 LoRAX：专门为 Multi-LoRA 而生的框架</h3>
+  <p>
+    <strong>LoRAX</strong>（Predibase）是一个专门面向 Multi-LoRA Serving 的框架：
+  </p>
+  <ul>
+    <li><strong>动态 LoRA 加载</strong>：从 S3/HuggingFace 实时拉取 LoRA</li>
+    <li><strong>每请求选择 adapter</strong>：HTTP API 中指定 <code>adapter_id</code></li>
+    <li><strong>支持量化基座 + LoRA</strong>：基座 INT4，LoRA FP16</li>
+    <li><strong>Token streaming + LoRA 热切换</strong></li>
+  </ul>
+
+  <h3>6.5 SGLang 与其他框架</h3>
+  <table>
+    <tr><th>框架</th><th>LoRA 支持</th><th>Multi-LoRA</th><th>Merge 模式</th></tr>
+    <tr><td><strong>vLLM</strong></td><td>✓ Punica kernel</td><td>✓✓</td><td>✓</td></tr>
+    <tr><td><strong>TensorRT-LLM</strong></td><td>✓ LoRA Manager</td><td>✓</td><td>✓</td></tr>
+    <tr><td><strong>LoRAX</strong></td><td>✓ 专门设计</td><td>✓✓✓</td><td>✓</td></tr>
+    <tr><td><strong>SGLang</strong></td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><strong>DeepSpeed-Inference</strong></td><td>△ 仅 merge</td><td>✗</td><td>✓</td></tr>
+    <tr><td><strong>llama.cpp</strong></td><td>✓ 仅 merge</td><td>✗</td><td>✓</td></tr>
+    <tr><td><strong>Ollama</strong></td><td>△ 通过 llama.cpp</td><td>✗</td><td>✓</td></tr>
+  </table>
+</div>
+
+<!-- ===== 7. LoRA 变体 ===== -->
+<div class="section">
+  <h2>七、LoRA 的重要变体</h2>
+
+  <div class="figure">
+    <img src="lora_figures/lora_variants.png" alt="LoRA variants">
+    <div class="caption">图 7：LoRA 生态的主要变体，按时间轴演化。每个变体针对原始 LoRA 的某个痛点做针对性改进。</div>
+  </div>
+
+  <h3>7.1 QLoRA：大模型单卡微调的突破</h3>
+  <p>
+    <strong>QLoRA</strong>（Dettmers et al., 2023）最重要的贡献是让<strong>65B 模型可以在单张 A100 48GB 上微调</strong>。
+    三个关键技术：
+  </p>
+  <ol>
+    <li><strong>NF4（4-bit NormalFloat）</strong>：针对正态分布权重的 4-bit 量化格式，比标准 INT4 精度更高</li>
+    <li><strong>Double Quantization</strong>：对量化 scale 本身也做二次量化，节省额外内存</li>
+    <li><strong>Paged Optimizer</strong>：通过 NVIDIA Unified Memory 让 Adam 状态在 CPU/GPU 间自动分页</li>
+  </ol>
+
+  <div class="figure">
+    <img src="lora_figures/qlora_memory.png" alt="QLoRA memory">
+    <div class="caption">图 8：LLaMA-65B 微调内存对比。Full FT 需要 780 GB；LoRA（FP16 base）需要 180 GB；
+    QLoRA（NF4 base）只需 <strong>48 GB</strong>——能在<strong>单张 A100 80GB</strong> 上运行。</div>
+  </div>
+
+  <h3>7.2 DoRA：解耦大小和方向</h3>
+  <p>
+    <strong>DoRA</strong>（Liu et al., 2024）基于一个观察：fine-tuning 时，权重更新的
+    <strong>幅度（magnitude）和方向（direction）</strong>是两个不同的维度，应该分别建模。
+  </p>
+  <div class="formula">
+    DoRA: W' = m · (W + BA) / ||W + BA||<sub>c</sub>
+    <br><br>
+    m ∈ R<sup>k</sup>: 可训练的列幅度向量
+    <br>
+    (W + BA) / ||·||<sub>c</sub>: 列归一化后的方向
+  </div>
+  <p>
+    DoRA 在同等参数量下<strong>显著超越 LoRA</strong>，尤其在 commonsense reasoning 和指令跟随任务上。
+    代价是推理时多一个归一化操作（可以融入 merged 权重）。
+  </p>
+
+  <h3>7.3 其他变体速览</h3>
+  <table>
+    <tr><th>变体</th><th>核心创新</th><th>优势</th><th>代价</th></tr>
+    <tr><td><strong>AdaLoRA</strong></td><td>根据重要性动态分配每层的 rank（SVD-based）</td><td>参数预算利用率更高</td><td>实现复杂，训练慢 ~20%</td></tr>
+    <tr><td><strong>VeRA</strong></td><td>所有层共享冻结的随机 A, B；只训练标量 scaling</td><td>存储比 LoRA 小 10×</td><td>表达力受限</td></tr>
+    <tr><td><strong>LoRA+</strong></td><td>给 B 设置比 A 高 16 倍的学习率</td><td>收敛快 2×，效果微增</td><td>需要两个 lr，超参调整</td></tr>
+    <tr><td><strong>rsLoRA</strong></td><td>用 α/√r 替代 α/r 的 scaling</td><td>大 r（&gt;64）时更稳定</td><td>小 r 差别不大</td></tr>
+    <tr><td><strong>LoHa / LoKr</strong></td><td>用 Hadamard / Kronecker 积替代矩阵乘法</td><td>参数更少，同等效果</td><td>kernel 不成熟</td></tr>
+    <tr><td><strong>GLoRA</strong></td><td>同时训练权重、bias、layer scale 的低秩适配</td><td>更通用</td><td>参数稍多</td></tr>
+    <tr><td><strong>PiSSA</strong></td><td>用 SVD 初始化 A、B 到主成分</td><td>收敛更快</td><td>初始化开销</td></tr>
+  </table>
+</div>
+
+<!-- ===== 8. 实战最佳实践 ===== -->
+<div class="section">
+  <h2>八、实战最佳实践</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>从 r=8 开始</h4>
+      <p>r=8 + alpha=16 + q/k/v/o target modules 是最通用的起点。
+      小数据集 / 简单任务用这个配置就够了；如果效果不好再逐步加大。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>学习率要大</h4>
+      <p>LoRA 需要 <strong>1e-4 ~ 3e-4</strong> 的学习率，比全参 FT（~5e-6）大 20-60 倍。
+      因为 LoRA 权重初始化时很小，需要大步长才能学到有意义的更新。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>使用 QLoRA 处理大模型</h4>
+      <p>&gt;13B 的模型直接用 QLoRA（<code>bitsandbytes</code> + PEFT）。
+      精度损失小（&lt;1% on MMLU），但内存降到 1/4。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>训练数据量规则</h4>
+      <p>小数据（&lt; 1k 样本）：用 r=4-8 避免过拟合；
+      中数据（1k-10k）：r=8-16；
+      大数据（&gt; 10k）：r=16-64 或考虑全量 FT。</p>
+    </div>
+    <div class="card">
+      <span class="num">5</span>
+      <h4>Target Modules 选择</h4>
+      <p>指令跟随：q+v 足够；
+      数学/代码：+FFN (gate, up, down)；
+      多语言：所有 linear layers。不知道选什么就用 <code>target_modules="all-linear"</code>。</p>
+    </div>
+    <div class="card">
+      <span class="num">6</span>
+      <h4>部署决策</h4>
+      <p>单 LoRA 生产 → merge 后用 TensorRT-LLM；
+      多 LoRA SaaS → vLLM/LoRAX unmerged；
+      研究/实验 → PEFT 灵活调试。</p>
+    </div>
+  </div>
+
+  <h3>常见踩坑</h3>
+  <div class="warning">
+    <strong>陷阱 1：alpha 设置不当</strong>——alpha 太小 LoRA 贡献弱学不动，太大数值不稳定。
+    一般 alpha = 2r 是安全起点。
+    <br><br>
+    <strong>陷阱 2：忽视 Embedding / LM Head</strong>——对于领域差异大的任务，
+    冻结 embedding 可能造成词汇适配不足。可以只对新增 token 训练 embedding。
+    <br><br>
+    <strong>陷阱 3：rank 过大反而更差</strong>——r 增大到某个临界点后，因为参数化过度反而效果下降。
+    建议先用小 r 试，确认有效后再增大。
+    <br><br>
+    <strong>陷阱 4：合并时精度损失</strong>——BF16 的 W + (α/r)·BA 如果 BA 量级很小，
+    直接相加可能丢失信息。可以用 FP32 计算后再转回 BF16。
+  </div>
+</div>
+
+<!-- ===== 9. 总结 ===== -->
+<div class="section">
+  <h2>九、总结</h2>
+  <p>LoRA 是大模型时代最重要的工程技术之一，它的贡献可以归纳为三层：</p>
+  <ol>
+    <li><strong>算法层：</strong>低秩分解把 ΔW 从 d×k 降到 (d+k)·r 参数，
+    基于"fine-tuning 的本征维度很低"的洞察，让大模型微调的门槛降低 100-200 倍。</li>
+    <li><strong>工程层：</strong>训练内存降低 4-6 倍，单卡就能 fine-tune 7B 模型；
+    推理既可以 merge（零开销）也可以 unmerged（灵活切换）。</li>
+    <li><strong>生态层：</strong>Multi-LoRA Serving（Punica / SGMV kernel）让"一个基座 + 数百 LoRA"的
+    SaaS 架构成为可能，彻底改变了 LLM 的商业化方式。</li>
+  </ol>
+
+  <div class="highlight">
+    <strong>一句话理解 LoRA：</strong>
+    <em>"大模型的 fine-tuning 不需要学一个全新的 d×k 矩阵，只需要学一个低维子空间的投影"。</em>
+    这个洞察本身不算新，但 LoRA 把它做到了<strong>即插即用、开箱即用、大规模可部署</strong>——
+    这才是它能成为行业标准的真正原因。
+  </div>
+
+  <h3>未来方向</h3>
+  <ul>
+    <li><strong>更小的 adapter</strong>：VeRA、LoHa 等继续探索"比 LoRA 更小但效果相当"的参数化</li>
+    <li><strong>更快的训练</strong>：LoRA+、PiSSA 等优化收敛速度</li>
+    <li><strong>更好的 Multi-LoRA serving</strong>：kernel 优化让开销接近 0</li>
+    <li><strong>LoRA 作为知识存储</strong>：把特定知识/技能封装为 LoRA，按需加载（类似"技能插件"）</li>
+    <li><strong>与量化的深度协同</strong>：QLoRA 只是开始，未来会有更极致的 <strong>bit-efficient</strong> 方案</li>
+  </ul>
+</div>
+
+<div class="footer">
+  深度学习基础系列 &middot; LoRA 详解：原理、训练、推理与框架支持
+</div>
+
+</div>
+</body>
+</html>

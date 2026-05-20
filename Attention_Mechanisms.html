@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大模型常用注意力机制详解</title>
+<style>
+  :root { --primary:#1a1a2e; --accent:#0f3460; --highlight-bg:#f0f4ff; --highlight-border:#4a7dff; --text:#222; --border:#e0e0e0; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif; color:var(--text); line-height:1.8; background:#fafafa; }
+  .container { max-width:920px; margin:0 auto; padding:20px; }
+  .cover { text-align:center; padding:70px 20px 50px; background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%); color:white; border-radius:12px; margin-bottom:40px; }
+  .cover h1 { font-size:2.1em; margin-bottom:12px; font-weight:700; }
+  .cover .subtitle { font-size:1.05em; color:#aab; margin-bottom:24px; }
+  .cover .tags { display:flex; justify-content:center; gap:12px; flex-wrap:wrap; }
+  .cover .tag { background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.2); border-radius:20px; padding:6px 18px; font-size:0.9em; color:#dde; }
+  .section { background:white; border-radius:10px; padding:36px 40px; margin-bottom:24px; box-shadow:0 1px 4px rgba(0,0,0,0.06); border:1px solid var(--border); }
+  h2 { font-size:1.5em; color:var(--primary); margin-bottom:6px; padding-bottom:10px; border-bottom:2px solid var(--highlight-border); }
+  h3 { font-size:1.15em; color:var(--accent); margin:22px 0 10px; }
+  p { margin:12px 0; text-align:justify; }
+  .highlight { background:var(--highlight-bg); border-left:4px solid var(--highlight-border); padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .highlight strong { color:var(--accent); }
+  .warning { background:#fff8f0; border-left:4px solid #f0a500; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .success { background:#f0fff4; border-left:4px solid #2a9d8f; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  ul,ol { padding-left:24px; margin:10px 0; }
+  li { margin:6px 0; }
+  .formula { text-align:center; padding:18px 20px; margin:18px 0; background:#f8f9ff; border-radius:8px; border:1px solid #e8eaf0; font-size:1.12em; font-family:"Times New Roman","STIX",serif; overflow-x:auto; }
+  .figure { text-align:center; margin:24px 0; padding:16px; background:#fafafa; border-radius:8px; border:1px solid #eee; }
+  .figure img { max-width:100%; height:auto; border-radius:4px; }
+  .figure .caption { font-size:0.88em; color:#666; margin-top:10px; font-style:italic; }
+  table { width:100%; border-collapse:collapse; margin:16px 0; font-size:0.92em; }
+  th,td { padding:10px 14px; text-align:left; border-bottom:1px solid #eee; }
+  th { background:var(--primary); color:white; font-weight:600; }
+  tr:hover { background:#f8f9ff; }
+  td code { background:#f0f0f5; padding:2px 6px; border-radius:3px; font-size:0.9em; }
+  .card-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0; }
+  .card { background:linear-gradient(135deg,#f8f9ff,#f0f4ff); border:1px solid #d8e0f0; border-radius:10px; padding:20px 24px; }
+  .card .num { display:inline-block; background:var(--highlight-border); color:white; width:28px; height:28px; border-radius:50%; text-align:center; line-height:28px; font-size:0.85em; font-weight:700; margin-right:8px; }
+  .card h4 { display:inline; color:var(--accent); font-size:1.05em; }
+  .card p { margin-top:8px; font-size:0.93em; }
+  .pros-cons { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0; }
+  .pros,.cons { padding:16px; border-radius:8px; }
+  .pros { background:#f0fff4; border:1px solid #c8e6c9; }
+  .cons { background:#fff8f0; border:1px solid #ffe0b2; }
+  .pros h4 { color:#2e7d32; margin-bottom:8px; }
+  .cons h4 { color:#e65100; margin-bottom:8px; }
+  .pros li,.cons li { font-size:0.93em; }
+  .footer { text-align:center; color:#999; font-size:0.85em; padding:30px 0; border-top:1px solid #eee; margin-top:20px; }
+  @media(max-width:640px) { .section{padding:24px 20px;} .cover h1{font-size:1.6em;} .pros-cons,.card-grid{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="cover">
+  <h1>大模型常用注意力机制详解</h1>
+  <div class="subtitle">从 MHA 到 FlashAttention —— 驱动大语言模型的核心引擎</div>
+  <div class="tags">
+    <span class="tag">MHA</span>
+    <span class="tag">GQA / MQA</span>
+    <span class="tag">FlashAttention</span>
+    <span class="tag">Sliding Window</span>
+    <span class="tag">Sparse Attention</span>
+    <span class="tag">Linear Attention</span>
+    <span class="tag">MLA</span>
+  </div>
+</div>
+
+<!-- ===== 引言 ===== -->
+<div class="section">
+  <h2>引言：注意力机制的核心地位</h2>
+  <p>
+    注意力机制是 Transformer 架构的灵魂，也是大语言模型能够理解长上下文、捕捉远距离依赖的关键。
+    然而，标准注意力的 <strong>O(N<sup>2</sup>)</strong> 时间和内存复杂度，以及推理时的
+    <strong>KV Cache 内存瓶颈</strong>，催生了大量优化方案。
+  </p>
+  <div class="highlight">
+    <strong>两大优化方向：</strong>
+    (1) <strong>计算效率</strong>——如何更快地计算注意力（FlashAttention、稀疏注意力、线性注意力）；
+    (2) <strong>内存效率</strong>——如何减少 KV Cache 的显存占用（GQA、MQA、MLA）。
+  </div>
+
+  <div class="figure">
+    <img src="attention_figures/timeline.png" alt="Attention evolution timeline">
+    <div class="caption">图 1：注意力机制在大模型中的演化时间线（2017-2025）。</div>
+  </div>
+</div>
+
+<!-- ===== 1. MHA ===== -->
+<div class="section">
+  <h2>一、多头注意力（MHA）—— 基线方案</h2>
+
+  <h3>1.1 回顾</h3>
+  <p>
+    标准多头注意力（Multi-Head Attention）是原始 Transformer 提出的方案。
+    每个头有独立的 Q、K、V 投影矩阵：
+  </p>
+  <div class="formula">
+    head<sub>i</sub> = Softmax(Q<sub>i</sub> K<sub>i</sub><sup>T</sup> / &radic;d<sub>k</sub>) &middot; V<sub>i</sub>
+    <br><br>
+    MultiHead = Concat(head<sub>1</sub>, ..., head<sub>h</sub>) &middot; W<sub>O</sub>
+  </div>
+  <p>
+    对于 LLaMA-7B（h=32, d<sub>k</sub>=128），每层有 32 个独立的 Q、K、V 头。
+    这意味着推理时每个 token 需要缓存 <strong>32 组 K 和 32 组 V</strong>。
+  </p>
+
+  <h3>1.2 MHA 的问题</h3>
+  <div class="warning">
+    <strong>KV Cache 膨胀：</strong>在批量推理中，KV Cache 的内存消耗与注意力头数成正比。
+    以 LLaMA-65B（64 头，80 层）为例，生成 4096 个 token 的 KV Cache 就需要约 <strong>10 GB</strong>。
+    batch=8 时需要 80 GB——超过单张 A100 的显存。这严重限制了推理吞吐量。
+  </div>
+</div>
+
+<!-- ===== 2. GQA & MQA ===== -->
+<div class="section">
+  <h2>二、GQA 与 MQA —— KV Cache 压缩</h2>
+
+  <h3>2.1 Multi-Query Attention（MQA）</h3>
+  <p>
+    MQA（Shazeer, 2019）的思路极为大胆：<strong>所有 Q 头共享同一组 K 和 V</strong>。
+  </p>
+  <div class="formula">
+    MQA: &nbsp; Q 有 h 个头，K 和 V 只有 <strong>1</strong> 个头（所有 Q 共享）
+  </div>
+  <p>
+    KV Cache 直接缩减为原来的 <strong>1/h</strong>。对于 32 头模型，内存减少为 1/32。
+    代价是轻微的质量损失——因为所有 Q 头被迫使用同一套 K、V 来检索信息。
+  </p>
+
+  <h3>2.2 Grouped-Query Attention（GQA）</h3>
+  <p>
+    GQA（Ainslie et al., 2023）是 MHA 和 MQA 之间的折中：将 Q 头分成 <strong>g 个组</strong>，
+    同组内的 Q 头共享一组 K 和 V。
+  </p>
+  <div class="formula">
+    GQA: &nbsp; Q 有 h 个头，K 和 V 有 <strong>g</strong> 个头（h/g 个 Q 共享一组 KV）
+    <br><br>
+    g = h &rarr; MHA &nbsp;;&nbsp; g = 1 &rarr; MQA
+  </div>
+
+  <div class="figure">
+    <img src="attention_figures/mha_gqa_mqa.png" alt="MHA vs GQA vs MQA">
+    <div class="caption">图 2：MHA、GQA、MQA 的结构对比。MHA 中 Q 和 K/V 一一对应（8 对 8）；
+    GQA 每 4 个 Q 共享 1 组 K/V（8 对 2）；MQA 所有 Q 共享同一组 K/V（8 对 1）。</div>
+  </div>
+
+  <div class="figure">
+    <img src="attention_figures/gqa_detail.png" alt="GQA KV cache reduction">
+    <div class="caption">图 3：GQA 如何减少 KV Cache。左侧 MHA 每个 Q 头有独立的 K/V（100% 内存），
+    右侧 GQA 每组共享 K/V（仅 25% 内存），质量损失极小。</div>
+  </div>
+
+  <table>
+    <tr><th>方案</th><th>Q 头数</th><th>KV 头数</th><th>KV Cache</th><th>质量影响</th><th>代表模型</th></tr>
+    <tr><td><strong>MHA</strong></td><td>h</td><td>h</td><td>100%</td><td>基线</td><td>LLaMA-1, GPT-3</td></tr>
+    <tr><td><strong>GQA-8</strong></td><td>h</td><td>8</td><td>25%</td><td>极小</td><td>LLaMA-2 70B, LLaMA-3</td></tr>
+    <tr><td><strong>GQA-4</strong></td><td>h</td><td>4</td><td>12.5%</td><td>轻微</td><td>Mistral 7B</td></tr>
+    <tr><td><strong>MQA</strong></td><td>h</td><td>1</td><td>1/h</td><td>轻-中度</td><td>PaLM, Falcon, StarCoder</td></tr>
+  </table>
+
+  <div class="success">
+    <strong>实际影响：</strong>LLaMA-2 70B 使用 GQA-8（8 个 KV 头 vs 64 个 Q 头），
+    KV Cache 减少为 MHA 的 1/8，使得在单张 A100 上可以支持更大的 batch size 和更长的序列，
+    推理吞吐量提升约 30%。而在 MMLU 等基准上，质量损失不到 0.5%。
+  </div>
+</div>
+
+<!-- ===== 3. FlashAttention ===== -->
+<div class="section">
+  <h2>三、FlashAttention —— IO 感知的高效注意力</h2>
+
+  <h3>3.1 问题：内存墙</h3>
+  <p>
+    标准注意力的瓶颈<strong>不是计算量，而是内存访问</strong>。GPU 有两级存储：
+  </p>
+  <ul>
+    <li><strong>SRAM（片上缓存）：</strong>极快（~19 TB/s），但极小（A100 仅 20 MB）</li>
+    <li><strong>HBM（显存）：</strong>较慢（~2 TB/s），但大（A100 有 80 GB）</li>
+  </ul>
+  <p>
+    标准注意力需要将 N&times;N 的注意力矩阵写入 HBM 再读回来做 Softmax，
+    这些<strong>显存读写操作</strong>（IO）才是真正的速度瓶颈。
+  </p>
+
+  <h3>3.2 FlashAttention 的核心思想</h3>
+  <div class="highlight">
+    <strong>核心策略：分块计算（Tiling）</strong>——将 Q、K、V 分成小块，每次只加载一小块到 SRAM 中，
+    在 SRAM 内完成注意力计算（包括 Softmax），然后将结果写回 HBM。
+    <strong>整个过程从不在 HBM 中存储完整的 N&times;N 注意力矩阵</strong>。
+  </div>
+
+  <div class="figure">
+    <img src="attention_figures/flash_attention.png" alt="FlashAttention">
+    <div class="caption">图 4：标准注意力（左）需要在 HBM 中存储完整的 N&times;N 矩阵，
+    FlashAttention（右）通过分块计算避免 N&times;N 矩阵的物化，内存降为 O(N)，速度提升 2-4 倍。</div>
+  </div>
+
+  <h3>3.3 技术难点：在线 Softmax</h3>
+  <p>
+    分块计算的最大挑战是 <strong>Softmax 需要知道全局最大值</strong>（用于数值稳定）。
+    FlashAttention 使用了 <strong>Online Softmax</strong>（Milakov & Gimelshein, 2018）技巧：
+  </p>
+  <ol>
+    <li>处理每个 K 块时，维护当前的<strong>局部最大值</strong>和<strong>指数和</strong></li>
+    <li>当遇到更大的值时，<strong>回溯修正</strong>之前所有块的计算结果</li>
+    <li>最终结果与全局 Softmax 在数学上<strong>完全等价</strong>——没有任何近似</li>
+  </ol>
+
+  <h3>3.4 版本演化</h3>
+  <table>
+    <tr><th>版本</th><th>时间</th><th>关键改进</th><th>A100 加速</th></tr>
+    <tr><td><strong>FlashAttention-1</strong></td><td>2022.05</td><td>分块 + Online Softmax，内存 O(N)</td><td>2-4x</td></tr>
+    <tr><td><strong>FlashAttention-2</strong></td><td>2023.07</td><td>优化线程并行、减少非矩阵乘 FLOPs</td><td>达到理论峰值 50-73%</td></tr>
+    <tr><td><strong>FlashAttention-3</strong></td><td>2024.07</td><td>Hopper 架构优化、异步执行、FP8 支持</td><td>H100 上 1.5-2x over FA2</td></tr>
+  </table>
+
+  <div class="success">
+    <strong>核心价值：</strong>FlashAttention 是一个<strong>精确</strong>的算法（非近似），
+    计算结果与标准注意力逐比特一致。它不改变模型的数学定义，只改变计算的执行方式。
+    目前几乎所有 LLM 训练和推理框架都默认使用 FlashAttention。
+  </div>
+</div>
+
+<!-- ===== 4. Sliding Window ===== -->
+<div class="section">
+  <h2>四、滑动窗口注意力（Sliding Window Attention）</h2>
+
+  <h3>4.1 核心思想</h3>
+  <p>
+    滑动窗口注意力（SWA）由 Mistral 7B（Jiang et al., 2023）推广。其核心假设：
+    <strong>大部分重要信息来自局部上下文</strong>，因此每个 token 只需关注最近的 w 个 token。
+  </p>
+  <div class="formula">
+    SWA: token 在位置 i 只能关注位置 [i-w+1, i]，窗口大小 = w
+  </div>
+
+  <div class="figure">
+    <img src="attention_figures/sliding_window.png" alt="Sliding window attention">
+    <div class="caption">图 5：滑动窗口注意力（左，w=4）的掩码模式——每个 token 只关注最近 4 个位置。
+    右图：通过堆叠多层，有效感受野线性增长。4 层 &times; w=4 = 感受野 16。</div>
+  </div>
+
+  <h3>4.2 层间扩展感受野</h3>
+  <p>
+    虽然单层只看 w 个 token，但<strong>堆叠 L 层后，有效感受野扩展到 L &times; w</strong>。
+    Mistral 使用 w=4096、32 层，理论感受野为 131,072 token。
+    直觉上：第 1 层，token A 看到了 token B；第 2 层，A 通过 B 间接"看到"了 B 之前的信息；
+    逐层传递，远距离信息通过中间节点"接力"传播。
+  </p>
+
+  <h3>4.3 与 KV Cache 的结合</h3>
+  <div class="highlight">
+    <strong>KV Cache 优化：</strong>滑动窗口意味着 KV Cache 有固定的上限 w，
+    而非随序列长度无限增长。Mistral 7B 的 KV Cache 固定为 4096 个 token 的缓存，
+    无论实际序列有多长——超出窗口的旧 K/V 直接丢弃。
+    这使得<strong>内存使用恒定</strong>，极大简化了长序列推理的内存管理。
+  </div>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; 优点</h4>
+      <ul>
+        <li>计算复杂度降为 O(N &middot; w)，w 远小于 N 时大幅加速</li>
+        <li>KV Cache 大小固定为 w，内存恒定</li>
+        <li>与 FlashAttention 完美兼容</li>
+        <li>通过层间堆叠保留长距离建模能力</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; 缺点</h4>
+      <ul>
+        <li>长距离信息传播变为间接，可能有信息损失</li>
+        <li>需要精细选择窗口大小 w</li>
+        <li>某些需要全局注意力的任务可能受影响</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 5. Sparse Attention ===== -->
+<div class="section">
+  <h2>五、稀疏注意力（Sparse Attention）</h2>
+
+  <h3>5.1 动机</h3>
+  <p>
+    研究发现，在训练好的 Transformer 中，注意力权重矩阵通常是<strong>高度稀疏</strong>的——
+    大部分权重接近于零，每个 token 实际上只"关注"少数几个其他 token。
+    稀疏注意力直接<strong>预定义或学习这种稀疏模式</strong>，跳过不重要的计算。
+  </p>
+
+  <div class="figure">
+    <img src="attention_figures/attention_patterns.png" alt="Attention patterns">
+    <div class="caption">图 6：四种注意力模式对比。完全注意力计算全部 N&times;N 对；滑动窗口只算局部；
+    扩张注意力间隔采样；块稀疏结合局部+全局 token。</div>
+  </div>
+
+  <h3>5.2 常见稀疏模式</h3>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>Local（局部）</h4>
+      <p>每个 token 只关注附近 w 个位置。即滑动窗口模式。适合语言建模中大部分为局部依赖的场景。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>Strided / Dilated（扩张）</h4>
+      <p>以固定步长采样远距离 token（如每隔 g 个位置关注一个）。用少量计算捕捉全局结构。
+      代表：Sparse Transformer (Child et al., 2019)。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>Global + Local（全局+局部）</h4>
+      <p>设置少量"全局 token"（如 [CLS] 或序列头部），它们可以关注和被关注所有位置；
+      其余 token 只做局部注意力。代表：BigBird, Longformer。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>Learned Sparse（学习型稀疏）</h4>
+      <p>模型动态决定每个 token 应该关注哪些位置。灵活性最高但实现复杂。
+      代表：Routing Transformer, Reformer (LSH hashing)。</p>
+    </div>
+  </div>
+
+  <div class="warning">
+    <strong>实践限制：</strong>稀疏注意力在理论上很有吸引力，但在 GPU 上的实际加速往往不理想。
+    不规则的内存访问模式导致低效的 GPU 利用率，硬件更擅长处理密集矩阵运算。
+    因此，目前主流 LLM 更倾向于<strong>滑动窗口</strong>（规则稀疏，硬件友好）
+    + <strong>FlashAttention</strong>（优化密集计算）的组合。
+  </div>
+</div>
+
+<!-- ===== 6. Linear Attention ===== -->
+<div class="section">
+  <h2>六、线性注意力（Linear Attention）</h2>
+
+  <h3>6.1 核心思想：改变矩阵乘法顺序</h3>
+  <p>
+    标准注意力的计算是 <code>(Q @ K<sup>T</sup>) @ V</code>，中间产生 N&times;N 矩阵。
+    线性注意力的核心观察是：如果去掉 Softmax，可以利用矩阵乘法结合律改变计算顺序为
+    <code>Q @ (K<sup>T</sup> @ V)</code>，中间矩阵变为 d&times;d（远小于 N&times;N）。
+  </p>
+
+  <div class="figure">
+    <img src="attention_figures/linear_attention.png" alt="Linear attention">
+    <div class="caption">图 7：标准注意力（左）先算 Q@K<sup>T</sup> 得到 N&times;N 矩阵；
+    线性注意力（右）先算 K<sup>T</sup>@V 得到 d&times;d 矩阵，完全避免了 N&times;N 的瓶颈。</div>
+  </div>
+
+  <h3>6.2 关键挑战：替代 Softmax</h3>
+  <p>
+    直接去掉 Softmax 会严重影响性能。解决方案是用<strong>核函数（kernel function）</strong>
+    &phi; 来近似 Softmax 的效果：
+  </p>
+  <div class="formula">
+    StandardAttn: Softmax(QK<sup>T</sup>) V
+    <br><br>
+    LinearAttn: &phi;(Q) (&phi;(K)<sup>T</sup> V) &nbsp;&nbsp; 其中 &phi; 是特征映射函数
+  </div>
+  <p>&phi; 的选择直接决定了近似质量，常见方案包括：</p>
+  <ul>
+    <li><strong>Performer：</strong>使用随机特征映射近似 Softmax 核</li>
+    <li><strong>Linear Transformer：</strong>&phi;(x) = elu(x) + 1</li>
+    <li><strong>RWKV：</strong>使用时间衰减的线性递推替代注意力</li>
+    <li><strong>Mamba (SSM)：</strong>状态空间模型，输入依赖的选择机制</li>
+  </ul>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; 优点</h4>
+      <ul>
+        <li>复杂度 O(N&middot;d<sup>2</sup>)，当 d &lt;&lt; N 时远快于 O(N<sup>2</sup>&middot;d)</li>
+        <li>可以用 RNN 形式实现——维护一个固定大小的"状态"，O(1) 推理每步</li>
+        <li>天然支持无限长序列</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; 缺点</h4>
+      <ul>
+        <li>质量通常不如标准 Softmax 注意力，尤其在需要精确检索的任务上</li>
+        <li>信息压缩为固定大小状态，可能丢失细节</li>
+        <li>训练时难以并行化（RNN 形式）</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="success">
+    <strong>趋势：</strong>2024-2025 年的前沿研究趋向于<strong>混合架构</strong>——
+    大部分层使用线性注意力/SSM（高效），少数层使用标准 Softmax 注意力（高质量），
+    兼顾效率和能力。代表：Jamba（Mamba + Transformer 混合）、Zamba、Hymba。
+  </div>
+</div>
+
+<!-- ===== 7. MLA ===== -->
+<div class="section">
+  <h2>七、MLA —— 多头潜在注意力（Multi-head Latent Attention）</h2>
+
+  <h3>7.1 核心思想：低秩联合压缩 K 和 V</h3>
+  <p>
+    <strong>MLA</strong>（Multi-head Latent Attention）由 <strong>DeepSeek-V2</strong>（2024.05）首次提出，
+    后被 DeepSeek-V3 和 DeepSeek-R1 沿用。它采用了与 GQA/MQA 完全不同的压缩哲学：
+    <strong>不是减少 KV 头的数量，而是将 K 和 V 联合压缩到一个极小的潜在向量</strong>。
+  </p>
+  <div class="highlight">
+    <strong>一句话理解：</strong>GQA 通过"让多个 Q 头共享 K/V"来节省内存；
+    MLA 则通过"让所有 K 和 V 先压缩到一个小潜在向量 c<sup>KV</sup>，
+    使用时再投影回来"来节省内存。两者的思路截然不同——GQA 在<strong>头的维度</strong>压缩，
+    MLA 在<strong>特征维度</strong>压缩。
+  </div>
+
+  <h3>7.2 数学定义</h3>
+  <p>
+    对于 KV 路径，MLA 引入一个<strong>潜在维度 d<sub>c</sub>（通常远小于 n<sub>h</sub>·d<sub>h</sub>）</strong>：
+  </p>
+  <div class="formula">
+    <strong>压缩（Down-projection）：</strong>
+    <br>
+    c<sub>t</sub><sup>KV</sup> = h<sub>t</sub> &middot; W<sup>DKV</sup> &nbsp;&nbsp; 其中 W<sup>DKV</sup> &isin; R<sup>d &times; d<sub>c</sub></sup>, &nbsp; d<sub>c</sub> = 512
+    <br><br>
+    <strong>使用时解压（Up-projection）：</strong>
+    <br>
+    K<sub>t</sub><sup>C</sup> = c<sub>t</sub><sup>KV</sup> &middot; W<sup>UK</sup> &nbsp;&nbsp;&nbsp; V<sub>t</sub> = c<sub>t</sub><sup>KV</sup> &middot; W<sup>UV</sup>
+    <br><br>
+    <strong>缓存的只有 c<sup>KV</sup>，不是 K 和 V！</strong>
+  </div>
+  <p>
+    同理，Query 路径也做低秩压缩（但 Q 不需要缓存，这里的目的是减少激活内存）：
+  </p>
+  <div class="formula">
+    c<sub>t</sub><sup>Q</sup> = h<sub>t</sub> &middot; W<sup>DQ</sup> &nbsp;&rarr;&nbsp; Q<sub>t</sub><sup>C</sup> = c<sub>t</sub><sup>Q</sup> &middot; W<sup>UQ</sup>
+  </div>
+
+  <h3>7.3 Decoupled RoPE：MLA 的关键技术难点</h3>
+  <p>
+    直接应用上述压缩会遇到一个<strong>致命问题</strong>：
+    <strong>RoPE 与低秩压缩不兼容</strong>。
+  </p>
+  <p>
+    标准 RoPE 会对 Q 和 K 分别施加位置相关的旋转：
+    K<sub>t</sub> = RoPE(h<sub>t</sub> &middot; W<sup>K</sup>, pos<sub>t</sub>)。
+    如果我们只缓存 c<sup>KV</sup> 然后在使用时计算 K = c<sup>KV</sup> &middot; W<sup>UK</sup>，
+    旋转操作<strong>位置相关</strong>，无法合并到固定的 W<sup>UK</sup> 中——
+    这意味着每个 token 需要单独旋转，不能利用"矩阵吸收"优化。
+  </p>
+
+  <div class="warning">
+    <strong>问题本质：</strong>RoPE 是位置相关的非线性操作，低秩压缩 + 上投影是位置无关的线性操作。
+    两者无法通过代数变换合并，导致必须为每个位置单独保存旋转后的完整 K，
+    失去了压缩的意义。
+  </div>
+
+  <p>
+    <strong>DeepSeek 的解决方案：解耦 RoPE（Decoupled RoPE）</strong>——
+    将注意力分数分解为两部分：<strong>内容部分（无 RoPE）</strong>和
+    <strong>位置部分（小维度 RoPE）</strong>：
+  </p>
+  <div class="formula">
+    K<sub>t</sub> = concat(K<sub>t</sub><sup>C</sup>, K<sub>t</sub><sup>R</sup>)
+    <br>
+    K<sub>t</sub><sup>C</sup> = c<sub>t</sub><sup>KV</sup> &middot; W<sup>UK</sup> &nbsp;&nbsp;(无 RoPE, 走低秩通路)
+    <br>
+    K<sub>t</sub><sup>R</sup> = RoPE(h<sub>t</sub> &middot; W<sup>KR</sup>, pos<sub>t</sub>) &nbsp;&nbsp;(小维度 d<sub>h</sub><sup>R</sup>=64)
+    <br><br>
+    同理 Q 也分为 Q<sup>C</sup> 和 Q<sup>R</sup>
+  </div>
+  <ul>
+    <li><strong>内容部分（K<sup>C</sup>）：</strong>不施加 RoPE，可以与 W<sup>UK</sup> 结合做矩阵吸收</li>
+    <li><strong>位置部分（K<sup>R</sup>）：</strong>施加 RoPE，但维度很小（d<sub>h</sub><sup>R</sup>=64），
+    且<strong>所有头共享</strong>（只需缓存 64 个数）</li>
+    <li><strong>缓存两部分：</strong>c<sup>KV</sup>（潜在向量，512 维）+ K<sup>R</sup>（共享 RoPE 键，64 维）</li>
+    <li><strong>注意力计算：</strong>Q<sup>C</sup> &middot; K<sup>CT</sup> + Q<sup>R</sup> &middot; K<sup>RT</sup>（两部分相加）</li>
+  </ul>
+
+  <h3>7.4 完整架构图</h3>
+
+  <div class="figure">
+    <img src="attention_figures/mla_architecture.png" alt="MLA full architecture">
+    <div class="caption">图 8：MLA 完整架构。Query 和 Key 都被拆分为内容部分（Q<sup>C</sup>/K<sup>C</sup>，低秩压缩+上投影）
+    和 RoPE 部分（Q<sup>R</sup>/K<sup>R</sup>，独立计算，后者跨所有头共享）。
+    KV Cache 只存储两样东西：潜在向量 c<sup>KV</sup>（512 维）和共享 RoPE 键 K<sup>R</sup>（64 维），
+    总共 576 个值——相比标准 MHA 的 32768 值（128 头 × 128 维 × 2），压缩 56 倍。</div>
+  </div>
+
+  <h3>7.5 Matrix Absorption：让 MLA 真正高效的魔法</h3>
+  <p>
+    仅仅压缩 KV Cache 是不够的——如果推理时每步都要执行
+    K = c<sup>KV</sup> &middot; W<sup>UK</sup> 和 V = c<sup>KV</sup> &middot; W<sup>UV</sup> 解压出完整的 K/V，
+    那计算量和标准 MHA 相同，<strong>只节省了内存</strong>，失去了速度优势。
+  </p>
+  <p>
+    DeepSeek 使用<strong>矩阵吸收（Matrix Absorption）</strong>技巧在推理阶段避免显式解压：
+  </p>
+  <div class="formula">
+    标准计算: &nbsp; attention = softmax(Q<sup>C</sup> &middot; K<sup>CT</sup>) &middot; V
+    <br>
+    &nbsp;&nbsp;&nbsp;&nbsp;= softmax(Q<sup>C</sup> &middot; (c<sup>KV</sup> &middot; W<sup>UK</sup>)<sup>T</sup>) &middot; (c<sup>KV</sup> &middot; W<sup>UV</sup>)
+    <br><br>
+    <strong>矩阵吸收：</strong>
+    <br>
+    = softmax((Q<sup>C</sup> &middot; W<sup>UK T</sup>) &middot; c<sup>KV T</sup>) &middot; (c<sup>KV</sup> &middot; W<sup>UV</sup>)
+    <br>
+    = softmax(<strong>Q'</strong> &middot; c<sup>KV T</sup>) &middot; c<sup>KV</sup> &middot; W<sup>UV</sup>
+    <br>
+    其中 Q' = Q<sup>C</sup> &middot; W<sup>UK T</sup>（提前吸收）
+  </div>
+  <p>
+    类似地，输出投影 W<sup>O</sup> 可以吸收 W<sup>UV</sup>：W<sup>O'</sup> = W<sup>UV</sup> &middot; W<sup>O</sup>，
+    这样就完全避免了对 V 的显式计算。
+  </p>
+
+  <div class="figure">
+    <img src="attention_figures/mla_absorption.png" alt="MLA Matrix Absorption">
+    <div class="caption">图 9：矩阵吸收的威力。左图：朴素做法每步解压 K 和 V 回到 n<sub>h</sub>·d<sub>h</sub>=16384 维，
+    计算量与 MHA 相同；右图：通过矩阵吸收，注意力直接在 d<sub>c</sub>=512 维的潜在空间上计算，
+    attention matmul 的维度降低 32 倍，同时受益于极小的 KV Cache。</div>
+  </div>
+
+  <div class="success">
+    <strong>矩阵吸收的效果：</strong>
+    (1) <strong>内存</strong>：KV Cache 只存 c<sup>KV</sup> 和 K<sup>R</sup>，大幅减少；
+    (2) <strong>计算</strong>：Attention matmul 从 [n<sub>h</sub>, 1, d<sub>h</sub>]&times;[n<sub>h</sub>, d<sub>h</sub>, t] 变为 [n<sub>h</sub>, 1, d<sub>c</sub>]&times;[1, d<sub>c</sub>, t]，
+    且所有头共享 c<sup>KV</sup>，实际是一个大 matmul；
+    (3) <strong>带宽</strong>：每步只需从 HBM 加载 c<sup>KV</sup>（小），而不是完整 K, V（大），
+    解码延迟大幅降低。
+  </div>
+
+  <h3>7.6 KV Cache 实际大小对比</h3>
+
+  <div class="figure">
+    <img src="attention_figures/mla_kv_comparison.png" alt="KV cache comparison">
+    <div class="caption">图 10：128 头、d<sub>h</sub>=128 配置下的 KV Cache 每 token 大小对比。
+    MLA 仅比 MQA 稍大（1.15 KB vs 0.5 KB），但质量接近 MHA——在保持高质量的前提下实现了极致压缩。</div>
+  </div>
+
+  <h3>7.7 与其他方案的对比</h3>
+  <table>
+    <tr><th>维度</th><th>MHA</th><th>GQA</th><th>MQA</th><th>MLA</th></tr>
+    <tr><td><strong>压缩策略</strong></td><td>基线</td><td>减少 KV 头数</td><td>全头共享 KV</td><td>低秩联合压缩</td></tr>
+    <tr><td><strong>KV Cache 大小</strong></td><td>2n<sub>h</sub>d<sub>h</sub></td><td>2gd<sub>h</sub></td><td>2d<sub>h</sub></td><td>d<sub>c</sub> + d<sub>h</sub><sup>R</sup></td></tr>
+    <tr><td><strong>每 token（DeepSeek-V2 配置）</strong></td><td>65.5 KB</td><td>8.2 KB</td><td>0.5 KB</td><td><strong>1.15 KB</strong></td></tr>
+    <tr><td><strong>质量（vs MHA）</strong></td><td>最佳</td><td>接近最佳</td><td>轻微下降</td><td><strong>接近最佳</strong></td></tr>
+    <tr><td><strong>Decode 计算</strong></td><td>标准</td><td>标准</td><td>标准</td><td><strong>潜在空间更快</strong></td></tr>
+    <tr><td><strong>训练成本</strong></td><td>标准</td><td>低</td><td>低</td><td>略高（引入 down/up proj）</td></tr>
+    <tr><td><strong>实现复杂度</strong></td><td>简单</td><td>简单</td><td>极简</td><td><strong>复杂（需要 Decoupled RoPE + 吸收）</strong></td></tr>
+    <tr><td><strong>代表模型</strong></td><td>LLaMA-1, GPT-3</td><td>LLaMA-2/3, Mistral</td><td>PaLM, Falcon</td><td>DeepSeek-V2/V3/R1</td></tr>
+  </table>
+
+  <h3>7.8 MLA 在 DeepSeek 中的实际配置</h3>
+  <table>
+    <tr><th>参数</th><th>DeepSeek-V2 (236B)</th><th>DeepSeek-V3 (671B)</th></tr>
+    <tr><td>隐藏维度 d</td><td>5120</td><td>7168</td></tr>
+    <tr><td>注意力头数 n<sub>h</sub></td><td>128</td><td>128</td></tr>
+    <tr><td>每头维度 d<sub>h</sub></td><td>128</td><td>128</td></tr>
+    <tr><td>KV 潜在维度 d<sub>c</sub></td><td>512</td><td>512</td></tr>
+    <tr><td>Q 潜在维度 d<sub>c</sub><sup>Q</sup></td><td>1536</td><td>1536</td></tr>
+    <tr><td>RoPE 维度 d<sub>h</sub><sup>R</sup></td><td>64</td><td>64</td></tr>
+    <tr><td>KV Cache 压缩率（vs MHA）</td><td><strong>~7%</strong></td><td><strong>~7%</strong></td></tr>
+  </table>
+
+  <div class="highlight">
+    <strong>DeepSeek-V2 的实际效果：</strong>
+    236B 总参数（21B 激活）的 MoE 模型，在推理时的 KV Cache 内存仅相当于一个
+    <strong>~7B 的 MHA 模型</strong>——这使得它可以在普通消费级 GPU 上以更大的 batch size 和更长的序列服务，
+    同时在各项基准（MMLU、HumanEval、GSM8K）上与 LLaMA-3 70B 持平。DeepSeek-V3（671B）在此基础上进一步放大，
+    成为当时最大的开源 MoE 模型之一，推理成本极具竞争力。
+  </div>
+
+  <h3>7.9 MLA 的优缺点</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; 优点</h4>
+      <ul>
+        <li><strong>极致的 KV Cache 压缩</strong>：优于 GQA，接近 MQA 但质量更高</li>
+        <li><strong>Decode 加速</strong>：矩阵吸收使得 attention 计算也变小</li>
+        <li><strong>质量损失极小</strong>：接近完整 MHA 的性能</li>
+        <li><strong>支持长序列</strong>：小 KV Cache 使得超长上下文（128K+）在有限显存下可行</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; 缺点</h4>
+      <ul>
+        <li><strong>实现复杂</strong>：Decoupled RoPE + 矩阵吸收 + 权重融合，工程代价高</li>
+        <li><strong>训练开销略大</strong>：引入额外的 down/up projection 矩阵</li>
+        <li><strong>Prefill 阶段优势小</strong>：计算密集型，主要收益在 Decode</li>
+        <li><strong>框架支持有限</strong>：vLLM、SGLang 等需要专门实现，不如 GQA 普适</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 8. Attention Residuals, Gated Attention, etc. ===== -->
+<div class="section">
+  <h2>八、注意力架构变体：残差、门控与差分注意力</h2>
+  <p>
+    除了优化注意力的<em>计算效率</em>和<em>内存效率</em>，另一条同样重要的研究线路是改进
+    <strong>注意力输出与模型主干的交互方式</strong>——即注意力的残差连接结构、门控机制，
+    以及注意力本身的信噪比。这些改进直接影响模型的<strong>训练稳定性</strong>、
+    <strong>深度可扩展性</strong>和<strong>输出质量</strong>。
+  </p>
+
+  <h3>8.1 Attention Residuals（注意力残差连接）</h3>
+  <p>
+    残差连接（He et al., 2016）是深度网络训练的基石。在 Transformer 中，
+    注意力层和 FFN 层的输出都通过残差连接与输入相加：
+  </p>
+  <div class="formula">
+    output = x + Attn(Norm(x))
+  </div>
+  <p>
+    残差连接的作用有两个层面：
+  </p>
+  <ul>
+    <li><strong>梯度高速公路：</strong>梯度可以沿残差路径"绕过"注意力层直接回传，
+    避免深层网络中的梯度消失。没有残差连接，训练 80 层的 LLaMA-65B 几乎不可能。</li>
+    <li><strong>渐进式精化：</strong>每一层不是"替换"输入，而是在输入基础上"添加增量"。
+    模型的计算可以看作对初始表示的逐层精化。</li>
+  </ul>
+
+  <h4>Post-Norm vs Pre-Norm</h4>
+  <p>
+    归一化层的位置对训练稳定性有重要影响：
+  </p>
+  <table>
+    <tr><th>方案</th><th>公式</th><th>特点</th><th>代表模型</th></tr>
+    <tr>
+      <td><strong>Post-Norm</strong><br>(原始 Transformer)</td>
+      <td><code>Norm(x + Attn(x))</code></td>
+      <td>性能上限略高，但训练不稳定，需要 warmup</td>
+      <td>BERT, 原始 Transformer</td>
+    </tr>
+    <tr>
+      <td><strong>Pre-Norm</strong><br>(现代 LLM)</td>
+      <td><code>x + Attn(Norm(x))</code></td>
+      <td>训练稳定，无需复杂 warmup 策略</td>
+      <td>GPT-2/3, LLaMA, Mistral</td>
+    </tr>
+    <tr>
+      <td><strong>Sandwich-Norm</strong></td>
+      <td><code>x + Norm(Attn(Norm(x)))</code></td>
+      <td>双重归一化，进一步稳定超深网络</td>
+      <td>CogView, 部分视觉模型</td>
+    </tr>
+  </table>
+
+  <div class="highlight">
+    <strong>Pre-Norm 的直觉：</strong>在注意力计算之前归一化输入，保证输入到 Q/K/V 投影的
+    向量数值范围可控。这对训练稳定性至关重要——如果输入值过大或过小，
+    注意力分数会出现极端值，导致 Softmax 退化和梯度爆炸。
+  </div>
+
+  <h3>8.2 Gated Attention（门控注意力）</h3>
+  <p>
+    标准残差连接中，注意力输出以<strong>固定权重 1.0</strong> 加到输入上。
+    <strong>门控注意力</strong>的思想是：让模型<strong>学习控制</strong>注意力输出的贡献比例。
+  </p>
+  <div class="formula">
+    Standard: &nbsp; output = x + Attn(x)
+    <br><br>
+    Gated: &nbsp; output = x + <strong style="color:#f0a500;">g(x)</strong> &otimes; Attn(x)
+    <br><br>
+    其中 g(x) = &sigma;(x &middot; W<sub>g</sub>) &isin; (0, 1)<sup>d</sup>
+  </div>
+
+  <div class="figure">
+    <img src="attention_figures/gated_attention.png" alt="Gated Attention variants">
+    <div class="caption">图 11：三种注意力-残差交互方式。
+    标准残差（左）直接相加；门控注意力（中）通过学习的门控信号控制注意力贡献；
+    &alpha;-残差门（右）使用可学习标量进行混合。</div>
+  </div>
+
+  <p>门控注意力的几种变体：</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>Sigmoid Gate（向量门控）</h4>
+      <p>g = &sigma;(x &middot; W<sub>g</sub>)，每个维度独立的 0-1 门控。
+      可以选择性地抑制注意力输出的某些维度。用于 PaLM、Gemma 等模型。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>&alpha;-Residual Gate（标量门控）</h4>
+      <p>output = (1-&alpha;) &middot; x + &alpha; &middot; Attn(x)，
+      &alpha; 是每层/每头的可学习标量。初始化 &alpha;&asymp;0 使模型在训练初期接近恒等映射。
+      用于 ReZero、Fixup 等深层训练技术。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>Tanh Gate</h4>
+      <p>g = tanh(x &middot; W<sub>g</sub>)，输出范围 (-1, 1)，允许反转注意力输出的符号。
+      比 Sigmoid gate 更灵活，但不保证非负。用于部分研究模型。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>Gated Attention Unit (GAU)</h4>
+      <p>将注意力和 FFN 合并为单一门控单元：
+      output = (U &otimes; AV) W<sub>o</sub>，其中 U 是门控路径，AV 是注意力路径。
+      减少层数的同时保持表达力。</p>
+    </div>
+  </div>
+
+  <div class="success">
+    <strong>为什么门控有效？</strong>
+    (1) <strong>训练初期稳定性：</strong>门控初始化为接近 0，模型初期近似恒等映射，避免随机注意力带来的噪声；
+    (2) <strong>自适应深度：</strong>不同层可以学习不同的门控值，有的层贡献大、有的层几乎被"跳过"，
+    等价于模型自动决定有效深度；
+    (3) <strong>防止特征崩塌：</strong>门控限制了注意力输出的幅度，防止深层网络中所有 token 的表示
+    变得越来越相似（表示退化）。
+  </div>
+
+  <h3>8.3 Differential Attention（差分注意力）</h3>
+  <p>
+    <strong>Differential Attention</strong>（Ye et al., 2024, DIFF Transformer）提出了一种
+    全新的注意力降噪思路：<strong>用两组注意力的差来消除噪声</strong>。
+  </p>
+  <div class="formula">
+    DiffAttn(X) = (Softmax(Q<sub>1</sub>K<sub>1</sub><sup>T</sup>/&radic;d) - &lambda; &middot; Softmax(Q<sub>2</sub>K<sub>2</sub><sup>T</sup>/&radic;d)) &middot; V
+  </div>
+  <p>
+    核心思想来自于信号处理中的<strong>差分放大器</strong>：两路信号中的共模噪声（common-mode noise）
+    在相减时被消除，只保留差模信号（有用信息）。
+  </p>
+
+  <div class="figure">
+    <img src="attention_figures/differential_attention.png" alt="Differential Attention">
+    <div class="caption">图 12：差分注意力的工作原理。输入被送入两组独立的注意力计算，
+    两组结果相减以消除共模噪声，&lambda; 是可学习的缩放因子。</div>
+  </div>
+
+  <h4>为什么有效？</h4>
+  <ul>
+    <li><strong>注意力噪声消除：</strong>标准 Softmax 注意力会在不相关的 token 上分配非零权重
+    （因为 Softmax 输出全正且和为 1）。这些"背景噪声"在两组注意力中是相似的，
+    相减后被大幅抑制。</li>
+    <li><strong>增强信号聚焦：</strong>真正重要的注意力模式在两组中也是相似的，
+    但它们的<em>差异</em>包含了更精炼的信息——就像立体声中左右声道的差异包含空间信息。</li>
+    <li><strong>&lambda; 的自适应：</strong>每个注意力头学习不同的 &lambda;，
+    控制"差分程度"。&lambda; 大表示强力降噪，&lambda; 小表示保留更多原始注意力。</li>
+  </ul>
+
+  <div class="warning">
+    <strong>代价：</strong>差分注意力需要<strong>两倍的 Q/K 投影参数</strong>
+    （两组 Q 和两组 K），但 V 仍只需一组。总参数增量约 15-20%。
+    论文报告在同等参数预算下，DIFF Transformer 在语言建模、长上下文检索、幻觉抑制等任务上
+    均优于标准 Transformer。
+  </div>
+
+  <h3>8.4 跨层连接变体：Highway / DenseFormer / mHC</h3>
+  <p>
+    残差连接还有一类重要的演化方向：<strong>不再让每一层只看到前一层的输出 h<sub>l-1</sub>，
+    而是让每一层显式地访问更早的层</strong>。这些方法可以视为对"信息如何沿网络深度传播"
+    的不同回答。它们与 8.1-8.3 节的归一化/门控/差分注意力<strong>正交</strong>，
+    可以与之自由组合。
+  </p>
+
+  <div class="figure">
+    <img src="attention_figures/depth_variants.png" alt="Depth-wise variants architectures">
+    <div class="caption">图 13：三种跨层连接变体的结构对比。<br>
+    <strong>Highway</strong>（左）：每层动态门控混合 h<sub>l-1</sub> 与 f(h<sub>l-1</sub>)；
+    <strong>DenseFormer</strong>（中）：每层用静态学习的标量加权聚合所有前驱层输出；
+    <strong>mHC</strong>（右）：维护 m 条并行流，通过学习的混合矩阵在层间动态重组。</div>
+  </div>
+
+  <h4>(a) Highway Networks（高速公路网络）</h4>
+  <p>
+    <strong>Highway Networks</strong>（Srivastava, Greff &amp; Schmidhuber, 2015）是
+    深层网络中残差思想的早期探索之一，<strong>比 ResNet 早几个月</strong>提出。
+    它的核心是用<strong>逐元素的可学习门控</strong>来控制信息通过：
+  </p>
+  <div class="formula">
+    h<sub>l</sub> = (1 − g<sub>l</sub>) ⊙ h<sub>l-1</sub> + g<sub>l</sub> ⊙ f<sub>l-1</sub>(h<sub>l-1</sub>)
+    <br><br>
+    其中 g<sub>l</sub> = σ(h<sub>l-1</sub> · W<sub>g</sub>) ∈ (0, 1)<sup>d</sup>
+  </div>
+  <ul>
+    <li><strong>g<sub>l</sub> ≈ 0：</strong>该层近似恒等映射，让信号原样通过 → 适合训练初期</li>
+    <li><strong>g<sub>l</sub> ≈ 1：</strong>完全使用变换后的结果 → 标准前馈层</li>
+    <li><strong>g<sub>l</sub> 逐维独立：</strong>不同特征维度可以选择不同的"通过率"</li>
+  </ul>
+  <div class="highlight">
+    <strong>历史地位：</strong>Highway 首次证明了"可学习的恒等通路"对训练超深网络至关重要。
+    ResNet 后来发现把门固定为 1（始终累加）反而效果更好，因为这给梯度提供了无衰减的反向路径。
+    但门控思想被后续的 LSTM、GRU、Gated Attention（8.2 节）、AttnRes 等持续继承。
+  </div>
+
+  <h4>(b) DenseFormer</h4>
+  <p>
+    <strong>DenseFormer</strong>（Pagliardini et al., 2024）是 DenseNet 思想在 Transformer 上的直接应用。
+    它打破了"每层只看 h<sub>l-1</sub>"的限制——<strong>每一层的输入都是所有前驱层输出的加权和</strong>：
+  </p>
+  <div class="formula">
+    h<sub>l</sub> = α<sub>0,l</sub> · h<sub>1</sub> + Σ<sub>i=1</sub><sup>l-1</sup> α<sub>i,l</sub> · f<sub>i</sub>(h<sub>i</sub>)
+  </div>
+  <p>关键设计：</p>
+  <ul>
+    <li><strong>α<sub>i,l</sub> 是标量权重</strong>：每个 (i, l) 对一个学习参数，<strong>训练后固定</strong>，
+    <strong>不依赖输入</strong>（input-independent）</li>
+    <li><strong>每层 l 持有一个 [l] 维权重向量</strong>：总共 O(L<sup>2</sup>) 个标量参数，相对于模型主体可忽略</li>
+    <li><strong>每层都能直接"看见"早期 token embedding</strong>，缓解 PreNorm 稀释问题</li>
+  </ul>
+  <p>
+    DenseFormer 的优点是<strong>简单且无破坏性</strong>——只增加 O(L<sup>2</sup>) 参数，
+    主干结构不变。但它的核心局限是：<strong>权重是静态的</strong>，
+    一旦训练完成，所有 token 都使用相同的层间混合权重，无法根据上下文选择性地访问历史层。
+    这是后续 mHC 和 AttnRes 想要突破的瓶颈。
+  </p>
+
+  <h4>(c) mHC（multi-Hyper-Connections）</h4>
+  <p>
+    <strong>Hyper-Connections / mHC</strong>（Zhu et al., 2024; Xie et al., 2025）引入了一种全新的"多流"思路：
+    <strong>不再维护单一的隐藏状态序列，而是维护 m 条并行的隐藏状态流</strong>。
+  </p>
+  <div class="formula">
+    H<sub>l</sub> = H<sub>l-1</sub> · A<sub>l</sub> &nbsp; + &nbsp; f<sub>l-1</sub>(H<sub>l-1</sub> · α<sub>l-1</sub>) · β<sub>l-1</sub><sup>T</sup>
+    <br><br>
+    其中：H<sub>l</sub> ∈ R<sup>d×m</sup>（m 条流），A<sub>l</sub> ∈ R<sup>m×m</sup>（学习的混合矩阵），
+    α<sub>l-1</sub> ∈ R<sup>m</sup>（输入聚合权重），β<sub>l-1</sub> ∈ R<sup>m</sup>（输出分发权重）
+  </div>
+  <p>计算过程：</p>
+  <ol>
+    <li><strong>聚合输入</strong>：用 α 把 m 条流压缩为单一向量，作为 f 的输入</li>
+    <li><strong>计算变换</strong>：执行一层 Attention 或 FFN</li>
+    <li><strong>分发输出</strong>：用 β 把变换结果分散到 m 条流</li>
+    <li><strong>跨流混合</strong>：通过 A 矩阵让 m 条流互相交换信息</li>
+  </ol>
+  <p>
+    这种"多流 + 跨流混合"的结构可以看作是<strong>标准残差的状态扩张</strong>——
+    把单条状态 d 维扩张为 d×m 维，使早期信息可以在某条流中"被保留"而不被覆盖。
+    研究表明 m≈4 已经能带来显著的性能提升，且通信开销可控。
+  </p>
+  <div class="success">
+    <strong>结构关系：</strong>从形式上看，mHC 是<strong>在深度维度上的"线性注意力"</strong>——
+    A<sub>l</sub> 矩阵起到"门控"作用，但它的权重是<strong>动态的</strong>（依赖输入），
+    比 DenseFormer 的静态标量更灵活，但比 AttnRes 的 softmax 注意力简单。
+  </p>
+
+  <h4>统一视角：深度混合矩阵 M</h4>
+  <p>
+    所有这些方法都可以用一个统一的<strong>深度混合矩阵</strong> M ∈ R<sup>L×L</sup> 描述，
+    其中 M[l, i] 表示第 l 层赋予第 i 层输出的权重：
+  </p>
+  <div class="formula">
+    h<sub>l</sub> = Σ<sub>i=0</sub><sup>l-1</sup> M[l, i] · v<sub>i</sub>
+    <br><br>
+    其中 v<sub>0</sub> = embedding, v<sub>i</sub> = f<sub>i</sub>(h<sub>i</sub>)
+  </div>
+
+  <div class="figure">
+    <img src="attention_figures/depth_mixing_matrices.png" alt="Depth mixing matrices">
+    <div class="caption">图 14：四种方案的深度混合矩阵 M 可视化（L=8）。<br>
+    <strong>Standard Residual</strong>：所有元素 = 1 的下三角，等权累加；
+    <strong>Highway</strong>：通过 carry-products 形成的衰减下三角；
+    <strong>DenseFormer</strong>：稠密下三角，权重静态；
+    <strong>AttnRes</strong>：稠密下三角，权重动态（softmax），呈现明显的对角线主导（局部性）和首列亮度（embedding sink）。</div>
+  </div>
+
+  <h4>对比表</h4>
+  <table>
+    <tr><th>方法</th><th>访问的层</th><th>权重类型</th><th>额外参数</th><th>训练稳定性</th><th>代表论文</th></tr>
+    <tr><td><strong>Standard Residual</strong></td><td>仅 h<sub>l-1</sub></td><td>固定 = 1</td><td>0</td><td>需要 PreNorm</td><td>He et al. 2016</td></tr>
+    <tr><td><strong>Highway</strong></td><td>仅 h<sub>l-1</sub></td><td>动态向量门控</td><td>O(L·d²)</td><td>优秀</td><td>Srivastava et al. 2015</td></tr>
+    <tr><td><strong>ReZero</strong></td><td>仅 h<sub>l-1</sub></td><td>动态标量 α</td><td>O(L)</td><td>优秀</td><td>Bachlechner et al. 2020</td></tr>
+    <tr><td><strong>LayerScale</strong></td><td>仅 h<sub>l-1</sub></td><td>静态对角矩阵</td><td>O(L·d)</td><td>优秀</td><td>Touvron et al. 2021</td></tr>
+    <tr><td><strong>DenseFormer</strong></td><td>所有前驱层</td><td>静态标量</td><td>O(L²)</td><td>良好</td><td>Pagliardini et al. 2024</td></tr>
+    <tr><td><strong>mHC</strong></td><td>m 条并行流</td><td>动态矩阵</td><td>O(L·m²·d)</td><td>良好</td><td>Zhu et al. 2024</td></tr>
+    <tr><td><strong>AttnRes</strong> (8.1)</td><td>所有前驱层</td><td>动态 softmax</td><td>O(L·d)</td><td>优秀</td><td>Kimi Team 2026</td></tr>
+  </table>
+
+  <div class="warning">
+    <strong>选型直觉：</strong>
+    (1) <strong>训练超深网络</strong>但无特殊需求：用<strong>标准残差 + Pre-Norm</strong>（最简单、最稳定）；
+    (2) <strong>需要训练初期稳定</strong>（大模型冷启动）：用 <strong>Highway / ReZero</strong>（初始化为恒等）；
+    (3) <strong>想缓解 PreNorm 稀释</strong>但不想动注意力机制：用 <strong>DenseFormer</strong>（最便宜的全层访问）；
+    (4) <strong>追求最佳跨层信息流</strong>且能承受复杂度：用 <strong>AttnRes / mHC</strong>。
+  </div>
+
+  <h3>8.5 其他注意力架构变体</h3>
+  <table>
+    <tr><th>变体</th><th>核心思想</th><th>关键公式</th><th>代表模型/论文</th></tr>
+    <tr>
+      <td><strong>Cross-Attention</strong></td>
+      <td>Q 来自一个序列，K/V 来自另一个序列</td>
+      <td>Attn(Q<sub>dec</sub>, K<sub>enc</sub>, V<sub>enc</sub>)</td>
+      <td>原始 Transformer Decoder, 多模态模型</td>
+    </tr>
+    <tr>
+      <td><strong>Prefix Attention</strong></td>
+      <td>序列前缀使用双向注意力，后续使用因果注意力</td>
+      <td>前缀 token 可互相看到</td>
+      <td>PrefixLM, U-PaLM</td>
+    </tr>
+    <tr>
+      <td><strong>Mixture-of-Attention</strong></td>
+      <td>不同头使用不同的注意力模式（全局/局部/滑动）</td>
+      <td>head<sub>i</sub> 使用 pattern<sub>i</sub></td>
+      <td>Mixtral SWA 与 Full 交替层</td>
+    </tr>
+    <tr>
+      <td><strong>Attention Sink</strong></td>
+      <td>保留初始 token 的 KV Cache 以稳定注意力</td>
+      <td>Cache = first_k + sliding_window</td>
+      <td>StreamingLLM (2023)</td>
+    </tr>
+    <tr>
+      <td><strong>Infini-Attention</strong></td>
+      <td>压缩旧的 KV 到固定大小的"压缩记忆"</td>
+      <td>Attn + Memory retrieval</td>
+      <td>Google (2024)</td>
+    </tr>
+  </table>
+
+  <h3>8.6 变体效果对比</h3>
+  <div class="figure">
+    <img src="attention_figures/variants_comparison.png" alt="Attention variants comparison">
+    <div class="caption">图 15：注意力架构变体在训练稳定性、噪声抑制和深度可扩展性三个维度上的定性对比。
+    差分注意力在噪声抑制上显著领先，门控和 &alpha;-残差在深度扩展上表现最佳。</div>
+  </div>
+</div>
+
+<!-- ===== 9. 综合对比 ===== -->
+<div class="section">
+  <h2>九、综合对比与选型指南</h2>
+
+  <div class="figure">
+    <img src="attention_figures/memory_compute.png" alt="Memory and compute comparison">
+    <div class="caption">图 16：不同注意力方案的内存扩展性（左）和相对吞吐量（右）对比。
+    FlashAttention + GQA 在效率和质量之间取得最佳平衡。</div>
+  </div>
+
+  <table>
+    <tr><th>方案</th><th>计算复杂度</th><th>内存复杂度</th><th>质量</th><th>KV Cache</th><th>适用场景</th></tr>
+    <tr><td><strong>MHA</strong></td><td>O(N<sup>2</sup>d)</td><td>O(N<sup>2</sup>)</td><td>最优</td><td>100%</td><td>短序列、基线</td></tr>
+    <tr><td><strong>FlashAttention</strong></td><td>O(N<sup>2</sup>d)</td><td><strong>O(N)</strong></td><td>最优（精确）</td><td>100%</td><td>所有场景（事实标准）</td></tr>
+    <tr><td><strong>GQA</strong></td><td>O(N<sup>2</sup>d)</td><td>O(N)</td><td>接近最优</td><td><strong>12-25%</strong></td><td>大模型推理</td></tr>
+    <tr><td><strong>MQA</strong></td><td>O(N<sup>2</sup>d)</td><td>O(N)</td><td>良好</td><td><strong>~3%</strong></td><td>极端吞吐需求</td></tr>
+    <tr><td><strong>MLA</strong></td><td>O(N<sup>2</sup>d)</td><td>O(N)</td><td>接近最优</td><td><strong>5-13%</strong></td><td>超大模型推理</td></tr>
+    <tr><td><strong>Sliding Window</strong></td><td><strong>O(Nw)</strong></td><td>O(w)</td><td>良好</td><td><strong>固定 w</strong></td><td>超长序列</td></tr>
+    <tr><td><strong>稀疏注意力</strong></td><td>O(N&radic;N)</td><td>O(N&radic;N)</td><td>良好</td><td>取决于模式</td><td>长文档理解</td></tr>
+    <tr><td><strong>线性注意力</strong></td><td><strong>O(Nd<sup>2</sup>)</strong></td><td><strong>O(d<sup>2</sup>)</strong></td><td>中等</td><td><strong>固定 d<sup>2</sup></strong></td><td>超长序列/流式</td></tr>
+    <tr><td><strong>Gated Attention</strong></td><td>O(N<sup>2</sup>d)</td><td>O(N)</td><td>优秀</td><td>同基线</td><td>深层模型训练稳定</td></tr>
+    <tr><td><strong>Diff Attention</strong></td><td>O(N<sup>2</sup>d)</td><td>O(N)</td><td><strong>优秀+</strong></td><td>同基线</td><td>高质量/抗幻觉</td></tr>
+  </table>
+
+  <h3>选型建议</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>通用 LLM 训练</h4>
+      <p>FlashAttention-2/3 + GQA。这是 LLaMA-3、Mistral、Qwen-2 等几乎所有主流模型的标配。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>超长上下文（128K+）</h4>
+      <p>FlashAttention + 滑动窗口 + 全局注意力混合层。Mistral 和 Gemini 的策略。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>极限推理效率</h4>
+      <p>MLA（DeepSeek 路线）或 MQA + FlashAttention。最大化推理吞吐量。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>端侧/实时场景</h4>
+      <p>线性注意力或 SSM（Mamba）。固定内存、O(1) 推理步，适合资源受限环境。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 9. 总结 ===== -->
+<div class="section">
+  <h2>十、总结</h2>
+  <p>注意力机制的优化围绕三条主线展开：</p>
+  <ol>
+    <li><strong>计算效率：</strong>从暴力计算所有 N&times;N 对（标准），
+    到 IO 感知的分块计算（FlashAttention），到只计算局部（滑动窗口），
+    到完全避免 N&times;N（线性注意力/SSM）。复杂度从 O(N<sup>2</sup>) 向 O(N) 逐步逼近。</li>
+    <li><strong>内存效率：</strong>从每个头独立存储 KV（MHA），到组间共享（GQA），
+    到全局共享（MQA），到低秩压缩（MLA）。KV Cache 从 100% 压缩到 5%。</li>
+    <li><strong>质量与稳定性：</strong>Pre-Norm 残差保证训练稳定，门控注意力实现自适应深度，
+    差分注意力消除注意力噪声——这些架构改进使模型在同等参数下获得更高的输出质量。</li>
+  </ol>
+  <div class="highlight">
+    <strong>当前最佳实践：</strong>
+    <strong>FlashAttention</strong> 是计算层面的事实标准（精确且高效），
+    <strong>GQA</strong> 是内存层面的主流方案（平衡质量与效率），
+    <strong>滑动窗口</strong>是长序列的实用选择，
+    <strong>门控残差</strong>和<strong>差分注意力</strong>提升训练稳定性和输出质量，
+    而 <strong>MLA</strong> 和<strong>混合架构（Transformer + SSM）</strong>代表着下一代的发展方向。
+  </div>
+</div>
+
+<div class="footer">
+  深度学习基础系列 &middot; 大模型常用注意力机制详解
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepSeek-R1：通过强化学习激励LLM的推理能力（中文翻译）</title>
+<style>
+  :root { --primary:#1a1a2e; --accent:#0f3460; --highlight-bg:#f0f4ff; --highlight-border:#4a7dff; --text:#222; --border:#e0e0e0; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif; color:var(--text); line-height:1.8; background:#fafafa; }
+  .container { max-width:920px; margin:0 auto; padding:20px; }
+  .cover { text-align:center; padding:70px 20px 50px; background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%); color:white; border-radius:12px; margin-bottom:40px; }
+  .cover h1 { font-size:2.1em; margin-bottom:12px; font-weight:700; }
+  .cover .subtitle { font-size:1.05em; color:#aab; margin-bottom:24px; }
+  .cover .meta { font-size:0.95em; color:#99a; }
+  .section { background:white; border-radius:10px; padding:36px 40px; margin-bottom:24px; box-shadow:0 1px 4px rgba(0,0,0,0.06); border:1px solid var(--border); }
+  h2 { font-size:1.5em; color:var(--primary); margin-bottom:6px; padding-bottom:10px; border-bottom:2px solid var(--highlight-border); }
+  h3 { font-size:1.15em; color:var(--accent); margin:22px 0 10px; }
+  h4 { font-size:1.05em; color:#333; margin:16px 0 8px; }
+  p { margin:12px 0; text-align:justify; }
+  .highlight { background:var(--highlight-bg); border-left:4px solid var(--highlight-border); padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .highlight strong { color:var(--accent); }
+  .warning { background:#fff8f0; border-left:4px solid #f0a500; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  table { width:100%; border-collapse:collapse; margin:16px 0; font-size:0.92em; }
+  th,td { padding:10px 14px; text-align:left; border-bottom:1px solid #eee; }
+  th { background:var(--primary); color:white; font-weight:600; }
+  tr:hover { background:#f8f9ff; }
+  .formula { text-align:center; padding:18px 20px; margin:18px 0; background:#f8f9ff; border-radius:8px; border:1px solid #e8eaf0; font-size:1.05em; font-family:"Times New Roman","STIX",serif; overflow-x:auto; }
+  .figure { text-align:center; margin:24px 0; padding:16px; background:#fafafa; border-radius:8px; border:1px solid #eee; }
+  .figure .caption { font-size:0.88em; color:#666; margin-top:10px; font-style:italic; }
+  ul,ol { padding-left:24px; margin:10px 0; }
+  li { margin:6px 0; }
+  .toc { background:#f8f9ff; border:1px solid #e0e4f0; border-radius:8px; padding:20px 28px; margin:16px 0; }
+  .toc h3 { margin-top:0; }
+  .toc ul { list-style:none; padding-left:0; }
+  .toc li { margin:4px 0; }
+  .toc a { color:var(--accent); text-decoration:none; }
+  .toc a:hover { text-decoration:underline; }
+  .toc .indent1 { padding-left:20px; }
+  .toc .indent2 { padding-left:40px; }
+  .footer { text-align:center; color:#999; font-size:0.85em; padding:30px 0; border-top:1px solid #eee; margin-top:20px; }
+  .template-box { background:#f5f5f5; border:1px solid #ddd; padding:16px 20px; border-radius:8px; margin:16px 0; font-family:monospace; font-size:0.92em; line-height:1.6; white-space:pre-wrap; }
+  .aha { background:#fff0f0; border-left:4px solid #e74c3c; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .aha strong { color:#e74c3c; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="cover">
+  <h1>DeepSeek-R1：通过强化学习激励LLM的推理能力</h1>
+  <div class="subtitle">DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning</div>
+  <div class="meta">DeepSeek-AI &nbsp;|&nbsp; research@deepseek.com</div>
+</div>
+
+<div class="section">
+  <h2>摘要</h2>
+  <p>我们介绍第一代推理模型：DeepSeek-R1-Zero 和 DeepSeek-R1。DeepSeek-R1-Zero 通过大规模强化学习（RL）训练，无需监督微调（SFT）作为前置步骤，即展示出卓越的推理能力。通过 RL，DeepSeek-R1-Zero 自然涌现出许多强大且引人入胜的推理行为。然而，它遇到了可读性差和语言混杂等挑战。为解决这些问题并进一步提升推理性能，我们引入了 DeepSeek-R1，它在 RL 之前融入了多阶段训练和冷启动数据。DeepSeek-R1 在推理任务上达到了与 OpenAI-o1-1217 相当的性能。为支持研究社区，我们开源了 DeepSeek-R1-Zero、DeepSeek-R1，以及基于 Qwen 和 Llama 从 DeepSeek-R1 蒸馏而来的六个稠密模型（1.5B、7B、8B、14B、32B、70B）。</p>
+  <div class="figure">
+    <div class="caption">图 1 | DeepSeek-R1 的基准性能。在 AIME 2024（79.8%）、GPQA Diamond（71.5%）、MATH-500（97.3%）等推理任务上达到或超越 OpenAI-o1-1217；MMLU 90.8%；SWE-bench Verified 49.2%。</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="toc">
+    <h3>目录</h3>
+    <ul>
+      <li><a href="#s1">1 引言</a></li>
+      <li class="indent1"><a href="#s1.1">1.1 贡献</a></li>
+      <li class="indent1"><a href="#s1.2">1.2 评估结果总结</a></li>
+      <li><a href="#s2">2 方法</a></li>
+      <li class="indent1"><a href="#s2.1">2.1 概述</a></li>
+      <li class="indent1"><a href="#s2.2">2.2 DeepSeek-R1-Zero：在基座模型上的强化学习</a></li>
+      <li class="indent2">2.2.1 强化学习算法 &nbsp;|&nbsp; 2.2.2 奖励建模 &nbsp;|&nbsp; 2.2.3 训练模板 &nbsp;|&nbsp; 2.2.4 性能与"顿悟时刻"</li>
+      <li class="indent1"><a href="#s2.3">2.3 DeepSeek-R1：带冷启动的强化学习</a></li>
+      <li class="indent2">2.3.1 冷启动 &nbsp;|&nbsp; 2.3.2 面向推理的 RL &nbsp;|&nbsp; 2.3.3 拒绝采样与 SFT &nbsp;|&nbsp; 2.3.4 面向所有场景的 RL</li>
+      <li class="indent1"><a href="#s2.4">2.4 蒸馏：赋予小模型推理能力</a></li>
+      <li><a href="#s3">3 实验</a></li>
+      <li class="indent1"><a href="#s3.1">3.1 DeepSeek-R1 评估</a> &nbsp;|&nbsp; <a href="#s3.2">3.2 蒸馏模型评估</a></li>
+      <li><a href="#s4">4 讨论</a></li>
+      <li class="indent1"><a href="#s4.1">4.1 蒸馏 vs. 强化学习</a> &nbsp;|&nbsp; <a href="#s4.2">4.2 不成功的尝试</a></li>
+      <li><a href="#s5">5 结论、局限性与未来工作</a></li>
+      <li><a href="#sA">附录 A 贡献者与致谢</a></li>
+    </ul>
+  </div>
+</div>
+
+<!-- 1. 引言 -->
+<div class="section" id="s1">
+  <h2>1. 引言</h2>
+  <p>近年来，大语言模型（LLMs）经历了快速的迭代与演进（Anthropic, 2024; Google, 2024; OpenAI, 2024a），逐步缩小与通用人工智能（AGI）之间的差距。</p>
+  <p>最近，后训练已成为完整训练流程中的重要组成部分。它已被证明能够提高推理任务的准确性、与用户偏好对齐、适应社会价值观，同时相比预训练仅需相对较少的计算资源。在推理能力方面，OpenAI 的 o1 系列模型（OpenAI, 2024b）率先通过延长思维链长度引入了推理时间扩展。这种方法在数学、编程和科学推理等各种推理任务上取得了显著进步。然而，有效的测试时间扩展仍是研究社区的一个开放问题。此前的工作探索了多种方法，包括基于过程的奖励模型（Lightman et al., 2023; Uesato et al., 2022; Wang et al., 2023）、强化学习（Kumar et al., 2024），以及蒙特卡洛树搜索和束搜索等搜索算法（Feng et al., 2024; Trinh et al., 2024; Xin et al., 2024）。然而，这些方法都未能达到与 OpenAI o1 系列模型相当的通用推理性能。</p>
+  <p>在本文中，我们迈出了利用纯强化学习提升语言模型推理能力的第一步。我们的目标是探索 LLMs 在不依赖任何监督数据的情况下，通过纯 RL 过程专注于自我进化来发展推理能力的潜力。具体而言，我们使用 DeepSeek-V3-Base 作为基座模型，采用 GRPO（Shao et al., 2024）作为 RL 框架来提升推理性能。在训练过程中，DeepSeek-R1-Zero 自然涌现出许多强大且有趣的推理行为。经过数千步 RL 训练后，DeepSeek-R1-Zero 在推理基准上展现出超强性能。例如，AIME 2024 上的 pass@1 分数从 15.6% 提升至 71.0%，配合多数投票进一步提升至 86.7%，达到了 OpenAI-o1-0912 的水平。</p>
+  <p>然而，DeepSeek-R1-Zero 面临可读性差和语言混杂等挑战。为解决这些问题，我们引入了 DeepSeek-R1，它融入了少量冷启动数据和多阶段训练管线。具体而言，我们首先收集数千条冷启动数据来微调 DeepSeek-V3-Base。随后执行面向推理的 RL。在 RL 接近收敛时，通过拒绝采样从 RL 检查点生成新 SFT 数据，结合 DeepSeek-V3 在写作、事实问答、自我认知等领域的监督数据，重新训练 DeepSeek-V3-Base。微调后，该检查点经历额外的 RL 过程。经过这些步骤，我们获得了 DeepSeek-R1，其性能达到了与 OpenAI-o1-1217 不相上下的水平。</p>
+  <p>我们进一步探索了从 DeepSeek-R1 向更小稠密模型的蒸馏。使用 Qwen2.5-32B 作为基座模型，直接从 DeepSeek-R1 蒸馏并在其上应用 RL，效果优于单纯 RL。这表明大型基座模型发现的推理模式对于提升小模型推理能力至关重要。我们开源了蒸馏后的 Qwen 和 Llama 系列。蒸馏的 14B 模型大幅超越 QwQ-32B-Preview，蒸馏的 32B 和 70B 模型创下了稠密模型推理基准的新纪录。</p>
+
+  <h3 id="s1.1">1.1 贡献</h3>
+  <h4>后训练：在基座模型上进行大规模强化学习</h4>
+  <ul>
+    <li>我们直接在基座模型上应用 RL，无需 SFT 作为前置步骤，让模型探索思维链以解决复杂问题，产生 DeepSeek-R1-Zero。它展示了自我验证、反思和生成长思维链等能力。这是首次公开验证 LLMs 的推理能力可以纯粹通过 RL 激励。</li>
+    <li>我们介绍了开发 DeepSeek-R1 的管线：两个 RL 阶段（发现推理模式 + 人类偏好对齐）和两个 SFT 阶段（作为推理与非推理能力的种子）。</li>
+  </ul>
+  <h4>蒸馏：小模型也可以很强大</h4>
+  <ul>
+    <li>大模型的推理模式可以蒸馏到小模型中，产生比直接在小模型上 RL 更好的性能。</li>
+    <li>DeepSeek-R1-Distill-Qwen-7B 在 AIME 2024 上达到 55.5%，超越 QwQ-32B-Preview。DeepSeek-R1-Distill-Qwen-32B 在 AIME 2024 上 72.6%，MATH-500 上 94.3%，LiveCodeBench 上 57.2%，可与 o1-mini 媲美。</li>
+  </ul>
+
+  <h3 id="s1.2">1.2 评估结果总结</h3>
+  <ul>
+    <li><strong>推理任务</strong>：DeepSeek-R1 在 AIME 2024 上 79.8% Pass@1，略超 OpenAI-o1-1217。MATH-500 上 97.3%。Codeforces 上 2,029 Elo，超越 96.3% 人类参赛者。</li>
+    <li><strong>知识</strong>：MMLU 90.8%、MMLU-Pro 84.0%、GPQA Diamond 71.5%，显著超越 DeepSeek-V3。在 FRAMES 长上下文任务上表现出色。</li>
+    <li><strong>其他</strong>：AlpacaEval 2.0 胜率 87.6%，ArenaHard 胜率 92.3%，在长上下文基准上大幅超越 DeepSeek-V3。</li>
+  </ul>
+</div>
+
+<!-- 2. 方法 -->
+<div class="section" id="s2">
+  <h2>2. 方法</h2>
+
+  <h3 id="s2.1">2.1 概述</h3>
+  <p>此前的工作大量依赖监督数据来提升性能。我们证明通过大规模 RL，即使不使用 SFT 冷启动，推理能力也能显著提升；加入少量冷启动数据后可进一步提高。我们将介绍：(1) DeepSeek-R1-Zero——直接在基座模型上应用 RL；(2) DeepSeek-R1——从微调后的检查点出发应用 RL；(3) 将推理能力蒸馏到小型稠密模型。</p>
+
+  <h3 id="s2.2">2.2 DeepSeek-R1-Zero：在基座模型上的强化学习</h3>
+  <p>RL 在推理任务上已展示显著效果（Shao et al., 2024; Wang et al., 2023），但这些工作严重依赖监督数据。在本节中，我们探索 LLMs <strong>在不依赖任何监督数据</strong>的情况下，通过纯 RL 实现自我进化来发展推理能力。</p>
+
+  <h4>2.2.1 强化学习算法</h4>
+  <p><strong>Group Relative Policy Optimization（GRPO）</strong>&nbsp;&nbsp;为降低 RL 训练成本，我们采用 GRPO（Shao et al., 2024），它放弃了与策略模型同等大小的 critic 模型，转而从组内分数估计基线。对于每个问题 <em>q</em>，GRPO 从旧策略中采样一组输出 {o<sub>1</sub>, o<sub>2</sub>, ⋯, o<sub>G</sub>}，然后通过最大化以下目标优化策略模型：</p>
+  <div class="formula">
+    J<sub>GRPO</sub>(θ) = E[q ~ P(Q), {o<sub>i</sub>}<sup>G</sup><sub>i=1</sub> ~ π<sub>θ_old</sub>(O|q)]<br>
+    (1/G) Σ<sup>G</sup><sub>i=1</sub> [ min( (π<sub>θ</sub>(o<sub>i</sub>|q) / π<sub>θ_old</sub>(o<sub>i</sub>|q)) · A<sub>i</sub>, clip(..., 1-ε, 1+ε) · A<sub>i</sub> ) − β · D<sub>KL</sub>(π<sub>θ</sub> ∥ π<sub>ref</sub>) ] &nbsp;&nbsp;(1)
+  </div>
+  <div class="formula">
+    D<sub>KL</sub>(π<sub>θ</sub> ∥ π<sub>ref</sub>) = π<sub>ref</sub>(o<sub>i</sub>|q) / π<sub>θ</sub>(o<sub>i</sub>|q) − log(π<sub>ref</sub>(o<sub>i</sub>|q) / π<sub>θ</sub>(o<sub>i</sub>|q)) − 1 &nbsp;&nbsp;(2)
+  </div>
+  <p>其中 ε 和 β 为超参数，A<sub>i</sub> 为优势值，使用组内奖励计算：</p>
+  <div class="formula">
+    A<sub>i</sub> = (r<sub>i</sub> − mean({r<sub>1</sub>, r<sub>2</sub>, ⋯, r<sub>G</sub>})) / std({r<sub>1</sub>, r<sub>2</sub>, ⋯, r<sub>G</sub>}) &nbsp;&nbsp;(3)
+  </div>
+
+  <h4>2.2.2 奖励建模</h4>
+  <p>奖励是训练信号的来源，决定 RL 的优化方向。我们采用基于规则的奖励系统，包含两类：</p>
+  <ul>
+    <li><strong>准确性奖励</strong>：评估回复是否正确。对于有确定性结果的数学问题，要求模型以指定格式给出最终答案，实现可靠的规则验证。对于 LeetCode 问题，使用编译器基于预定义测试用例生成反馈。</li>
+    <li><strong>格式奖励</strong>：强制模型将思考过程放在 &lt;think&gt; 和 &lt;/think&gt; 标签之间。</li>
+  </ul>
+  <p>我们没有使用神经奖励模型，因为在大规模 RL 中可能遭受奖励黑客问题，且重新训练奖励模型会增加复杂性。</p>
+
+  <h4>2.2.3 训练模板</h4>
+  <div class="template-box">一段用户与助手之间的对话。用户提出问题，助手解决它。
+助手首先在心中思考推理过程，然后向用户提供答案。
+推理过程和答案分别包含在 &lt;think&gt; &lt;/think&gt; 和
+&lt;answer&gt; &lt;/answer&gt; 标签中。用户: {prompt}。助手:</div>
+  <div class="figure"><div class="caption">表 1 | DeepSeek-R1-Zero 的训练模板。{prompt} 将在训练时替换为具体的推理问题。</div></div>
+
+  <h4>2.2.4 性能、自我进化过程与"顿悟时刻"</h4>
+
+  <p><strong>性能</strong>&nbsp;&nbsp;AIME 2024 上的 pass@1 从 15.6% 提升至 71.0%，达到 OpenAI-o1-0912 水平。配合多数投票进一步提升至 86.7%，超越 o1-0912。</p>
+
+  <table>
+    <tr><th>模型</th><th>AIME 2024 pass@1</th><th>cons@64</th><th>MATH-500</th><th>GPQA Diamond</th><th>LiveCodeBench</th><th>CodeForces</th></tr>
+    <tr><td>OpenAI-o1-mini</td><td>63.6</td><td>80.0</td><td>90.0</td><td>60.0</td><td>53.8</td><td>1820</td></tr>
+    <tr><td>OpenAI-o1-0912</td><td>74.4</td><td>83.3</td><td>94.8</td><td>77.3</td><td>63.4</td><td>1843</td></tr>
+    <tr><td><strong>DeepSeek-R1-Zero</strong></td><td><strong>71.0</strong></td><td><strong>86.7</strong></td><td><strong>95.9</strong></td><td><strong>73.3</strong></td><td>50.0</td><td>1444</td></tr>
+  </table>
+  <div class="figure"><div class="caption">表 2 | DeepSeek-R1-Zero 与 OpenAI o1 模型在推理基准上的比较。</div></div>
+
+  <p><strong>自我进化过程</strong>&nbsp;&nbsp;DeepSeek-R1-Zero 的思考时间在训练中持续增长，从生成数百到数千个推理 token。反思、重新评估、探索替代方法等复杂行为自发出现——这些并非显式编程，而是模型与 RL 环境交互的结果。</p>
+
+  <div class="aha">
+    <strong>"顿悟时刻"（Aha Moment）</strong>
+    <p>在训练的中间阶段，DeepSeek-R1-Zero 学会了通过重新评估初始方法来分配更多思考时间。在一个数学问题的求解中，模型突然输出："<em>Wait, wait. Wait. That's an aha moment I can flag here.</em>"（等等，这是一个我可以标记的顿悟时刻。）然后重新开始推导。</p>
+    <p>这不仅是模型的"顿悟时刻"，也是研究人员的。它凸显了 RL 的力量：我们只需提供正确的激励，模型就能自主发展出高级问题解决策略。</p>
+  </div>
+
+  <p><strong>缺陷</strong>&nbsp;&nbsp;DeepSeek-R1-Zero 存在可读性差和语言混杂的问题。为此我们探索了配合人类友好冷启动数据的 DeepSeek-R1。</p>
+
+  <h3 id="s2.3">2.3 DeepSeek-R1：带冷启动的强化学习</h3>
+  <p>受 R1-Zero 的启发，我们设计了四阶段管线：</p>
+
+  <h4>2.3.1 冷启动</h4>
+  <p>收集数千条长 CoT 数据微调 DeepSeek-V3-Base 作为 RL 的初始 actor。冷启动数据的优势：</p>
+  <ul>
+    <li><strong>可读性</strong>：设计可读模式，在每个回复末尾包含总结，过滤不友好的回复。输出格式为 |special_token|&lt;reasoning_process&gt;|special_token|&lt;summary&gt;。</li>
+    <li><strong>潜力</strong>：带人类先验知识的冷启动数据比 R1-Zero 获得更好性能。</li>
+  </ul>
+
+  <h4>2.3.2 面向推理的强化学习</h4>
+  <p>在冷启动数据上微调后，应用大规模 RL，聚焦编程、数学、科学和逻辑推理等任务。引入语言一致性奖励缓解语言混杂问题（计算为 CoT 中目标语言词的比例）。将准确性奖励与语言一致性奖励求和作为最终奖励。</p>
+
+  <h4>2.3.3 拒绝采样与监督微调</h4>
+  <p>RL 收敛后，通过拒绝采样收集约 60 万条推理数据和约 20 万条非推理数据（写作、事实问答等）。使用约 80 万样本对 DeepSeek-V3-Base 进行两个 epoch 微调。</p>
+
+  <h4>2.3.4 面向所有场景的强化学习</h4>
+  <p>第二阶段 RL 进一步对齐人类偏好，提升有用性和无害性。推理数据使用基于规则的奖励，通用数据使用奖励模型。对有用性仅评估最终总结，对无害性评估完整回复。</p>
+
+  <h3 id="s2.4">2.4 蒸馏：赋予小模型推理能力</h3>
+  <p>使用 DeepSeek-R1 策划的 80 万样本直接微调 Qwen 和 Llama 开源模型。基座模型包括 Qwen2.5-Math-1.5B/7B、Qwen2.5-14B/32B、Llama-3.1-8B、Llama-3.3-70B-Instruct。蒸馏模型仅应用 SFT 不含 RL。</p>
+</div>
+
+<!-- 3. 实验 -->
+<div class="section" id="s3">
+  <h2>3. 实验</h2>
+  <p><strong>基准</strong>：MMLU、MMLU-Redux、MMLU-Pro、C-Eval、CMMLU、IFEval、FRAMES、GPQA Diamond、SimpleQA、C-SimpleQA、SWE-Bench Verified、Aider、LiveCodeBench（2024-08~2025-01）、Codeforces、CNMO 2024、AIME 2024。开放式生成使用 AlpacaEval 2.0 和 Arena-Hard（GPT-4-Turbo-1106 评委）。</p>
+  <p><strong>评估设置</strong>：最大生成长度 32,768 token。使用采样温度 0.6、top-p 0.95 生成 k 个回复。pass@1 = (1/k) Σ p<sub>i</sub>。</p>
+
+  <h3 id="s3.1">3.1 DeepSeek-R1 评估</h3>
+  <table>
+    <tr><th>基准</th><th>Claude-3.5-Sonnet</th><th>GPT-4o</th><th>DeepSeek-V3</th><th>o1-mini</th><th>o1-1217</th><th><strong>R1</strong></th></tr>
+    <tr><td colspan="7" style="background:#f0f4ff;font-weight:600;">英文</td></tr>
+    <tr><td>MMLU</td><td>88.3</td><td>87.2</td><td>88.5</td><td>85.2</td><td><strong>91.8</strong></td><td>90.8</td></tr>
+    <tr><td>MMLU-Redux</td><td>88.9</td><td>88.0</td><td>89.1</td><td>86.7</td><td>-</td><td><strong>92.9</strong></td></tr>
+    <tr><td>MMLU-Pro</td><td>78.0</td><td>72.6</td><td>75.9</td><td>80.3</td><td>-</td><td><strong>84.0</strong></td></tr>
+    <tr><td>DROP (F1)</td><td>88.3</td><td>83.7</td><td>91.6</td><td>83.9</td><td>90.2</td><td><strong>92.2</strong></td></tr>
+    <tr><td>GPQA Diamond</td><td>65.0</td><td>49.9</td><td>59.1</td><td>60.0</td><td><strong>75.7</strong></td><td>71.5</td></tr>
+    <tr><td>SimpleQA</td><td>28.4</td><td>38.2</td><td>24.9</td><td>7.0</td><td><strong>47.0</strong></td><td>30.1</td></tr>
+    <tr><td>FRAMES</td><td>72.5</td><td>80.5</td><td>73.3</td><td>76.9</td><td>-</td><td><strong>82.5</strong></td></tr>
+    <tr><td>AlpacaEval2.0</td><td>52.0</td><td>51.1</td><td>70.0</td><td>57.8</td><td>-</td><td><strong>87.6</strong></td></tr>
+    <tr><td>ArenaHard</td><td>85.2</td><td>80.4</td><td>85.5</td><td>92.0</td><td>-</td><td><strong>92.3</strong></td></tr>
+    <tr><td colspan="7" style="background:#f0f4ff;font-weight:600;">代码</td></tr>
+    <tr><td>LiveCodeBench</td><td>38.9</td><td>32.9</td><td>36.2</td><td>53.8</td><td>63.4</td><td><strong>65.9</strong></td></tr>
+    <tr><td>Codeforces (Percentile)</td><td>20.3</td><td>23.6</td><td>58.7</td><td>93.4</td><td><strong>96.6</strong></td><td>96.3</td></tr>
+    <tr><td>Codeforces (Rating)</td><td>717</td><td>759</td><td>1134</td><td>1820</td><td><strong>2061</strong></td><td>2029</td></tr>
+    <tr><td>SWE Verified</td><td><strong>50.8</strong></td><td>38.8</td><td>42.0</td><td>41.6</td><td>48.9</td><td>49.2</td></tr>
+    <tr><td colspan="7" style="background:#f0f4ff;font-weight:600;">数学</td></tr>
+    <tr><td>AIME 2024</td><td>16.0</td><td>9.3</td><td>39.2</td><td>63.6</td><td>79.2</td><td><strong>79.8</strong></td></tr>
+    <tr><td>MATH-500</td><td>78.3</td><td>74.6</td><td>90.2</td><td>90.0</td><td>96.4</td><td><strong>97.3</strong></td></tr>
+    <tr><td>CNMO 2024</td><td>13.1</td><td>10.8</td><td>43.2</td><td>67.6</td><td>-</td><td><strong>78.8</strong></td></tr>
+    <tr><td colspan="7" style="background:#f0f4ff;font-weight:600;">中文</td></tr>
+    <tr><td>CLUEWSC</td><td>85.4</td><td>87.9</td><td>90.9</td><td>89.9</td><td>-</td><td><strong>92.8</strong></td></tr>
+    <tr><td>C-Eval</td><td>76.7</td><td>76.0</td><td>86.5</td><td>68.9</td><td>-</td><td><strong>91.8</strong></td></tr>
+    <tr><td>C-SimpleQA</td><td>55.4</td><td>58.7</td><td><strong>68.0</strong></td><td>40.3</td><td>-</td><td>63.7</td></tr>
+  </table>
+  <div class="figure"><div class="caption">表 4 | DeepSeek-R1 与其他代表性模型的比较。</div></div>
+
+  <p>在教育知识基准上（MMLU、MMLU-Pro、GPQA Diamond），DeepSeek-R1 显著超越 DeepSeek-V3，主要归因于 STEM 问题准确率提升。在数学任务上与 o1-1217 相当，在编程算法任务上与之竞争。在 AlpacaEval 2.0 和 ArenaHard 上的出色表现凸显了大规模 RL 的泛化效益。</p>
+
+  <h3 id="s3.2">3.2 蒸馏模型评估</h3>
+  <table>
+    <tr><th>模型</th><th>AIME pass@1</th><th>cons@64</th><th>MATH-500</th><th>GPQA Diamond</th><th>LiveCodeBench</th><th>CodeForces</th></tr>
+    <tr><td>GPT-4o-0513</td><td>9.3</td><td>13.4</td><td>74.6</td><td>49.9</td><td>32.9</td><td>759</td></tr>
+    <tr><td>OpenAI-o1-mini</td><td>63.6</td><td>80.0</td><td>90.0</td><td>60.0</td><td>53.8</td><td><strong>1820</strong></td></tr>
+    <tr><td>QwQ-32B-Preview</td><td>50.0</td><td>60.0</td><td>90.6</td><td>54.5</td><td>41.9</td><td>1316</td></tr>
+    <tr><td colspan="7" style="background:#f0f4ff;font-weight:600;">蒸馏模型</td></tr>
+    <tr><td>R1-Distill-Qwen-1.5B</td><td>28.9</td><td>52.7</td><td>83.9</td><td>33.8</td><td>16.9</td><td>954</td></tr>
+    <tr><td>R1-Distill-Qwen-7B</td><td>55.5</td><td>83.3</td><td>92.8</td><td>49.1</td><td>37.6</td><td>1189</td></tr>
+    <tr><td>R1-Distill-Qwen-14B</td><td>69.7</td><td>80.0</td><td>93.9</td><td>59.1</td><td>53.1</td><td>1481</td></tr>
+    <tr><td>R1-Distill-Qwen-32B</td><td><strong>72.6</strong></td><td>83.3</td><td>94.3</td><td>62.1</td><td>57.2</td><td>1691</td></tr>
+    <tr><td>R1-Distill-Llama-8B</td><td>50.4</td><td>80.0</td><td>89.1</td><td>49.0</td><td>39.6</td><td>1205</td></tr>
+    <tr><td>R1-Distill-Llama-70B</td><td>70.0</td><td><strong>86.7</strong></td><td><strong>94.5</strong></td><td><strong>65.2</strong></td><td><strong>57.5</strong></td><td>1633</td></tr>
+  </table>
+  <div class="figure"><div class="caption">表 5 | DeepSeek-R1 蒸馏模型与其他模型在推理基准上的比较。</div></div>
+  <p>R1-7B 在所有指标上超越 GPT-4o-0513。R1-14B 全面超越 QwQ-32B-Preview。R1-32B 和 R1-70B 在大多数基准上显著超越 o1-mini。</p>
+</div>
+
+<!-- 4. 讨论 -->
+<div class="section" id="s4">
+  <h2>4. 讨论</h2>
+
+  <h3 id="s4.1">4.1 蒸馏 vs. 强化学习</h3>
+  <p>在 Qwen-32B-Base 上进行超过 10K 步大规模 RL 训练，产生 DeepSeek-R1-Zero-Qwen-32B：</p>
+  <table>
+    <tr><th>模型</th><th>AIME pass@1</th><th>cons@64</th><th>MATH-500</th><th>GPQA Diamond</th><th>LiveCodeBench</th></tr>
+    <tr><td>QwQ-32B-Preview</td><td>50.0</td><td>60.0</td><td>90.6</td><td>54.5</td><td>41.9</td></tr>
+    <tr><td>R1-Zero-Qwen-32B</td><td>47.0</td><td>60.0</td><td>91.6</td><td>55.0</td><td>40.2</td></tr>
+    <tr><td><strong>R1-Distill-Qwen-32B</strong></td><td><strong>72.6</strong></td><td><strong>83.3</strong></td><td><strong>94.3</strong></td><td><strong>62.1</strong></td><td><strong>57.2</strong></td></tr>
+  </table>
+  <div class="figure"><div class="caption">表 6 | 蒸馏模型 vs. RL 模型。</div></div>
+  <p>结论：(1) 蒸馏更强大的模型到小模型能产生优异结果；(2) 突破智能边界仍需要更强大的基座模型和更大规模的 RL。</p>
+
+  <h3 id="s4.2">4.2 不成功的尝试</h3>
+  <h4>过程奖励模型（PRM）</h4>
+  <p>三个局限：(1) 难以在通用推理中定义细粒度步骤；(2) 判断中间步骤正确性困难；(3) 不可避免导致奖励黑客。在大规模 RL 中优势有限。</p>
+  <h4>蒙特卡洛树搜索（MCTS）</h4>
+  <p>挑战：(1) token 生成呈指数级搜索空间，设置最大扩展限制可能陷入局部最优；(2) 价值模型训练困难，难以迭代改进。通过自搜索迭代提升性能仍是重大挑战。</p>
+</div>
+
+<!-- 5. 结论 -->
+<div class="section" id="s5">
+  <h2>5. 结论、局限性与未来工作</h2>
+  <p>DeepSeek-R1-Zero 代表纯 RL 方法，不依赖冷启动数据。DeepSeek-R1 更强大，利用冷启动数据配合迭代 RL 微调，达到与 OpenAI-o1-1217 相当的性能。蒸馏结果令人鼓舞：R1-Distill-Qwen-1.5B 在数学基准上超越 GPT-4o 和 Claude-3.5-Sonnet。</p>
+  <p>未来方向：</p>
+  <ul>
+    <li><strong>通用能力</strong>：探索长 CoT 增强函数调用、多轮对话、角色扮演和 JSON 输出。</li>
+    <li><strong>语言混杂</strong>：解决非中英文查询时的语言混杂问题。</li>
+    <li><strong>提示工程</strong>：推荐 zero-shot 设置，避免 few-shot 降低性能。</li>
+    <li><strong>软件工程</strong>：通过拒绝采样和异步评估将大规模 RL 扩展到软件工程任务。</li>
+  </ul>
+</div>
+
+<!-- 参考文献 -->
+<div class="section">
+  <h2>参考文献</h2>
+  <p style="font-size:0.88em; color:#555; line-height:1.6;">
+    AI@Meta. Llama 3.1 model card, 2024. &bull;
+    Anthropic. Claude 3.5 sonnet, 2024. &bull;
+    M. Chen et al. Evaluating LLMs trained on code, 2021. &bull;
+    A. Dubey et al. The Llama 3 herd of models, 2024. &bull;
+    Y. Dubois et al. Length-controlled AlpacaEval, 2024. &bull;
+    X. Feng et al. AlphaZero-like tree-search, 2024. &bull;
+    L. Gao et al. Scaling laws for reward model overoptimization, 2022. &bull;
+    A. P. Gema et al. Are we done with MMLU? 2024. &bull;
+    Google. Gemini 1.5, 2024. &bull;
+    Y. He et al. Chinese SimpleQA, 2024. &bull;
+    D. Hendrycks et al. MMLU, 2020. &bull;
+    Y. Huang et al. C-Eval, 2023. &bull;
+    N. Jain et al. LiveCodeBench, 2024. &bull;
+    S. Krishna et al. FRAMES, 2024. &bull;
+    A. Kumar et al. Training LMs to self-correct via RL, 2024. &bull;
+    H. Li et al. CMMLU, 2023. &bull;
+    T. Li et al. Arena-Hard, 2024. &bull;
+    H. Lightman et al. Let's verify step by step, 2023. &bull;
+    B. Y. Lin. ZeroEval, 2024. &bull;
+    MAA. AIME 2024. &bull;
+    OpenAI. GPT-4o (2024a), o1 (2024b), SimpleQA (2024c), SWE-bench Verified (2024d). &bull;
+    Qwen. QwQ-32B-Preview (2024a), Qwen2.5 (2024b). &bull;
+    D. Rein et al. GPQA, 2023. &bull;
+    Z. Shao et al. DeepSeekMath, 2024. &bull;
+    D. Silver et al. AlphaZero (2017a), AlphaGo (2017b). &bull;
+    C. Snell et al. Scaling LLM test-time compute, 2024. &bull;
+    T. Trinh et al. Solving olympiad geometry, 2024. &bull;
+    J. Uesato et al. Process-and outcome-based feedback, 2022. &bull;
+    L. Wang et al. Math-Shepherd, 2023. &bull;
+    X. Wang et al. Self-consistency, 2022. &bull;
+    Y. Wang et al. MMLU-Pro, 2024. &bull;
+    C. S. Xia et al. Agentless, 2024. &bull;
+    H. Xin et al. DeepSeek-Prover-v1.5, 2024. &bull;
+    J. Zhou et al. Instruction-following evaluation, 2023.
+  </p>
+</div>
+
+<div class="section" id="sA">
+  <h2>附录 A. 贡献者与致谢</h2>
+  <p><strong>Core Contributors:</strong> Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Royu Zhang, Runxin Xu, Qihao Zhu, Shirong Ma, Peiyi Wang, Xiao Bi, Xiaokang Zhang, Xingkai Yu, Yu Wu, Z.F. Wu, Zhibin Gou, Zhihong Shao, Zhuoshu Li, Ziyi Gao</p>
+  <p style="font-size:0.9em;color:#555;">完整贡献者名单（200+ 位）请参阅原始论文。在各角色中作者按名字首字母排列。标有 * 表示已离开团队。</p>
+</div>
+
+<div class="footer">
+  DeepSeek-R1 论文中文翻译版 &nbsp;|&nbsp; 原文: DeepSeek-AI, research@deepseek.com
+</div>
+
+</div>
+</body>
+</html>

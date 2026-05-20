@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vLLM 推理框架与 Continuous Batching 详解</title>
+<style>
+  :root{--primary:#1a1a2e;--accent:#0f3460;--highlight-bg:#f0f4ff;--highlight-border:#4a7dff;--text:#222;--border:#e0e0e0}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text);line-height:1.8;background:#fafafa}
+  .container{max-width:920px;margin:0 auto;padding:20px}
+  .cover{text-align:center;padding:70px 20px 50px;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);color:white;border-radius:12px;margin-bottom:40px}
+  .cover h1{font-size:2.1em;margin-bottom:12px;font-weight:700}
+  .cover .subtitle{font-size:1.05em;color:#aab;margin-bottom:24px}
+  .cover .tags{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}
+  .cover .tag{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:20px;padding:6px 18px;font-size:.9em;color:#dde}
+  .section{background:white;border-radius:10px;padding:36px 40px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid var(--border)}
+  h2{font-size:1.5em;color:var(--primary);margin-bottom:6px;padding-bottom:10px;border-bottom:2px solid var(--highlight-border)}
+  h3{font-size:1.15em;color:var(--accent);margin:22px 0 10px}
+  p{margin:12px 0;text-align:justify}
+  .highlight{background:var(--highlight-bg);border-left:4px solid var(--highlight-border);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .highlight strong{color:var(--accent)}
+  .warning{background:#fff8f0;border-left:4px solid #f0a500;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .success{background:#f0fff4;border-left:4px solid #2a9d8f;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  ul,ol{padding-left:24px;margin:10px 0} li{margin:6px 0}
+  .formula{text-align:center;padding:18px 20px;margin:18px 0;background:#f8f9ff;border-radius:8px;border:1px solid #e8eaf0;font-size:1.1em;font-family:"Times New Roman","STIX",serif;overflow-x:auto}
+  .figure{text-align:center;margin:24px 0;padding:16px;background:#fafafa;border-radius:8px;border:1px solid #eee}
+  .figure img{max-width:100%;height:auto;border-radius:4px}
+  .figure .caption{font-size:.88em;color:#666;margin-top:10px;font-style:italic}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.92em}
+  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid #eee}
+  th{background:var(--primary);color:white;font-weight:600} tr:hover{background:#f8f9ff}
+  td code{background:#f0f0f5;padding:2px 6px;border-radius:3px;font-size:.9em}
+  .card-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .card{background:linear-gradient(135deg,#f8f9ff,#f0f4ff);border:1px solid #d8e0f0;border-radius:10px;padding:20px 24px}
+  .card .num{display:inline-block;background:var(--highlight-border);color:white;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-size:.85em;font-weight:700;margin-right:8px}
+  .card h4{display:inline;color:var(--accent);font-size:1.05em}
+  .card p{margin-top:8px;font-size:.93em}
+  .pros-cons{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .pros,.cons{padding:16px;border-radius:8px}
+  .pros{background:#f0fff4;border:1px solid #c8e6c9} .cons{background:#fff8f0;border:1px solid #ffe0b2}
+  .pros h4{color:#2e7d32;margin-bottom:8px} .cons h4{color:#e65100;margin-bottom:8px}
+  .step-flow{display:flex;align-items:center;justify-content:center;gap:8px;margin:20px 0;flex-wrap:wrap}
+  .step-box{background:var(--highlight-bg);border:1px solid var(--highlight-border);border-radius:8px;padding:10px 16px;font-size:.92em;font-weight:600;color:var(--accent);text-align:center;min-width:100px}
+  .step-arrow{font-size:1.4em;color:#aaa}
+  .footer{text-align:center;color:#999;font-size:.85em;padding:30px 0;border-top:1px solid #eee;margin-top:20px}
+  @media(max-width:640px){.section{padding:24px 20px}.cover h1{font-size:1.6em}.pros-cons,.card-grid{grid-template-columns:1fr}.step-flow{flex-direction:column}.step-arrow{transform:rotate(90deg)}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="cover">
+  <h1>vLLM 推理框架与<br>Continuous Batching 详解</h1>
+  <div class="subtitle">从 Static Batching 到 PagedAttention —— 理解现代 LLM 推理引擎的核心技术</div>
+  <div class="tags">
+    <span class="tag">vLLM</span>
+    <span class="tag">Continuous Batching</span>
+    <span class="tag">PagedAttention</span>
+    <span class="tag">KV Cache Management</span>
+    <span class="tag">Iteration-Level Scheduling</span>
+  </div>
+</div>
+
+<!-- ===== 1. 背景 ===== -->
+<div class="section">
+  <h2>一、背景：LLM 推理的瓶颈</h2>
+  <p>
+    LLM 推理的核心挑战在于其<strong>自回归</strong>特性——模型必须逐 token 生成，
+    每生成一个 token 都需要一次完整的前向传播。而不同请求的 prompt 长度和生成长度差异巨大
+    （可能相差 10-100 倍），这使得传统批处理方式效率极低。
+  </p>
+  <div class="highlight">
+    <strong>vLLM 的核心贡献：</strong>
+    (1) <strong>PagedAttention</strong>——用虚拟内存管理思想管理 KV Cache，消除 60-80% 的内存浪费；
+    (2) <strong>Continuous Batching</strong>——每个迭代步都可以动态加入/移除请求，
+    GPU 利用率从 ~30% 提升到 ~90%。两者结合使吞吐量提升 2-4 倍。
+  </div>
+</div>
+
+<!-- ===== 2. Static vs Continuous ===== -->
+<div class="section">
+  <h2>二、Static Batching vs Continuous Batching</h2>
+
+  <h3>2.1 Static Batching 的问题</h3>
+  <p>
+    传统做法是将多个请求<strong>打包成一个 batch</strong>一次性处理。
+    但因为不同请求的生成长度不同，<strong>整个 batch 必须等待最慢的请求完成</strong>才能释放：
+  </p>
+  <ul>
+    <li>请求 A 生成了 200 个 token（10 秒）</li>
+    <li>请求 B 生成了 50 个 token（2.5 秒）——但它必须等 A 完成才能返回</li>
+    <li>请求 C 生成了 30 个 token（1.5 秒）——同样在等待</li>
+    <li>B 和 C 在后 7.5 秒里完全<strong>空转</strong>，GPU 资源被浪费</li>
+  </ul>
+
+  <h3>2.2 Continuous Batching：迭代级调度</h3>
+  <p>
+    Continuous Batching 的核心思想极其简洁：<strong>不在 batch 级别管理请求，
+    而在每个迭代步（iteration）级别管理</strong>。每次前向传播之前，调度器重新决定：
+  </p>
+  <ol>
+    <li>哪些正在进行的请求继续生成（decode）？</li>
+    <li>哪些已完成的请求需要移除？</li>
+    <li>哪些新到达的请求可以加入？</li>
+  </ol>
+
+  <div class="figure">
+    <img src="vllm_figures/static_vs_continuous.png" alt="Static vs Continuous Batching">
+    <div class="caption">图 1：Static Batching（上）vs Continuous Batching（下）。
+    上图中 B 和 C 完成后必须空转等待 A；下图中 B 完成后立刻被 D 替换，C 完成后被 E 替换——<strong>无空闲 GPU 周期</strong>。</div>
+  </div>
+
+  <div class="success">
+    <strong>效果：</strong>Continuous Batching 将 GPU 的有效利用率从 Static Batching 的
+    ~30-50% 提升到 ~80-95%，吞吐量提升 2-4 倍。首次提出于 Orca（Yu et al., 2022），
+    被 vLLM 进一步完善并与 PagedAttention 结合。
+  </div>
+</div>
+
+<!-- ===== 3. 详细计算过程 ===== -->
+<div class="section">
+  <h2>三、Continuous Batching 的详细计算过程</h2>
+
+  <h3>3.1 Scheduler 调度循环</h3>
+  <p>vLLM 的核心是一个<strong>无限循环的调度器</strong>，每个迭代步执行以下流程：</p>
+
+  <div class="step-flow">
+    <div class="step-box" style="background:#ffe0e0; border-color:#e63946;">
+      Step 1<br>
+      <small>检查已完成<br>的请求</small>
+    </div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#fff3cd; border-color:#f0a500;">
+      Step 2<br>
+      <small>释放已完成请求<br>的 KV Cache</small>
+    </div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#e0f0e0; border-color:#2a9d8f;">
+      Step 3<br>
+      <small>从等待队列<br>选新请求加入</small>
+    </div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#e8e0f0; border-color:#6a4c93;">
+      Step 4<br>
+      <small>构建 batch<br>执行前向传播</small>
+    </div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#e0e8f0; border-color:#4a7dff;">
+      Step 5<br>
+      <small>采样输出<br>返回结果</small>
+    </div>
+  </div>
+
+  <h3>3.2 逐步骤详细追踪</h3>
+  <p>以下以一个具体场景展示 6 个迭代步的完整过程：</p>
+
+  <div class="figure">
+    <img src="vllm_figures/iteration_scheduling.png" alt="Iteration-level scheduling">
+    <div class="caption">图 2：Continuous Batching 的迭代级调度过程。每个迭代步，调度器动态调整 batch 组成——
+    Req B 在 Iter 4 完成后立即被 Req D 的 prefill 替换；Req C 完成后被 Req E 替换。</div>
+  </div>
+
+  <h4>Iteration 1：初始 Prefill</h4>
+  <ul>
+    <li>等待队列：{A(prompt=5 tokens), B(prompt=3 tokens), C(prompt=7 tokens)}</li>
+    <li>调度器判断 GPU 内存足够，将三者<strong>全部加入 batch</strong></li>
+    <li>Prefill 执行：A 处理 5 个 token，B 处理 3 个 token，C 处理 7 个 token</li>
+    <li>每个请求的 KV Cache 被构建：分配页面（PagedAttention）</li>
+    <li>每个请求生成第一个输出 token</li>
+  </ul>
+
+  <h4>Iteration 2-3：并行 Decode</h4>
+  <ul>
+    <li>Batch = {A(decode), B(decode), C(decode)}，共 3 个请求，每请求 1 个 token</li>
+    <li>GPU 执行：3 个 token 的 QKV 投影 + 注意力 + FFN，打包为一个小 batch</li>
+    <li>每个请求各自追加 1 个 token 到 KV Cache</li>
+    <li>采样得到 3 个新 token，拼接到各自的生成序列</li>
+  </ul>
+
+  <h4>Iteration 4：B 完成</h4>
+  <ul>
+    <li>B 生成了 EOS token 或达到 max_len → 标记为<strong>完成</strong></li>
+    <li>B 的结果返回给客户端，<strong>立即释放 B 的全部 KV Cache 页面</strong></li>
+    <li>Batch 变为 {A(decode), C(decode)}，只有 2 个请求</li>
+    <li><strong>关键区别：</strong>Static Batching 中 B 的 slot 会空转到 A 和 C 都完成；
+    Continuous Batching 中这个 slot 立刻空出来给新请求</li>
+  </ul>
+
+  <h4>Iteration 5：D 加入（Prefill + Decode 混合）</h4>
+  <ul>
+    <li>等待队列中有新请求 D(prompt=4 tokens)</li>
+    <li>调度器将 D 加入 batch：Batch = {A(decode, 1 tok), C(decode, 1 tok), D(prefill, 4 toks)}</li>
+    <li><strong>混合 batch：</strong>A 和 C 各做 1 个 token 的 decode，D 做 4 个 token 的 prefill</li>
+    <li>GPU 在一次前向传播中同时处理 decode 和 prefill 请求</li>
+  </ul>
+
+  <h4>Iteration 6：C 完成，E 加入</h4>
+  <ul>
+    <li>C 完成 → 释放 KV Cache → E 加入</li>
+    <li>Batch = {A(decode), D(decode), E(prefill)}</li>
+    <li>循环持续……直到所有请求处理完毕</li>
+  </ul>
+
+  <h3>3.3 混合 Prefill + Decode 的计算细节</h3>
+
+  <div class="figure">
+    <img src="vllm_figures/mixed_batch.png" alt="Mixed prefill and decode batch">
+    <div class="caption">图 3：单个迭代中 Prefill 和 Decode 混合执行的细节。Decode 请求各有 1 个新 token，
+    Prefill 请求有 128 个 token，在注意力层分别计算（序列长度不同），在 FFN 层可合并为 130 token 的大 batch。</div>
+  </div>
+
+  <p>混合 batch 中的计算分两部分：</p>
+  <ol>
+    <li><strong>注意力层：</strong>每个请求<strong>独立</strong>计算（因为 KV Cache 长度不同）。
+    Decode 请求计算 [1 &times; t<sub>i</sub>] 的注意力向量，Prefill 请求计算 [n &times; n] 的注意力矩阵。
+    在 FlashAttention 实现中通过<strong>变长注意力（variable-length attention）</strong>支持。</li>
+    <li><strong>FFN 层：</strong>所有请求的 token <strong>合并</strong>为一个大 batch。
+    如果有 2 个 decode（各 1 token）+ 1 个 prefill（128 tokens），
+    FFN 收到的是 [130, d] 的矩阵——充分利用 GPU 的并行性。</li>
+  </ol>
+
+  <div class="highlight">
+    <strong>为什么混合有效？</strong>Decode 请求只有 1 个 token，FFN 层的矩阵乘法几乎不饱和 GPU；
+    将 Prefill 的多个 token 混入同一 batch，填满了 GPU 的计算间隙。
+    这就像高速公路上，小车（decode）和大车（prefill）可以并行使用不同车道，而非排队等候。
+  </div>
+</div>
+
+<!-- ===== 4. PagedAttention ===== -->
+<div class="section">
+  <h2>四、PagedAttention：虚拟内存管理 KV Cache</h2>
+
+  <h3>4.1 问题：KV Cache 的内存碎片</h3>
+  <p>
+    传统推理系统为每个请求<strong>预分配</strong>最大长度（如 2048 token）的连续 KV Cache 内存。
+    但实际生成长度往往远小于最大值——导致大量显存被预留但未使用。
+    此外，连续分配还导致<strong>外部碎片</strong>——即使总剩余显存足够，也可能因碎片无法分配新请求。
+  </p>
+
+  <h3>4.2 PagedAttention 的解决方案</h3>
+  <p>
+    vLLM 借鉴操作系统的<strong>虚拟内存 + 分页</strong>机制：
+  </p>
+  <ul>
+    <li>将 KV Cache 分成固定大小的<strong>页（page/block）</strong>，每页存储 k 个 token 的 KV（通常 k=16）</li>
+    <li>不要求页在物理显存中连续——可以散布在任意位置</li>
+    <li>通过<strong>Block Table（页表）</strong>维护逻辑页号到物理页号的映射</li>
+    <li>新 token 生成时，只在需要时<strong>按需分配</strong>新页，而非预分配最大长度</li>
+  </ul>
+
+  <div class="figure">
+    <img src="vllm_figures/paged_attention.png" alt="PagedAttention">
+    <div class="caption">图 4：传统连续分配（左）vs PagedAttention 分页分配（右）。
+    左图中每个请求预分配 max_len 的连续空间，实际使用仅 25%，浪费 ~75%；
+    右图中页按需分配、可不连续，浪费 &lt;4%（仅最后一页可能有内部碎片）。</div>
+  </div>
+
+  <h3>4.3 Block Table（页表）</h3>
+  <p>每个请求维护一个 Block Table，记录其逻辑页号到物理页号的映射：</p>
+  <table>
+    <tr><th>请求</th><th>逻辑页 0</th><th>逻辑页 1</th><th>逻辑页 2</th><th>逻辑页 3</th><th>已用 token</th></tr>
+    <tr><td><strong>Req A</strong></td><td>物理页 7</td><td>物理页 2</td><td>物理页 15</td><td>物理页 9</td><td>58</td></tr>
+    <tr><td><strong>Req B</strong></td><td>物理页 3</td><td>物理页 11</td><td>-</td><td>-</td><td>28</td></tr>
+    <tr><td><strong>Req C</strong></td><td>物理页 0</td><td>物理页 5</td><td>物理页 13</td><td>-</td><td>42</td></tr>
+  </table>
+  <p>
+    注意力计算时，通过 Block Table 索引物理页，<strong>从不连续的显存位置</strong>收集 KV 数据。
+    vLLM 的自定义 CUDA kernel 实现了这种"收集式"注意力计算。
+  </p>
+
+  <h3>4.4 Copy-on-Write（写时复制）</h3>
+  <p>
+    当多个请求共享相同的 prompt 前缀（如 system prompt）时，PagedAttention 可以让它们
+    <strong>共享同一组物理页</strong>——只有当某个请求修改了共享页的内容时，才复制一份新的。
+    这大幅节省了具有相同 system prompt 的多请求场景的显存。
+  </p>
+</div>
+
+<!-- ===== 5. Scheduler 详解 ===== -->
+<div class="section">
+  <h2>五、Scheduler 调度策略详解</h2>
+
+  <h3>5.1 请求状态机</h3>
+  <p>每个请求在 vLLM 中经历以下状态：</p>
+
+  <div class="step-flow">
+    <div class="step-box">Waiting<br><small>等待队列</small></div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#ffe0e0; border-color:#e63946;">Running<br>(Prefill)<br><small>首次处理</small></div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box" style="background:#e0f0e0; border-color:#2a9d8f;">Running<br>(Decode)<br><small>逐 token 生成</small></div>
+    <span class="step-arrow">&rarr;</span>
+    <div class="step-box">Finished<br><small>结果返回</small></div>
+  </div>
+
+  <p>特殊路径：</p>
+  <ul>
+    <li><strong>Preemption（抢占）：</strong>当显存不足时，低优先级请求的 KV Cache 可以被<strong>swap 到 CPU 内存</strong>，
+    为高优先级请求腾出空间。被抢占的请求回到 Waiting 状态，后续可以恢复（从 CPU swap 回 GPU 或重新 prefill）。</li>
+    <li><strong>Recompute vs Swap：</strong>被抢占时有两种恢复策略——重新计算 KV Cache（prefill 开销）
+    或从 CPU 内存 swap 回来（I/O 开销）。vLLM 根据 prompt 长度和 PCIe 带宽自动选择。</li>
+  </ul>
+
+  <h3>5.2 调度优先级</h3>
+  <table>
+    <tr><th>优先级</th><th>策略</th><th>适用场景</th></tr>
+    <tr><td><strong>FCFS</strong></td><td>先到先服务</td><td>默认策略，公平性好</td></tr>
+    <tr><td><strong>Shortest Job First</strong></td><td>短请求优先（预估 prompt 长度小的先做）</td><td>优化平均延迟</td></tr>
+    <tr><td><strong>Priority-based</strong></td><td>用户自定义优先级</td><td>VIP 用户优先</td></tr>
+  </table>
+
+  <h3>5.3 Budget 控制</h3>
+  <p>
+    每个迭代步，Scheduler 根据以下<strong>预算约束</strong>决定 batch 大小：
+  </p>
+  <ul>
+    <li><strong>GPU 显存预算：</strong>当前可用的 KV Cache 页数 &ge; 新请求所需的页数</li>
+    <li><strong>最大 batch tokens：</strong>单步处理的总 token 数上限（prefill + decode tokens 之和）</li>
+    <li><strong>最大 batch 请求数：</strong>同时在 batch 中的请求数上限</li>
+  </ul>
+
+  <div class="warning">
+    <strong>Prefill 与 Decode 的平衡：</strong>一个长 prefill（如 4096 tokens）和一个 decode（1 token）
+    的计算量差异巨大。vLLM 通过 <strong>Chunked Prefill</strong> 将长 prefill 拆成多个 chunk
+    （如 512 tokens/chunk），分多步执行，避免单个 prefill 独占 GPU 太久影响 decode 的延迟。
+  </div>
+</div>
+
+<!-- ===== 6. vLLM 系统架构 ===== -->
+<div class="section">
+  <h2>六、vLLM 系统架构</h2>
+
+  <div class="figure">
+    <img src="vllm_figures/vllm_architecture.png" alt="vLLM architecture">
+    <div class="caption">图 5：vLLM 系统架构。API Server 接收请求 → Scheduler 进行迭代级调度 →
+    Block Manager 管理 KV Cache 分页 → Model Executor 在多 GPU Worker 上执行前向传播 → 返回结果。</div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>API Server</h4>
+      <p>提供 OpenAI 兼容 API（/v1/chat/completions）。接收 HTTP 请求，放入请求队列，
+      流式返回生成结果（SSE/WebSocket）。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>Scheduler</h4>
+      <p>核心调度引擎。每个迭代步决定 batch 组成——哪些请求 prefill、哪些 decode、
+      哪些新加入、哪些被抢占。实现 Continuous Batching 的核心逻辑。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>Block Manager</h4>
+      <p>管理 KV Cache 的分页分配。维护空闲页池、每请求的 Block Table、引用计数（用于 CoW）。
+      分配/释放页面的决策反馈给 Scheduler。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>Model Executor</h4>
+      <p>执行模型前向传播。支持 TP（节点内多 GPU）和 PP（多节点）。
+      使用自定义 CUDA kernel 实现 PagedAttention，集成 FlashAttention。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 7. 性能对比 ===== -->
+<div class="section">
+  <h2>七、性能对比与效果</h2>
+
+  <div class="figure">
+    <img src="vllm_figures/throughput.png" alt="Throughput comparison">
+    <div class="caption">图 6：三种方案的吞吐量和内存浪费对比。
+    Continuous Batching + PagedAttention 将吞吐量提升 2.7 倍，KV Cache 浪费从 65% 降到 4%。</div>
+  </div>
+
+  <table>
+    <tr><th>指标</th><th>Static Batching</th><th>Continuous Batching</th><th>vLLM (CB + PagedAttn)</th></tr>
+    <tr><td><strong>GPU 利用率</strong></td><td>~30%</td><td>~70%</td><td>~90%</td></tr>
+    <tr><td><strong>KV Cache 浪费</strong></td><td>~65%</td><td>~30%</td><td><strong>&lt;4%</strong></td></tr>
+    <tr><td><strong>相对吞吐量</strong></td><td>1.0x</td><td>1.8x</td><td><strong>2.7x</strong></td></tr>
+    <tr><td><strong>新请求等待</strong></td><td>等当前 batch 全完成</td><td>下一个迭代步即可加入</td><td>下一个迭代步即可加入</td></tr>
+    <tr><td><strong>显存碎片</strong></td><td>严重（外部+内部）</td><td>中（仍需连续分配）</td><td><strong>极小（分页，仅内部碎片）</strong></td></tr>
+    <tr><td><strong>Prefix 共享</strong></td><td>不支持</td><td>不支持</td><td><strong>支持（Copy-on-Write）</strong></td></tr>
+  </table>
+</div>
+
+<!-- ===== 8. 高级特性 ===== -->
+<div class="section">
+  <h2>八、vLLM 高级特性</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>Prefix Caching</h4>
+      <p>多个请求共享相同 system prompt 时，自动复用 KV Cache。
+      通过哈希匹配 prompt 前缀，命中则跳过 prefill，直接复用缓存的 KV 页。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>Speculative Decoding</h4>
+      <p>用小模型（draft model）并行猜测多个 token，大模型一次性验证。
+      命中率高时可加速 2-3 倍。vLLM 内建支持。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>Chunked Prefill</h4>
+      <p>将长 prompt 拆为多个 chunk 分步 prefill，与 decode 请求交错执行。
+      避免长 prefill 独占 GPU 导致其他请求的 decode 延迟飙升。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>Tensor Parallelism</h4>
+      <p>支持单节点多 GPU 的 TP 推理。权重自动切分，KV Cache 页分布在各 GPU 上。
+      配合 NCCL 实现高效的跨 GPU 通信。</p>
+    </div>
+    <div class="card">
+      <span class="num">5</span>
+      <h4>Quantization</h4>
+      <p>支持 AWQ、GPTQ、SqueezeLLM 等量化方案，以及 FP8 KV Cache。
+      减少显存占用，支持更大 batch 或更大模型。</p>
+    </div>
+    <div class="card">
+      <span class="num">6</span>
+      <h4>Multi-LoRA</h4>
+      <p>同时加载多个 LoRA adapter，不同请求可以使用不同的 LoRA。
+      基座模型共享，LoRA 权重按需激活。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 9. 推理框架对比 ===== -->
+<div class="section">
+  <h2>九、主流推理框架对比</h2>
+
+  <table>
+    <tr><th>框架</th><th>核心技术</th><th>并行支持</th><th>优势</th><th>适用场景</th></tr>
+    <tr><td><strong>vLLM</strong></td><td>PagedAttention + CB</td><td>TP, PP</td><td>通用性强、生态好、开源活跃</td><td>通用 LLM 服务</td></tr>
+    <tr><td><strong>TensorRT-LLM</strong></td><td>TRT 编译优化 + CB</td><td>TP, PP, EP</td><td>NVIDIA 硬件深度优化、极致性能</td><td>NVIDIA GPU 生产部署</td></tr>
+    <tr><td><strong>SGLang</strong></td><td>RadixAttention + CB</td><td>TP, DP</td><td>前缀缓存优化、编程接口灵活</td><td>复杂 prompt 管理</td></tr>
+    <tr><td><strong>llama.cpp</strong></td><td>CPU/Metal 推理</td><td>-</td><td>轻量、跨平台、消费级硬件</td><td>端侧/个人设备</td></tr>
+    <tr><td><strong>DeepSpeed-FastGen</strong></td><td>SplitFuse + CB</td><td>TP, PP</td><td>与 DeepSpeed 训练框架集成</td><td>训推一体</td></tr>
+  </table>
+</div>
+
+<!-- ===== 10. 总结 ===== -->
+<div class="section">
+  <h2>十、总结</h2>
+  <p>vLLM 的核心技术栈可以归纳为三层：</p>
+  <ol>
+    <li><strong>调度层（Continuous Batching）：</strong>在每个迭代步动态组织 batch——
+    完成的请求立即释放，新请求立即加入，prefill 和 decode 可以混合执行。
+    这消除了 Static Batching 中"等最慢请求"的浪费。</li>
+    <li><strong>内存管理层（PagedAttention）：</strong>将 KV Cache 分成固定大小的页，
+    按需分配、不需连续，通过页表管理逻辑到物理的映射。
+    这消除了预分配的显存浪费和碎片问题。</li>
+    <li><strong>执行层（Optimized Kernels）：</strong>自定义 CUDA kernel 实现分页注意力计算，
+    集成 FlashAttention、FP8 量化等底层优化。</li>
+  </ol>
+  <div class="highlight">
+    <strong>一句话理解 Continuous Batching：</strong>
+    不再把"一批请求"当作一个不可分割的单位来处理，
+    而是把<strong>每个迭代步</strong>当作调度的最小粒度——
+    每一步都重新审视"谁该继续、谁该离开、谁该加入"，
+    让 GPU 的每一个计算周期都用在有效的 token 生成上。
+    配合 PagedAttention 的按需分页，实现了<strong>接近零浪费</strong>的 LLM 推理。
+  </div>
+</div>
+
+<div class="footer">
+  深度学习基础系列 &middot; vLLM 推理框架与 Continuous Batching 详解
+</div>
+
+</div>
+</body>
+</html>

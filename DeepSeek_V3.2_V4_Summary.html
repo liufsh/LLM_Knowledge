@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepSeek-V3.2 & V4 技术报告总结</title>
+<style>
+  :root { --primary:#1a1a2e; --accent:#0f3460; --highlight-bg:#f0f4ff; --highlight-border:#4a7dff; --text:#222; --border:#e0e0e0; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif; color:var(--text); line-height:1.8; background:#fafafa; }
+  .container { max-width:920px; margin:0 auto; padding:20px; }
+  .cover { text-align:center; padding:70px 20px 50px; background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%); color:white; border-radius:12px; margin-bottom:40px; }
+  .cover h1 { font-size:2.1em; margin-bottom:12px; font-weight:700; }
+  .cover .subtitle { font-size:1.05em; color:#aab; margin-bottom:24px; }
+  .cover .tags { display:flex; justify-content:center; gap:12px; flex-wrap:wrap; }
+  .cover .tag { background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.2); border-radius:20px; padding:6px 18px; font-size:0.9em; color:#dde; }
+  .section { background:white; border-radius:10px; padding:36px 40px; margin-bottom:24px; box-shadow:0 1px 4px rgba(0,0,0,0.06); border:1px solid var(--border); }
+  h2 { font-size:1.5em; color:var(--primary); margin-bottom:6px; padding-bottom:10px; border-bottom:2px solid var(--highlight-border); }
+  h3 { font-size:1.15em; color:var(--accent); margin:22px 0 10px; }
+  h4 { font-size:1.05em; color:#333; margin:16px 0 8px; }
+  p { margin:12px 0; text-align:justify; }
+  .highlight { background:var(--highlight-bg); border-left:4px solid var(--highlight-border); padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .highlight strong { color:var(--accent); }
+  .warning { background:#fff8f0; border-left:4px solid #f0a500; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .success { background:#f0fff4; border-left:4px solid #2a9d8f; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  ul,ol { padding-left:24px; margin:10px 0; }
+  li { margin:6px 0; }
+  .formula { text-align:center; padding:18px 20px; margin:18px 0; background:#f8f9ff; border-radius:8px; border:1px solid #e8eaf0; font-size:1.12em; font-family:"Times New Roman","STIX",serif; overflow-x:auto; }
+  .figure { text-align:center; margin:24px 0; padding:16px; background:#fafafa; border-radius:8px; border:1px solid #eee; }
+  .figure svg { max-width:100%; height:auto; }
+  .figure img { max-width:100%; height:auto; border-radius:4px; }
+  .figure .caption { font-size:0.88em; color:#666; margin-top:10px; font-style:italic; }
+  table { width:100%; border-collapse:collapse; margin:16px 0; font-size:0.92em; }
+  th,td { padding:10px 14px; text-align:left; border-bottom:1px solid #eee; }
+  th { background:var(--primary); color:white; font-weight:600; }
+  tr:hover { background:#f8f9ff; }
+  td code { background:#f0f0f5; padding:2px 6px; border-radius:3px; font-size:0.9em; }
+  .card-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0; }
+  .card { background:linear-gradient(135deg,#f8f9ff,#f0f4ff); border:1px solid #d8e0f0; border-radius:10px; padding:20px 24px; }
+  .card .num { display:inline-block; background:var(--highlight-border); color:white; width:28px; height:28px; border-radius:50%; text-align:center; line-height:28px; font-size:0.85em; font-weight:700; margin-right:8px; }
+  .card h4 { display:inline; color:var(--accent); font-size:1.05em; margin:0; }
+  .card p { margin-top:8px; font-size:0.93em; }
+  .pros-cons { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0; }
+  .pros,.cons { padding:16px; border-radius:8px; }
+  .pros { background:#f0fff4; border:1px solid #c8e6c9; }
+  .cons { background:#fff8f0; border:1px solid #ffe0b2; }
+  .pros h4 { color:#2e7d32; margin-bottom:8px; }
+  .cons h4 { color:#e65100; margin-bottom:8px; }
+  .pros li,.cons li { font-size:0.93em; }
+  .footer { text-align:center; color:#999; font-size:0.85em; padding:30px 0; border-top:1px solid #eee; margin-top:20px; }
+  @media(max-width:640px) { .section{padding:24px 20px;} .cover h1{font-size:1.6em;} .pros-cons,.card-grid{grid-template-columns:1fr;} }
+  .medal-gold { color:#d4a017; font-weight:700; }
+  .compare-table td:first-child { font-weight:600; background:#f8f9ff; }
+  .metric-best { font-weight:700; color:#2e7d32; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="cover">
+  <h1>DeepSeek-V3.2 & V4 技术报告总结</h1>
+  <div class="subtitle">从稀疏注意力到百万上下文 —— DeepSeek 开源大模型的前沿演进</div>
+  <div class="tags">
+    <span class="tag">DSA 稀疏注意力</span>
+    <span class="tag">CSA / HCA 混合压缩</span>
+    <span class="tag">mHC 超连接</span>
+    <span class="tag">Muon 优化器</span>
+    <span class="tag">GRPO 强化学习</span>
+    <span class="tag">FP4 量化训练</span>
+    <span class="tag">1M 上下文</span>
+    <span class="tag">Agent 合成</span>
+  </div>
+</div>
+
+<!-- ===== 引言 ===== -->
+<div class="section">
+  <h2>引言：DeepSeek 的技术演进</h2>
+  <p>
+    DeepSeek-V3 系列是 DeepSeek-AI 推出的开源大语言模型家族，采用 Mixture-of-Experts（MoE）架构，
+    在保持开源可用性的同时追求与闭源前沿模型的性能对齐。2025 年下半年，DeepSeek 连续发布了两篇重要技术报告：
+  </p>
+  <ul>
+    <li><strong>DeepSeek-V3.2</strong>（2025 年 7 月）：在 V3.1-Terminus 基础上引入 DeepSeek Sparse Attention（DSA），
+    通过持续预训练实现稀疏注意力适配，并大规模扩展 RL 后训练计算，使模型在推理和 Agent 能力上达到 GPT-5 级别。</li>
+    <li><strong>DeepSeek-V4</strong>（2025 年 12 月）：全新架构设计，引入 CSA/HCA 混合压缩注意力、mHC 超连接、
+    Muon 优化器等核心创新，实现原生百万 token 上下文支持，同时推理 FLOPs 仅为 V3.2 的 27%（Pro）或 10%（Flash）。</li>
+  </ul>
+
+  <div class="highlight">
+    <strong>核心演进主线：</strong>
+    V3.2 聚焦于"<strong>在现有架构上做加法</strong>"——通过 DSA 降低注意力计算量、通过 GRPO 扩展后训练计算；
+    V4 则是"<strong>从架构层面重新设计</strong>"——通过 CSA+HCA 混合注意力和 mHC 从根本上解决长上下文效率瓶颈。
+  </div>
+</div>
+
+<!-- ===== 背景知识 ===== -->
+<div class="section">
+  <h2>一、背景知识</h2>
+
+  <h3>1.1 Mixture-of-Experts（MoE）架构</h3>
+  <p>
+    MoE 是一种条件计算架构：模型拥有大量参数（总参数），但每个 token 只激活其中一小部分（激活参数）。
+    在 DeepSeek 系列中，每个 Transformer 块的 FFN 层被替换为 DeepSeekMoE 结构，包含 1 个共享专家（shared expert）
+    和数百个路由专家（routed experts）。路由机制根据 token 的隐状态选择 top-K 个专家进行计算。
+  </p>
+  <div class="formula">
+    FFN<sub>MoE</sub>(x) = FFN<sub>shared</sub>(x) + &Sigma;<sub>i &isin; TopK</sub> g<sub>i</sub> &middot; FFN<sub>expert_i</sub>(x)
+  </div>
+  <p>
+    这使得模型在保持巨大模型容量的同时，单个 token 的计算开销远小于等参数量的 Dense 模型。
+    DeepSeek-V4-Pro 总参 1.6T 但每个 token 仅激活 49B，Flash 版总参 284B 仅激活 13B。
+  </p>
+
+  <h3>1.2 Multi-head Latent Attention（MLA）</h3>
+  <p>
+    MLA 是 DeepSeek-V2 提出的注意力压缩方案。其核心思想是将 KV 缓存压缩到低秩隐向量（latent vector），
+    推理时从隐向量恢复出多头 KV。MLA 在 MHA 模式（用于训练/预填充）和 MQA 模式（用于解码）之间可以等价转换，
+    兼顾训练表达力和推理效率。DeepSeek-V3.2 的 DSA 基于 MLA 的 MQA 模式实例化。
+  </p>
+
+  <h3>1.3 稀疏注意力（Sparse Attention）</h3>
+  <p>
+    标准注意力的复杂度为 O(L<sup>2</sup>)，在长上下文场景中成为瓶颈。稀疏注意力的核心思想是：
+    每个 query token 不需要关注所有 key-value，而是只选择最相关的子集进行注意力计算，将复杂度降为 O(Lk)。
+    关键挑战在于如何高效、准确地选择这些 top-k 条目。
+  </p>
+
+  <h3>1.4 GRPO（Group Relative Policy Optimization）</h3>
+  <p>
+    GRPO 是 DeepSeek 提出的强化学习算法，用于模型的后训练对齐。对于每个问题 q，
+    从旧策略采样一组回答 {o<sub>1</sub>,...,o<sub>G</sub>}，通过奖励模型评分后计算组内相对优势：
+  </p>
+  <div class="formula">
+    A&#x302;<sub>i,t</sub> = R<sub>i</sub> - mean(R)
+    <br><br>
+    J<sub>GRPO</sub>(&theta;) = E [ min( r<sub>i,t</sub> &middot; A&#x302;<sub>i,t</sub>, clip(r<sub>i,t</sub>, 1-&epsilon;, 1+&epsilon;) &middot; A&#x302;<sub>i,t</sub> ) - &beta; &middot; D<sub>KL</sub> ]
+  </div>
+  <p>
+    GRPO 无需额外的价值网络，直接利用组内奖励的相对排序来估计优势函数，大大简化了 RL 训练的基础设施需求。
+  </p>
+
+  <h3>1.5 Multi-Token Prediction（MTP）</h3>
+  <p>
+    MTP 让模型在每个位置同时预测未来多个 token，而非仅预测下一个。DeepSeek-V3/V4 均设置 MTP 深度为 1
+    （即额外预测一个 token）。MTP 在训练时作为辅助损失提升表征学习质量，推理时可用于推测解码（speculative decoding）加速。
+  </p>
+</div>
+
+<!-- ===== DeepSeek-V3.2 ===== -->
+<div class="section">
+  <h2>二、DeepSeek-V3.2 —— 推动开源大模型的前沿</h2>
+
+  <h3>2.1 核心定位</h3>
+  <p>
+    DeepSeek-V3.2 是基于 DeepSeek-V3.1-Terminus 的增量升级版本，核心目标是在不改变模型基础架构的前提下，
+    通过三项关键技术突破来缩小与闭源前沿模型的差距：
+  </p>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>DSA 稀疏注意力</h4>
+      <p>引入 Lightning Indexer + Top-k Selector 双组件机制，将注意力复杂度从 O(L<sup>2</sup>) 降至 O(Lk)</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>可扩展 RL 框架</h4>
+      <p>后训练计算预算超过预训练成本的 10%，通过四项 GRPO 改进实现稳定的大规模 RL 训练</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>Agent 任务合成</h4>
+      <p>自动合成 1,827 个环境、4,417 个任务，大规模驱动 Agent 能力的 RL 训练</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>Speciale 变体</h4>
+      <p>放宽长度约束的高算力推理版本，在 IMO/IOI/ICPC WF/CMO 2025 均获金牌</p>
+    </div>
+  </div>
+
+  <div class="figure">
+    <img src="deepseek_summary_figures/v32_fig1_benchmark.png" alt="DeepSeek-V3.2 Benchmark">
+    <div class="caption">原文图 1（V3.2）：DeepSeek-V3.2 与 GPT-5-High、Claude-4.5-Sonnet、Gemini-3.0-Pro 在推理和 Agent 基准上的对比。</div>
+  </div>
+
+  <h3>2.2 DeepSeek Sparse Attention（DSA）</h3>
+  <p>
+    DSA 是 V3.2 相较于 V3.1-Terminus 唯一的架构变更。它基于 MLA 的 MQA 模式实例化，
+    由两个核心组件构成：
+  </p>
+
+  <h4>Lightning Indexer（闪电索引器）</h4>
+  <p>
+    对于每个 query token h<sub>t</sub>，Lightning Indexer 通过一组轻量级索引头计算其与所有前序 token 的相关性得分：
+  </p>
+  <div class="formula">
+    I<sub>t,s</sub> = &Sigma;<sub>j=1</sub><sup>H<sup>I</sup></sup> w<sub>t,j</sub><sup>I</sup> &middot; ReLU( q<sub>t,j</sub><sup>I</sup> &middot; k<sub>s</sub><sup>I</sup> )
+  </div>
+  <p>
+    其中 H<sup>I</sup> 为索引头数量，q 和 k 分别从 query token 和 key token 的隐状态导出。
+    索引器使用 ReLU 激活函数以实现 FP8 高效计算，头数较少以控制计算开销。
+  </p>
+
+  <h4>Fine-grained Token Selection（细粒度选择）</h4>
+  <p>
+    根据索引得分 {I<sub>t,s</sub>}，通过 Top-k 选择器仅保留得分最高的 k 个 KV 条目进行后续的核心注意力计算：
+  </p>
+  <div class="formula">
+    u<sub>t</sub> = Attn( h<sub>t</sub>, { c<sub>s</sub> | I<sub>t,s</sub> &isin; Top-k(I<sub>t,:</sub>) } )
+  </div>
+  <p>k = 2048 个 token，远小于序列长度 L，从而将核心注意力的计算量从 O(L<sup>2</sup>) 降至 O(Lk)。</p>
+
+  <!-- DSA Architecture SVG -->
+  <div class="figure">
+    <svg viewBox="0 0 800 340" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <!-- Input tokens -->
+      <rect x="20" y="280" width="760" height="40" rx="6" fill="#e8f5e9" stroke="#66bb6a" stroke-width="1.5"/>
+      <text x="400" y="305" text-anchor="middle" font-size="13" fill="#2e7d32" font-weight="600">Input Hidden States h<tspan baseline-shift="sub" font-size="10">1</tspan>...h<tspan baseline-shift="sub" font-size="10">L</tspan></text>
+      <!-- KV Cache -->
+      <rect x="40" y="200" width="320" height="50" rx="6" fill="#fff3e0" stroke="#ff9800" stroke-width="1.5"/>
+      <text x="200" y="230" text-anchor="middle" font-size="12" fill="#e65100" font-weight="600">MLA KV Cache (c<tspan baseline-shift="sub" font-size="9">1</tspan><tspan baseline-shift="super" font-size="9">KV</tspan>, ..., c<tspan baseline-shift="sub" font-size="9">L</tspan><tspan baseline-shift="super" font-size="9">KV</tspan>)</text>
+      <!-- Lightning Indexer -->
+      <rect x="440" y="200" width="180" height="50" rx="6" fill="#e3f2fd" stroke="#42a5f5" stroke-width="1.5"/>
+      <text x="530" y="220" text-anchor="middle" font-size="12" fill="#1565c0" font-weight="600">Lightning Indexer</text>
+      <text x="530" y="238" text-anchor="middle" font-size="11" fill="#1565c0">I<tspan baseline-shift="sub" font-size="9">t,s</tspan> = &Sigma; w &middot; ReLU(q &middot; k)</text>
+      <!-- Top-k Selector -->
+      <rect x="650" y="200" width="120" height="50" rx="6" fill="#fce4ec" stroke="#ef5350" stroke-width="1.5"/>
+      <text x="710" y="220" text-anchor="middle" font-size="12" fill="#c62828" font-weight="600">Top-k Selector</text>
+      <text x="710" y="238" text-anchor="middle" font-size="11" fill="#c62828">k = 2048</text>
+      <!-- Core Attention -->
+      <rect x="200" y="100" width="400" height="55" rx="8" fill="#ede7f6" stroke="#7e57c2" stroke-width="2"/>
+      <text x="400" y="125" text-anchor="middle" font-size="14" fill="#4527a0" font-weight="700">Multi-Query Attention (Core)</text>
+      <text x="400" y="145" text-anchor="middle" font-size="11" fill="#4527a0">仅对选中的 k 个 KV 条目计算</text>
+      <!-- Output -->
+      <rect x="300" y="20" width="200" height="40" rx="6" fill="#e8eaf6" stroke="#5c6bc0" stroke-width="1.5"/>
+      <text x="400" y="45" text-anchor="middle" font-size="13" fill="#283593" font-weight="600">Output Hidden u<tspan baseline-shift="sub" font-size="10">t</tspan></text>
+      <!-- Arrows -->
+      <line x1="200" y1="280" x2="200" y2="255" stroke="#888" stroke-width="1.5" marker-end="url(#arr)"/>
+      <line x1="530" y1="280" x2="530" y2="255" stroke="#888" stroke-width="1.5" marker-end="url(#arr)"/>
+      <line x1="620" y1="225" x2="645" y2="225" stroke="#888" stroke-width="1.5" marker-end="url(#arr)"/>
+      <line x1="710" y1="200" x2="600" y2="158" stroke="#ef5350" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arr)"/>
+      <line x1="200" y1="200" x2="300" y2="155" stroke="#888" stroke-width="1.5" marker-end="url(#arr)"/>
+      <line x1="400" y1="100" x2="400" y2="65" stroke="#888" stroke-width="1.5" marker-end="url(#arr)"/>
+      <defs><marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#888"/></marker></defs>
+    </svg>
+    <div class="caption">图 1：DSA 架构原理图。Lightning Indexer 计算索引得分，Top-k Selector 选择关键 KV 条目，仅对选中条目执行核心注意力计算。</div>
+  </div>
+
+  <div class="figure">
+    <img src="deepseek_summary_figures/v32_fig2_dsa_arch.png" alt="DSA Architecture under MLA">
+    <div class="caption">原文图 2（V3.2）：DSA 在 MLA 下的注意力架构。绿色部分展示了 Lightning Indexer 如何根据索引得分选择 top-k KV 条目。</div>
+  </div>
+
+  <h3>2.3 持续预训练（Continued Pre-Training）</h3>
+  <p>DSA 的引入需要通过两阶段持续预训练来适配模型：</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>Dense Warm-up 阶段</h4>
+      <p>冻结模型主体参数，仅训练 Lightning Indexer。使用 KL 散度损失对齐索引输出与真实注意力分布。
+      学习率 10<sup>-3</sup>，仅 1000 步（共 2.1B tokens）。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>Sparse Training 阶段</h4>
+      <p>启用 Top-k 选择机制，同时训练模型和索引器。索引器的输入从计算图中分离以独立优化。
+      学习率 7.3&times;10<sup>-6</sup>，选择 k=2048，训练 15000 步（共 943.7B tokens）。</p>
+    </div>
+  </div>
+
+  <h3>2.4 Scaling GRPO —— 四项关键改进</h3>
+  <p>
+    DeepSeek-V3.2 的后训练计算预算超过预训练成本的 10%，这要求 GRPO 算法必须在大规模训练中保持稳定。
+    为此，团队提出四项关键改进：
+  </p>
+
+  <h4>(1) Unbiased KL Estimate（无偏 KL 估计）</h4>
+  <p>
+    使用重要性采样比率校正 K3 估计器，消除系统性估计误差。原始 K3 估计器在采样 token 的当前策略概率远低于
+    参考策略时会产生不成比例的大梯度，导致训练不稳定：
+  </p>
+  <div class="formula">
+    D<sub>KL</sub>(&pi;<sub>&theta;</sub> || &pi;<sub>ref</sub>) = (r<sub>i,t</sub> / r<sub>old,t</sub>) &middot; [ (&pi;<sub>ref</sub> / &pi;<sub>&theta;</sub>) - log(&pi;<sub>ref</sub> / &pi;<sub>&theta;</sub>) - 1 ]
+  </div>
+
+  <h4>(2) Off-Policy Sequence Masking（离策序列掩码）</h4>
+  <p>
+    对负优势且策略偏离超过阈值 &delta; 的序列引入二值掩码 M<sub>i,t</sub>，防止高度离策的负样本破坏优化过程。
+    直觉上，模型从自身错误中学习最多，而高度离策的负样本可能具有误导性。
+  </p>
+
+  <h4>(3) Keep Routing（保持路由）</h4>
+  <p>
+    在推理框架采样时保存专家路由路径，训练时强制使用相同路由，确保优化的参数子空间一致。
+    这解决了 MoE 模型中推理-训练路由不一致导致的参数子空间突变问题。
+  </p>
+
+  <h4>(4) Keep Sampling Mask（保持采样掩码）</h4>
+  <p>
+    将 top-p/top-k 采样截断掩码从 &pi;<sub>old</sub> 传递到 &pi;<sub>&theta;</sub>，确保两个策略共享相同的动作子空间，
+    维护重要性采样的原则。经验上，结合 top-p 采样可有效保持 RL 训练中的语言一致性。
+  </p>
+
+  <h3>2.5 Thinking in Tool-Use —— 推理与工具使用的融合</h3>
+  <p>
+    DeepSeek-V3.2 创新性地将思维链推理（Chain-of-Thought）整合到工具调用场景中，
+    设计了专门的上下文管理策略：
+  </p>
+  <ul>
+    <li><strong>推理内容保留</strong>：仅在新用户消息到达时丢弃历史推理内容；工具输出追加时保留推理上下文</li>
+    <li><strong>工具调用历史保留</strong>：即使推理trace被移除，工具调用和结果的历史记录始终保留</li>
+    <li><strong>Cold-Start 机制</strong>：通过精心设计的系统提示，引导模型在推理过程中自然融入工具调用</li>
+  </ul>
+
+  <h3>2.6 大规模 Agent 任务合成</h3>
+  <p>
+    为了提升模型在 Agent 场景下的泛化能力和指令遵循能力，DeepSeek-V3.2 开发了一套系统化的任务合成流水线，
+    覆盖四类 Agent 场景：
+  </p>
+  <table>
+    <tr><th>Agent 类型</th><th>任务数</th><th>环境</th><th>Prompt 来源</th></tr>
+    <tr><td>Code Agent</td><td>24,667</td><td>真实</td><td>提取自 GitHub</td></tr>
+    <tr><td>Search Agent</td><td>50,275</td><td>真实</td><td>合成</td></tr>
+    <tr><td>General Agent</td><td>4,417</td><td>合成（1,827 环境）</td><td>合成</td></tr>
+    <tr><td>Code Interpreter</td><td>5,908</td><td>真实</td><td>提取</td></tr>
+  </table>
+  <p>
+    General Agent 的合成流程尤为值得关注：自动合成器生成环境和工具集 &rarr; 生成任务及验证函数 &rarr;
+    迭代增加难度，确保任务"难以求解但易于验证"。实验表明，合成数据上的 RL 训练能有效迁移到
+    Tau2Bench、MCP-Mark 等分布外真实环境基准测试中。
+  </p>
+
+  <div class="figure">
+    <img src="deepseek_summary_figures/v32_fig3_inference_cost.png" alt="V3.2 Inference Costs">
+    <div class="caption">原文图 3（V3.2）：DeepSeek-V3.1-Terminus 与 V3.2 在 H800 集群上的推理成本对比（Prefilling 和 Decoding）。DSA 在长序列场景下显著降低每百万 token 成本。</div>
+  </div>
+
+  <h3>2.7 DeepSeek-V3.2-Speciale</h3>
+  <div class="success">
+    <strong>竞赛金牌成绩：</strong>
+    DeepSeek-V3.2-Speciale 是放宽长度约束、专注推理的实验变体，在以下顶级竞赛中达到金牌水平：
+    <ul>
+      <li><span class="medal-gold">IMO 2025</span>：35/42（6 题中解出 5 题满分）</li>
+      <li><span class="medal-gold">CMO 2025</span>：102/126</li>
+      <li><span class="medal-gold">IOI 2025</span>：492/600（第 10 名）</li>
+      <li><span class="medal-gold">ICPC World Finals 2025</span>：10/12（第 2 名）</li>
+    </ul>
+  </div>
+
+  <div class="figure">
+    <img src="deepseek_summary_figures/v32_table3_4_speciale.png" alt="V3.2 Speciale Results">
+    <div class="caption">原文表 3-4（V3.2）：DeepSeek-V3.2-Speciale 的推理效率对比及顶级竞赛成绩。在 IMO/CMO/IOI/ICPC WF 2025 均达到金牌水平。</div>
+  </div>
+
+  <div class="figure">
+    <img src="deepseek_summary_figures/v32_table2_benchmark.png" alt="V3.2 Table 2 Benchmark">
+    <div class="caption">原文表 2（V3.2）：DeepSeek-V3.2 与开源/闭源模型的全面基准对比。涵盖英语知识、代码、数学、Agent、搜索和工具使用等维度。</div>
+  </div>
+</div>
+
+<!-- ===== DeepSeek-V4 ===== -->
+<div class="section">
+  <h2>三、DeepSeek-V4 —— 高效百万上下文智能</h2>
+
+  <h3>3.1 核心定位</h3>
+  <p>
+    DeepSeek-V4 是全新架构设计的一代模型，核心目标是<strong>原生高效支持百万 token 上下文</strong>。
+    它不是 V3.2 的增量升级，而是从架构层面全面重新设计，解决了长上下文场景下的计算和存储效率问题。
+    发布了两个版本：
+  </p>
+
+  <div class="figure">
+    <img src="deepseek_summary_figures/v4_fig2_architecture.png" alt="DeepSeek-V4 Overall Architecture">
+    <div class="caption">原文图 2（V4）：DeepSeek-V4 整体架构。使用 CSA/HCA 混合注意力层、DeepSeekMoE 前馈层，并通过 mHC 增强残差连接。</div>
+  </div>
+
+  <table>
+    <tr><th>规格</th><th>DeepSeek-V4-Pro</th><th>DeepSeek-V4-Flash</th></tr>
+    <tr><td>总参数</td><td>1.6T</td><td>284B</td></tr>
+    <tr><td>激活参数</td><td>49B</td><td>13B</td></tr>
+    <tr><td>Transformer 层数</td><td>61</td><td>43</td></tr>
+    <tr><td>隐藏维度 d</td><td>7168</td><td>4096</td></tr>
+    <tr><td>路由专家数</td><td>384</td><td>256</td></tr>
+    <tr><td>专家隐藏维度</td><td>3072</td><td>2048</td></tr>
+    <tr><td>激活专家数</td><td>6</td><td>6</td></tr>
+    <tr><td>上下文长度</td><td>1M tokens</td><td>1M tokens</td></tr>
+    <tr><td>训练数据</td><td>33T tokens</td><td>32T tokens</td></tr>
+  </table>
+
+  <h3>3.2 架构创新一：混合压缩注意力（CSA + HCA）</h3>
+  <p>
+    DeepSeek-V4 的核心架构创新是混合压缩注意力，由两种互补机制交替组成：
+    Compressed Sparse Attention（CSA）和 Heavily Compressed Attention（HCA）。
+  </p>
+
+  <h4>CSA（压缩稀疏注意力）</h4>
+  <p>
+    CSA 集成了 KV 压缩和稀疏选择两种策略。首先将每 m 个 token 的 KV 条目压缩为 1 个（压缩率 m=4），
+    然后通过 DSA 风格的 Lightning Indexer 对压缩后的 KV 执行 top-k 稀疏选择（k=1024 for Pro），
+    最终以 MQA 方式执行核心注意力：
+  </p>
+  <div class="formula">
+    H &rarr; C<sup>a</sup> = H &middot; W<sup>aKV</sup>, &nbsp; C<sup>b</sup> = H &middot; W<sup>bKV</sup>
+    <br><br>
+    每 m 个 token 的 KV 通过 Softmax 加权聚合 &rarr; C<sup>Comp</sup> &isin; R<sup>(n/m)&times;c</sup>
+    <br><br>
+    Top-k 选择 &rarr; C<sub>t</sub><sup>SprsComp</sup> 用于核心注意力
+  </div>
+
+  <h4>HCA（重压缩注意力）</h4>
+  <p>
+    HCA 采用更激进的压缩率 m'（m' &gg; m，V4 中 m'=128），将 KV 缓存压缩到极小体积，
+    但不使用稀疏选择，而是对所有压缩 KV 执行全注意力。这保证了全局信息的完整覆盖：
+  </p>
+  <div class="formula">
+    C<sup>Comp</sup> &isin; R<sup>(n/m')&times;c</sup>, &nbsp; m' = 128
+    <br><br>
+    o<sub>t,i</sub> = CoreAttn(query=q<sub>t,i</sub>, key=C<sup>Comp</sup>, value=C<sup>Comp</sup>)
+  </div>
+
+  <p>两者在 Transformer 层中交替排列（Pro 的前 2 层使用纯滑动窗口注意力，后续层 CSA 与 HCA 交替）。
+  此外，两种注意力均包含一个额外的<strong>滑动窗口分支</strong>（n<sub>win</sub>=128），用于捕获精细的局部依赖。</p>
+
+  <div class="figure">
+    <img src="deepseek_summary_figures/v4_fig3_csa.png" alt="CSA Architecture">
+    <div class="caption">原文图 3（V4）：CSA 核心架构。先将每 m 个 token 的 KV 压缩为 1 个条目，再通过 Lightning Indexer 执行 Top-k 稀疏选择，最终以 Shared KV MQA 方式计算注意力。</div>
+  </div>
+
+  <div class="figure">
+    <img src="deepseek_summary_figures/v4_fig4_hca.png" alt="HCA Architecture">
+    <div class="caption">原文图 4（V4）：HCA 核心架构。采用更高压缩率（m'≫m），将大量 token 合并为单个 KV 条目，不使用稀疏选择，对所有压缩 KV 执行全注意力。</div>
+  </div>
+
+  <!-- CSA vs HCA comparison SVG -->
+  <div class="figure">
+    <svg viewBox="0 0 800 320" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <!-- CSA side -->
+      <rect x="10" y="10" width="380" height="300" rx="10" fill="#f8fdf8" stroke="#66bb6a" stroke-width="1.5"/>
+      <text x="200" y="35" text-anchor="middle" font-size="14" fill="#2e7d32" font-weight="700">CSA（压缩稀疏注意力）</text>
+      <!-- CSA flow -->
+      <rect x="30" y="55" width="340" height="30" rx="4" fill="#e8f5e9" stroke="#a5d6a7"/>
+      <text x="200" y="75" text-anchor="middle" font-size="11" fill="#2e7d32">原始 KV: n 个 token</text>
+      <text x="200" y="105" text-anchor="middle" font-size="20" fill="#888">&darr;</text>
+      <rect x="30" y="115" width="340" height="30" rx="4" fill="#c8e6c9" stroke="#66bb6a"/>
+      <text x="200" y="135" text-anchor="middle" font-size="11" fill="#1b5e20">压缩: 每 m=4 个 &rarr; 1 个 (n/4 条目)</text>
+      <text x="200" y="165" text-anchor="middle" font-size="20" fill="#888">&darr;</text>
+      <rect x="30" y="175" width="340" height="30" rx="4" fill="#a5d6a7" stroke="#43a047"/>
+      <text x="200" y="195" text-anchor="middle" font-size="11" fill="#1b5e20" font-weight="600">Top-k 稀疏选择 (k=512~1024)</text>
+      <text x="200" y="225" text-anchor="middle" font-size="20" fill="#888">&darr;</text>
+      <rect x="80" y="235" width="240" height="35" rx="6" fill="#66bb6a" stroke="#2e7d32"/>
+      <text x="200" y="258" text-anchor="middle" font-size="12" fill="white" font-weight="600">MQA Core Attention</text>
+      <text x="200" y="290" text-anchor="middle" font-size="10" fill="#555">精细选择 + 稀疏高效</text>
+
+      <!-- HCA side -->
+      <rect x="410" y="10" width="380" height="300" rx="10" fill="#fff8f0" stroke="#ff9800" stroke-width="1.5"/>
+      <text x="600" y="35" text-anchor="middle" font-size="14" fill="#e65100" font-weight="700">HCA（重压缩注意力）</text>
+      <rect x="430" y="55" width="340" height="30" rx="4" fill="#fff3e0" stroke="#ffcc80"/>
+      <text x="600" y="75" text-anchor="middle" font-size="11" fill="#e65100">原始 KV: n 个 token</text>
+      <text x="600" y="105" text-anchor="middle" font-size="20" fill="#888">&darr;</text>
+      <rect x="430" y="115" width="340" height="30" rx="4" fill="#ffe0b2" stroke="#ff9800"/>
+      <text x="600" y="135" text-anchor="middle" font-size="11" fill="#bf360c">重压缩: 每 m'=128 个 &rarr; 1 个 (n/128 条目)</text>
+      <text x="600" y="165" text-anchor="middle" font-size="20" fill="#888">&darr;</text>
+      <rect x="430" y="175" width="340" height="30" rx="4" fill="#ffcc80" stroke="#f57c00"/>
+      <text x="600" y="195" text-anchor="middle" font-size="11" fill="#bf360c">无稀疏选择，全部参与注意力</text>
+      <text x="600" y="225" text-anchor="middle" font-size="20" fill="#888">&darr;</text>
+      <rect x="480" y="235" width="240" height="35" rx="6" fill="#ff9800" stroke="#e65100"/>
+      <text x="600" y="258" text-anchor="middle" font-size="12" fill="white" font-weight="600">MQA Dense Attention</text>
+      <text x="600" y="290" text-anchor="middle" font-size="10" fill="#555">全局覆盖 + 极致压缩</text>
+    </svg>
+    <div class="caption">图 2：CSA 与 HCA 的对比。CSA 先压缩后稀疏选择，兼顾精度和效率；HCA 采用更高压缩率但保持全注意力，确保全局信息覆盖。两者交替排列形成互补。</div>
+  </div>
+
+  <h3>3.3 架构创新二：mHC（流形约束超连接）</h3>
+  <p>
+    Manifold-Constrained Hyper-Connections（mHC）是 DeepSeek-V4 对传统残差连接的替代方案。
+    标准的 Hyper-Connections（HC）通过扩展残差流的宽度来增强层间信息传递，但在深层堆叠时会出现数值不稳定。
+  </p>
+
+  <h4>核心思想：Birkhoff 多胞体约束</h4>
+  <p>
+    mHC 的关键创新是将残差映射矩阵 B<sub>l</sub> 约束在<strong>双随机矩阵流形</strong>（Birkhoff 多胞体）上：
+  </p>
+  <div class="formula">
+    B<sub>l</sub> &isin; M := { M &isin; R<sup>n&times;n</sup> | M1<sub>n</sub> = 1<sub>n</sub>, 1<sub>n</sub><sup>T</sup>M = 1<sub>n</sub><sup>T</sup>, M &ge; 0 }
+  </div>
+  <p>这确保映射矩阵的谱范数 ||B<sub>l</sub>||<sub>2</sub> &le; 1，使残差变换在前向和反向传播中均为非扩张的，
+  从而保证深层堆叠的数值稳定性。投影通过 Sinkhorn-Knopp 算法实现（迭代 20 次列/行归一化）。</p>
+
+  <div class="figure">
+    <img src="deepseek_summary_figures/v4_mhc_formulas.png" alt="mHC Formulas">
+    <div class="caption">原文（V4 第 8 页）：mHC 的流形约束残差映射、动态参数化和参数约束的完整公式推导。</div>
+  </div>
+
+  <h4>HC 更新公式</h4>
+  <div class="formula">
+    X<sub>l+1</sub> = B<sub>l</sub> X<sub>l</sub> + C<sub>l</sub> F<sub>l</sub>(A<sub>l</sub> X<sub>l</sub>)
+  </div>
+  <p>其中 A<sub>l</sub> 和 C<sub>l</sub> 分别是输入和输出映射，通过 Sigmoid 约束为非负有界；
+  B<sub>l</sub> 是残差映射，约束在 Birkhoff 多胞体上。三个映射均通过动态参数化生成（输入相关 + 静态偏置）。
+  V4 设置扩展因子 n<sub>hc</sub> = 4。</p>
+
+  <h3>3.4 架构创新三：Muon 优化器</h3>
+  <p>
+    DeepSeek-V4 将 Muon 优化器引入大规模预训练，替代绝大部分参数的 AdamW 更新
+    （嵌入层、预测头、mHC 静态偏置和 RMSNorm 仍使用 AdamW）。
+    Muon 的核心是通过混合 Newton-Schulz 迭代对更新矩阵进行近似正交化：
+  </p>
+  <div class="formula">
+    M<sub>k</sub> = a &middot; M<sub>k-1</sub> + b(M<sub>k-1</sub> M<sub>k-1</sub><sup>T</sup>) M<sub>k-1</sub> + c(M<sub>k-1</sub> M<sub>k-1</sub><sup>T</sup>)<sup>2</sup> M<sub>k-1</sub>
+  </div>
+  <p>
+    分两阶段执行 10 次迭代：前 8 步使用 (a,b,c) = (3.4445, -4.7750, 2.0315) 快速收敛，
+    最后 2 步使用 (2, -1.5, 0.5) 精确稳定。最终更新按 &radic;max(n,m) &middot; &gamma; 进行 RMS 缩放。
+    Muon 带来更快的收敛速度和更好的训练稳定性。
+  </p>
+
+  <div class="figure">
+    <img src="deepseek_summary_figures/v4_algo1_muon.png" alt="Muon Algorithm">
+    <div class="caption">原文 Algorithm 1（V4）：DeepSeek-V4 的 Muon 优化器完整算法流程，包括梯度计算、动量累积、混合 Newton-Schulz 正交化和 RMS 缩放。</div>
+  </div>
+
+  <h3>3.5 基础设施创新</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>细粒度 EP 重叠</h4>
+      <p>将 MoE 专家拆分为 wave，实现通信与计算的全流水线重叠。开源 MegaMoE 内核，理论加速 1.92&times;</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>TileLang DSL</h4>
+      <p>领域特定语言替代数百个手写 ATen 算子。Host Codegen 降低调用开销至 &lt;1&mu;s，集成 Z3 SMT solver</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>FP4 量化感知训练</h4>
+      <p>MoE 权重和 CSA 索引器 QK 路径使用 FP4。FP4&rarr;FP8 反量化无损（E4M3 vs E2M1）。Top-k 召回率 99.7%</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>确定性训练</h4>
+      <p>端到端 batch-invariant、bitwise 确定性内核。用于调试 loss spike 和确保后训练一致性</p>
+    </div>
+  </div>
+
+  <div class="figure">
+    <img src="deepseek_summary_figures/v4_fig5_ep.png" alt="Fine-Grained EP Scheme">
+    <div class="caption">原文图 5（V4）：细粒度 Expert Parallelism 方案对比。DeepSeek-V4 将专家拆分为 wave 实现通信-计算全流水线重叠，理论加速 1.92&times;。</div>
+  </div>
+
+  <h3>3.6 训练稳定性技术</h3>
+  <p>训练万亿参数 MoE 模型时遇到显著的稳定性挑战，DeepSeek-V4 发现并分享了两个实用技术：</p>
+  <ul>
+    <li><strong>Anticipatory Routing</strong>：解耦路由网络和主干网络的同步更新，路由索引使用历史参数 &theta;<sub>t-&Delta;t</sub>
+    计算并提前缓存。配合自动 loss spike 检测，仅在异常发生时激活，总体开销约 20%</li>
+    <li><strong>SwiGLU Clamping</strong>：将 SwiGLU 的线性分量限制在 [-10, 10]，门控分量上限 10。
+    有效消除异常值并稳定训练过程</li>
+  </ul>
+
+  <h3>3.7 后训练：Specialist Training + OPD</h3>
+  <p>
+    DeepSeek-V4 的后训练采用两阶段范式，与 V3.2 的混合 RL 训练有显著区别：
+  </p>
+
+  <h4>第一阶段：Specialist Training（专家训练）</h4>
+  <p>
+    为每个目标领域（数学、编程、Agent、指令遵循等）独立训练一个专家模型。
+    每个专家先进行领域数据 SFT，然后使用 GRPO 进行领域 RL 训练。
+    V4 支持三种推理模式（Non-think / Think High / Think Max），通过不同的长度惩罚和上下文窗口实现。
+  </p>
+
+  <h4>第二阶段：On-Policy Distillation（OPD，在策略蒸馏）</h4>
+  <p>
+    使用 10+ 个领域专家作为教师模型，通过<strong>全词表反向 KL 蒸馏</strong>将知识融合到单一学生模型中：
+  </p>
+  <div class="formula">
+    L<sub>OPD</sub>(&theta;) = &Sigma;<sub>i</sub> w<sub>i</sub> &middot; D<sub>KL</sub>( &pi;<sub>&theta;</sub> || &pi;<sub>E<sub>i</sub></sub> )
+  </div>
+  <p>
+    关键技术：全词表 logit 蒸馏（而非 token 级采样近似）产生更稳定的梯度；
+    教师权重通过 ZeRO 分片存储按需加载；只缓存教师最后一层隐状态而非完整 logits，
+    训练时按需重算 logit，避免 |V|&gt;100k 的显存瓶颈。
+  </p>
+
+  <div class="warning">
+    <strong>V3.2 vs V4 后训练方法的关键区别：</strong>
+    V3.2 将推理、Agent、人类对齐合并到<strong>单一混合 RL 阶段</strong>，直接在一个模型上多任务训练；
+    V4 则采用<strong>先分后合</strong>策略——各领域独立训练专家模型，再通过 OPD 蒸馏合并。
+    V4 方法避免了多阶段 RL 常见的灾难性遗忘问题。
+  </div>
+
+  <h3>3.8 DeepSeek Elastic Compute（DSec）</h3>
+  <p>
+    V4 构建了生产级沙箱平台 DSec，用于 Agent AI 的后训练和评估。
+    DSec 由三个 Rust 组件构成（Apiserver / Edge / Watcher），运行在 3FS 分布式文件系统上，
+    管理数十万并发沙箱实例。支持四种执行基底（Function Call / Container / microVM / fullVM），
+    通过统一 Python SDK（libdsec）透明切换。
+  </p>
+</div>
+
+<!-- ===== 效率对比 ===== -->
+<div class="section">
+  <h2>四、效率对比 —— V3.2 vs V4</h2>
+
+  <p>DeepSeek-V4 在长上下文效率上实现了质的飞跃：</p>
+
+  <div class="figure">
+    <img src="deepseek_summary_figures/v4_fig1_benchmark.png" alt="V4 Benchmark and Efficiency">
+    <div class="caption">原文图 1（V4）：左图为 DeepSeek-V4-Pro-Max 与竞品模型的基准对比；右图为 V3.2 与 V4 系列在不同上下文长度下的推理 FLOPs 和 KV Cache 大小对比。</div>
+  </div>
+
+  <!-- Efficiency comparison SVG chart -->
+  <div class="figure">
+    <svg viewBox="0 0 800 380" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <text x="400" y="25" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">1M 上下文场景下的推理效率对比（相对于 V3.2 = 100%）</text>
+
+      <!-- FLOPs comparison -->
+      <text x="200" y="55" text-anchor="middle" font-size="13" font-weight="600" fill="#333">单 Token 推理 FLOPs</text>
+      <!-- V3.2 bar -->
+      <rect x="60" y="70" width="280" height="35" rx="4" fill="#90caf9" stroke="#1565c0"/>
+      <text x="350" y="93" font-size="12" fill="#1565c0" font-weight="700">V3.2: 100%</text>
+      <text x="200" y="93" text-anchor="middle" font-size="11" fill="#0d47a1" font-weight="600">DeepSeek-V3.2 (37B activated)</text>
+      <!-- V4-Pro bar -->
+      <rect x="60" y="115" width="76" height="35" rx="4" fill="#42a5f5" stroke="#1565c0"/>
+      <text x="145" y="138" font-size="12" fill="#1565c0" font-weight="700">V4-Pro: 27%</text>
+      <text x="95" y="138" text-anchor="middle" font-size="10" fill="white" font-weight="600">49B</text>
+      <!-- V4-Flash bar -->
+      <rect x="60" y="160" width="28" height="35" rx="4" fill="#1e88e5" stroke="#0d47a1"/>
+      <text x="98" y="183" font-size="12" fill="#0d47a1" font-weight="700">V4-Flash: 10%</text>
+
+      <!-- KV Cache comparison -->
+      <text x="600" y="55" text-anchor="middle" font-size="13" font-weight="600" fill="#333">KV Cache 大小</text>
+      <!-- V3.2 bar -->
+      <rect x="460" y="70" width="280" height="35" rx="4" fill="#a5d6a7" stroke="#2e7d32"/>
+      <text x="750" y="93" font-size="12" fill="#2e7d32" font-weight="700">V3.2: 100%</text>
+      <text x="600" y="93" text-anchor="middle" font-size="11" fill="#1b5e20" font-weight="600">DeepSeek-V3.2</text>
+      <!-- V4-Pro bar -->
+      <rect x="460" y="115" width="28" height="35" rx="4" fill="#66bb6a" stroke="#2e7d32"/>
+      <text x="498" y="138" font-size="12" fill="#2e7d32" font-weight="700">V4-Pro: 10%</text>
+      <!-- V4-Flash bar -->
+      <rect x="460" y="160" width="20" height="35" rx="4" fill="#43a047" stroke="#1b5e20"/>
+      <text x="490" y="183" font-size="12" fill="#1b5e20" font-weight="700">V4-Flash: 7%</text>
+
+      <!-- Additional info -->
+      <rect x="40" y="220" width="720" height="145" rx="8" fill="#f8f9ff" stroke="#e0e0e0"/>
+      <text x="400" y="245" text-anchor="middle" font-size="13" font-weight="600" fill="#1a1a2e">KV Cache 进一步压缩对比（vs BF16 GQA8 基准，1M 上下文）</text>
+
+      <text x="60" y="275" font-size="11" fill="#555">标准 BF16 GQA8 (d=128):</text>
+      <rect x="280" y="262" width="400" height="20" rx="3" fill="#ef9a9a"/>
+      <text x="690" y="278" font-size="11" fill="#c62828" font-weight="600">100% (基准)</text>
+
+      <text x="60" y="305" font-size="11" fill="#555">DeepSeek-V3.2 (MLA):</text>
+      <rect x="280" y="292" width="80" height="20" rx="3" fill="#ffcc80"/>
+      <text x="370" y="308" font-size="11" fill="#e65100" font-weight="600">~20%</text>
+
+      <text x="60" y="335" font-size="11" fill="#555">DeepSeek-V4 (CSA+HCA+混合精度):</text>
+      <rect x="280" y="322" width="8" height="20" rx="3" fill="#81c784"/>
+      <text x="298" y="338" font-size="11" fill="#2e7d32" font-weight="600">~2% (约 50&times; 压缩)</text>
+
+      <text x="400" y="358" text-anchor="middle" font-size="10" fill="#888">* 采用 BF16/FP8 混合存储（RoPE 维度 BF16，其余 FP8）进一步压缩</text>
+    </svg>
+    <div class="caption">图 3：DeepSeek-V4 系列在 1M 上下文场景下的推理效率对比。V4-Pro 的推理 FLOPs 仅为 V3.2 的 27%，KV Cache 仅为 10%；V4-Flash 更加极致（10% FLOPs / 7% KV）。</div>
+  </div>
+
+  <div class="highlight">
+    <strong>效率飞跃的技术来源：</strong>
+    (1) CSA 将序列长度压缩 m=4 倍后再 top-k 选择，双重削减 KV 数量；
+    (2) HCA 将 128 个 token 压缩为 1 个，极端压缩但保持全局覆盖；
+    (3) BF16+FP8 混合 KV 存储再减半；
+    (4) FP4 量化索引器加速稀疏选择。
+    这些技术叠加使得 V4 的 KV Cache 相对标准 BF16 GQA8 仅为约 2%，使百万 token 上下文在实际部署中切实可行。
+  </div>
+</div>
+
+<!-- ===== 模型对比 ===== -->
+<div class="section">
+  <h2>五、模型全面对比</h2>
+
+  <h3>5.1 架构与训练对比</h3>
+  <table class="compare-table">
+    <tr><th>维度</th><th>DeepSeek-V3.2</th><th>DeepSeek-V4-Pro</th><th>DeepSeek-V4-Flash</th></tr>
+    <tr><td>基座来源</td><td>V3.1-Terminus 持续预训练</td><td>全新从零预训练</td><td>全新从零预训练</td></tr>
+    <tr><td>总参数 / 激活参数</td><td>671B / 37B</td><td>1.6T / 49B</td><td>284B / 13B</td></tr>
+    <tr><td>注意力机制</td><td>MLA + DSA（Top-k 选择）</td><td>CSA + HCA 混合交替</td><td>CSA + HCA 混合交替</td></tr>
+    <tr><td>残差连接</td><td>标准残差</td><td>mHC（n<sub>hc</sub>=4）</td><td>mHC（n<sub>hc</sub>=4）</td></tr>
+    <tr><td>优化器</td><td>AdamW</td><td>Muon + AdamW 混合</td><td>Muon + AdamW 混合</td></tr>
+    <tr><td>上下文长度</td><td>128K</td><td>1M</td><td>1M</td></tr>
+    <tr><td>CSA 压缩率 m</td><td>N/A（使用原始 DSA）</td><td>4</td><td>4</td></tr>
+    <tr><td>HCA 压缩率 m'</td><td>N/A</td><td>128</td><td>128</td></tr>
+    <tr><td>稀疏 Top-k</td><td>2048</td><td>1024</td><td>512</td></tr>
+    <tr><td>MoE 路由专家</td><td>256</td><td>384</td><td>256</td></tr>
+    <tr><td>MoE 亲和函数</td><td>Sigmoid</td><td>Sqrt(Softplus)</td><td>Sqrt(Softplus)</td></tr>
+    <tr><td>MoE 早期层路由</td><td>标准路由</td><td>Hash 路由（前 3 层）</td><td>Hash 路由（前 3 层）</td></tr>
+    <tr><td>精度策略</td><td>BF16/FP8</td><td>FP4 QAT + BF16/FP8</td><td>FP4 QAT + BF16/FP8</td></tr>
+    <tr><td>后训练方法</td><td>混合 RL（单阶段）</td><td>Specialist + OPD（两阶段）</td><td>Specialist + OPD（两阶段）</td></tr>
+    <tr><td>训练 tokens</td><td>~943.7B（持续PT）</td><td>33T</td><td>32T</td></tr>
+  </table>
+
+  <h3>5.2 核心基准测试对比</h3>
+  <p>
+    以下是 DeepSeek-V3.2（Thinking 模式）和 DeepSeek-V4-Pro-Max 与主要闭源模型的对比
+    （数据来源于两篇技术报告的评测表格）：
+  </p>
+
+  <!-- Benchmark comparison SVG -->
+  <div class="figure">
+    <svg viewBox="0 0 800 460" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <text x="400" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">核心基准测试成绩对比</text>
+
+      <!-- Legend -->
+      <rect x="180" y="35" width="12" height="12" rx="2" fill="#42a5f5"/>
+      <text x="196" y="46" font-size="10" fill="#333">DS-V3.2-Thinking</text>
+      <rect x="320" y="35" width="12" height="12" rx="2" fill="#1565c0"/>
+      <text x="336" y="46" font-size="10" fill="#333">DS-V4-Pro-Max</text>
+      <rect x="460" y="35" width="12" height="12" rx="2" fill="#ef5350"/>
+      <text x="476" y="46" font-size="10" fill="#333">GPT-5</text>
+      <rect x="560" y="35" width="12" height="12" rx="2" fill="#ff9800"/>
+      <text x="576" y="46" font-size="10" fill="#333">Gemini-3.1-Pro</text>
+
+      <!-- Axes -->
+      <line x1="120" y1="60" x2="120" y2="430" stroke="#ccc" stroke-width="1"/>
+      <line x1="120" y1="430" x2="780" y2="430" stroke="#ccc" stroke-width="1"/>
+
+      <!-- Y-axis labels -->
+      <text x="115" y="430" text-anchor="end" font-size="9" fill="#888">0</text>
+      <text x="115" y="355" text-anchor="end" font-size="9" fill="#888">20</text>
+      <line x1="117" y1="355" x2="780" y2="355" stroke="#f0f0f0" stroke-width="0.5"/>
+      <text x="115" y="280" text-anchor="end" font-size="9" fill="#888">40</text>
+      <line x1="117" y1="280" x2="780" y2="280" stroke="#f0f0f0" stroke-width="0.5"/>
+      <text x="115" y="205" text-anchor="end" font-size="9" fill="#888">60</text>
+      <line x1="117" y1="205" x2="780" y2="205" stroke="#f0f0f0" stroke-width="0.5"/>
+      <text x="115" y="130" text-anchor="end" font-size="9" fill="#888">80</text>
+      <line x1="117" y1="130" x2="780" y2="130" stroke="#f0f0f0" stroke-width="0.5"/>
+      <text x="115" y="60" text-anchor="end" font-size="9" fill="#888">100</text>
+      <line x1="117" y1="60" x2="780" y2="60" stroke="#f0f0f0" stroke-width="0.5"/>
+
+      <!-- Benchmark groups: MMLU-Pro, GPQA, HLE, AIME 2025, Codeforces, SWE-Verified, Terminal Bench -->
+      <!-- Scale: y = 430 - score * 3.7 -->
+
+      <!-- MMLU-Pro -->
+      <rect x="140" y="115.5" width="18" height="314.5" rx="2" fill="#42a5f5"/><!-- 85.0 -->
+      <rect x="162" y="106.6" width="18" height="323.4" rx="2" fill="#1565c0"/><!-- 87.5 -->
+      <rect x="184" y="106.6" width="18" height="323.4" rx="2" fill="#ef5350"/><!-- 87.5 -->
+      <rect x="206" y="93.3" width="18" height="336.7" rx="2" fill="#ff9800"/><!-- 91.0 -->
+      <text x="182" y="445" text-anchor="middle" font-size="9" fill="#333">MMLU-Pro</text>
+
+      <!-- GPQA Diamond -->
+      <rect x="250" y="125.1" width="18" height="304.9" rx="2" fill="#42a5f5"/><!-- 82.4 -->
+      <rect x="272" y="96.3" width="18" height="333.7" rx="2" fill="#1565c0"/><!-- 90.1 -->
+      <rect x="294" y="100" width="18" height="330" rx="2" fill="#ef5350"/><!-- 89.1 (implied ~85.7) -->
+      <rect x="316" y="81.5" width="18" height="348.5" rx="2" fill="#ff9800"/><!-- 94.3 -->
+      <text x="290" y="445" text-anchor="middle" font-size="9" fill="#333">GPQA</text>
+
+      <!-- HLE -->
+      <rect x="360" y="337.1" width="18" height="92.9" rx="2" fill="#42a5f5"/><!-- 25.1 -->
+      <rect x="382" y="290.5" width="18" height="139.5" rx="2" fill="#1565c0"/><!-- 37.7 -->
+      <rect x="404" y="282.3" width="18" height="147.7" rx="2" fill="#ef5350"/><!-- 39.8(xHigh) -->
+      <rect x="426" y="265.7" width="18" height="164.3" rx="2" fill="#ff9800"/><!-- 44.4 -->
+      <text x="400" y="445" text-anchor="middle" font-size="9" fill="#333">HLE</text>
+
+      <!-- AIME 2025 -->
+      <rect x="470" y="85.5" width="18" height="344.5" rx="2" fill="#42a5f5"/><!-- 93.1 -->
+      <rect x="492" y="78.5" width="18" height="351.5" rx="2" fill="#1565c0"/><!-- 95.0(est) -->
+      <rect x="514" y="79.6" width="18" height="350.4" rx="2" fill="#ef5350"/><!-- 94.6 -->
+      <rect x="536" y="78.5" width="18" height="351.5" rx="2" fill="#ff9800"/><!-- 95.0 -->
+      <text x="510" y="445" text-anchor="middle" font-size="9" fill="#333">AIME 2025</text>
+
+      <!-- SWE-Verified -->
+      <rect x="580" y="159.6" width="18" height="270.4" rx="2" fill="#42a5f5"/><!-- 73.1 -->
+      <rect x="602" y="132.6" width="18" height="297.4" rx="2" fill="#1565c0"/><!-- 80.6 -->
+      <rect x="624" y="153.4" width="18" height="276.6" rx="2" fill="#ef5350"/><!-- 74.9 -->
+      <rect x="646" y="147.8" width="18" height="282.2" rx="2" fill="#ff9800"/><!-- 76.2(est) -->
+      <text x="620" y="445" text-anchor="middle" font-size="9" fill="#333">SWE-Verified</text>
+
+      <!-- BrowseComp -->
+      <rect x="690" y="239.7" width="18" height="190.3" rx="2" fill="#42a5f5"/><!-- 51.4 -->
+      <rect x="712" y="237.8" width="18" height="192.2" rx="2" fill="#1565c0"/><!-- 57.9(est) -->
+      <rect x="734" y="227.8" width="18" height="202.2" rx="2" fill="#ef5350"/><!-- 54.6(est) -->
+      <rect x="756" y="112.3" width="18" height="317.7" rx="2" fill="#ff9800"/><!-- 85.9 -->
+      <text x="730" y="445" text-anchor="middle" font-size="9" fill="#333">BrowseComp</text>
+    </svg>
+    <div class="caption">图 4：核心基准测试对比。DeepSeek-V4-Pro-Max 在知识和推理任务上已接近 GPT-5 水平，在代码 Agent 任务（SWE-Verified）上甚至超越。Gemini-3.1-Pro 在知识任务和搜索 Agent 上仍保持领先。</div>
+  </div>
+
+  <h3>5.3 V4 Base Model 对比</h3>
+  <p>以下是 V3.2-Base、V4-Flash-Base 和 V4-Pro-Base 的预训练基座模型对比（内部统一评估框架）：</p>
+  <table>
+    <tr><th>类别</th><th>基准</th><th>V3.2 Base<br/>(671B/37B)</th><th>V4-Flash Base<br/>(284B/13B)</th><th>V4-Pro Base<br/>(1.6T/49B)</th></tr>
+    <tr><td rowspan="3">知识</td><td>MMLU</td><td>87.8</td><td>88.7</td><td class="metric-best">90.1</td></tr>
+    <tr><td>MMLU-Pro</td><td>65.5</td><td>68.3</td><td class="metric-best">73.5</td></tr>
+    <tr><td>SimpleQA</td><td>28.3</td><td>30.1</td><td class="metric-best">55.2</td></tr>
+    <tr><td rowspan="2">推理</td><td>BBH</td><td class="metric-best">87.6</td><td>86.9</td><td>87.5</td></tr>
+    <tr><td>DROP</td><td>88.2</td><td>88.6</td><td class="metric-best">88.7</td></tr>
+    <tr><td rowspan="2">数学代码</td><td>MATH</td><td>60.5</td><td>57.4</td><td class="metric-best">64.5</td></tr>
+    <tr><td>HumanEval</td><td>62.8</td><td>69.5</td><td class="metric-best">76.8</td></tr>
+    <tr><td>长上下文</td><td>LongBench-V2</td><td>40.2</td><td>44.7</td><td class="metric-best">51.5</td></tr>
+  </table>
+  <div class="success">
+    <strong>关键发现：</strong>V4-Flash-Base 尽管总参数和激活参数都远小于 V3.2-Base（284B/13B vs 671B/37B），
+    却在大多数基准上取得更好或相当的成绩。这充分证明了 V4 架构改进（CSA+HCA、mHC、Muon）的有效性。
+    V4-Pro-Base 则在几乎所有维度上确立了 DeepSeek 基座模型的新高度。
+  </div>
+
+  <div class="figure">
+    <img src="deepseek_summary_figures/v4_table1_base.png" alt="V4 Base Model Comparison">
+    <div class="caption">原文表 1（V4）：DeepSeek-V3.2-Base、V4-Flash-Base 和 V4-Pro-Base 在统一评估框架下的全面对比。V4-Flash-Base 以更小参数量超越 V3.2-Base。</div>
+  </div>
+
+  <div class="figure">
+    <img src="deepseek_summary_figures/v4_table6_eval.png" alt="V4-Pro-Max Evaluation">
+    <div class="caption">原文表 6（V4）：DeepSeek-V4-Pro-Max 与闭源/开源模型（Opus-4.6、GPT-5.4、Gemini-3.1-Pro、K2.6、GLM-5.1）的全面评测对比。</div>
+  </div>
+
+  <div class="figure">
+    <img src="deepseek_summary_figures/v4_table7_modes.png" alt="V4 Reasoning Modes">
+    <div class="caption">原文表 7（V4）：DeepSeek-V4-Flash 和 V4-Pro 在不同推理模式（Non-Think / High / Max）下的性能对比，展示推理努力与性能的权衡。</div>
+  </div>
+
+  <div class="figure">
+    <img src="deepseek_summary_figures/v4_fig9_mrcr.png" alt="V4 MRCR Performance">
+    <div class="caption">原文图 8-9（V4）：形式化数学推理 Putnam 成绩（V4 达到 120/120 满分）以及 1M 上下文 MRCR 检索任务性能曲线。</div>
+  </div>
+</div>
+
+<!-- ===== 关键创新对比 ===== -->
+<div class="section">
+  <h2>六、关键技术创新总结</h2>
+
+  <h3>6.1 注意力机制演进</h3>
+  <table>
+    <tr><th>技术</th><th>V3.2（DSA）</th><th>V4（CSA + HCA）</th></tr>
+    <tr><td>KV 压缩</td><td>不压缩，直接在原始 KV 上选择</td><td>CSA: m=4 压缩; HCA: m'=128 压缩</td></tr>
+    <tr><td>稀疏选择</td><td>Lightning Indexer + Top-2048</td><td>CSA: Indexer + Top-k; HCA: 无（全注意力）</td></tr>
+    <tr><td>注意力类型</td><td>统一 MQA on MLA</td><td>Shared KV MQA + Grouped Output Projection</td></tr>
+    <tr><td>位置编码</td><td>部分 RoPE（via MLA）</td><td>部分 RoPE（最后 64 维）+ 输出反向 RoPE</td></tr>
+    <tr><td>滑动窗口</td><td>无</td><td>n<sub>win</sub>=128 附加分支</td></tr>
+    <tr><td>Attention Sink</td><td>无</td><td>可学习 sink logits z'<sub>h</sub></td></tr>
+    <tr><td>上下文能力</td><td>128K</td><td>1M（原生支持）</td></tr>
+  </table>
+
+  <h3>6.2 V3.2 独有创新</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>GRPO 四项改进</h4>
+      <p>Unbiased KL / Off-Policy Masking / Keep Routing / Keep Sampling Mask，使 RL 在 MoE 上稳定扩展</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>Agent 任务合成流水线</h4>
+      <p>自动化环境构建 &rarr; 工具合成 &rarr; 任务生成 &rarr; 难度迭代，产出 1827 环境 / 4417 任务</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>Thinking Context Management</h4>
+      <p>工具调用场景下的推理上下文保留策略，避免重复推理的 token 浪费</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>搜索 Agent 上下文管理</h4>
+      <p>Summary / Discard-75% / Discard-all 三种策略，扩展测试时计算的有效步数</p>
+    </div>
+  </div>
+
+  <h3>6.3 V4 独有创新</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>mHC 超连接</h4>
+      <p>Birkhoff 多胞体约束确保谱范数 &le;1，Sinkhorn-Knopp 20 次迭代投影，扩展因子 n<sub>hc</sub>=4</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>Muon 优化器</h4>
+      <p>混合 Newton-Schulz 正交化（两阶段 10 步），更快收敛 + 更好稳定性</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>On-Policy Distillation</h4>
+      <p>全词表反向 KL 蒸馏，10+ 专家教师融合，避免灾难性遗忘</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>训练稳定性技术</h4>
+      <p>Anticipatory Routing（解耦路由更新）+ SwiGLU Clamping（消除异常值）</p>
+    </div>
+  </div>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">5</span><h4>FP4 QAT</h4>
+      <p>MoE 权重 + CSA QK 路径 FP4 量化，FP4&rarr;FP8 反量化无损，Top-k 召回率 99.7%</p>
+    </div>
+    <div class="card">
+      <span class="num">6</span><h4>DSec 弹性计算平台</h4>
+      <p>Rust 实现，4 种执行基底，3FS 文件系统，管理数十万并发沙箱</p>
+    </div>
+    <div class="card">
+      <span class="num">7</span><h4>Quick Instruction</h4>
+      <p>特殊 token 机制复用 KV Cache 执行辅助任务，降低 TTFT</p>
+    </div>
+    <div class="card">
+      <span class="num">8</span><h4>Generative Reward Model</h4>
+      <p>模型自身作为 GRM 评估策略轨迹，无需独立奖励模型</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 优劣势分析 ===== -->
+<div class="section">
+  <h2>七、优势与局限性分析</h2>
+
+  <h3>7.1 DeepSeek-V3.2</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>优势</h4>
+      <ul>
+        <li>基于成熟 V3.1 持续训练，开发成本相对较低</li>
+        <li>DSA 引入简洁优雅，不改变模型主体架构</li>
+        <li>GRPO 改进使 RL 训练可靠扩展</li>
+        <li>Agent 合成流水线可复用</li>
+        <li>Speciale 变体展示了 RL 计算扩展的巨大潜力</li>
+        <li>推理性能达到 GPT-5 / Kimi-K2 级别</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>局限性</h4>
+      <ul>
+        <li>上下文长度限制在 128K</li>
+        <li>世界知识仍落后于闭源前沿（训练 FLOPs 较少）</li>
+        <li>token 效率劣于 Gemini-3.0-Pro（需要更长输出）</li>
+        <li>在工具使用中存在过度自我验证倾向</li>
+        <li>Agent 框架兼容性问题（与 Roo Code/Terminus 等不完全适配）</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>7.2 DeepSeek-V4</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>优势</h4>
+      <ul>
+        <li>原生 1M 上下文，KV Cache 仅为传统方案的 ~2%</li>
+        <li>V4-Flash 以 13B 激活参数接近 V3.2 的 37B 性能</li>
+        <li>mHC 从根本上解决深层残差传播的稳定性问题</li>
+        <li>OPD 蒸馏避免了多任务 RL 的灾难性遗忘</li>
+        <li>三种推理模式（Non-think/High/Max）灵活适配</li>
+        <li>Pro-Max 在代码和数学竞赛上匹配 GPT-5.4</li>
+        <li>形式化数学推理达到 Putnam 120/120 满分</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>局限性</h4>
+      <ul>
+        <li>仍落后于 Gemini-3.1-Pro 3-6 个月</li>
+        <li>代码 Agent 任务上落后于闭源模型</li>
+        <li>超过 128K 的检索性能有所下降</li>
+        <li>全新架构增加了部署和适配的复杂性</li>
+        <li>FP4 量化在未来硬件上才能实现理论 1/3 效率提升</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 技术趋势 ===== -->
+<div class="section">
+  <h2>八、总结与技术趋势</h2>
+
+  <p>
+    从 DeepSeek-V3.2 到 V4，我们可以清晰地观察到大语言模型发展的几个重要趋势：
+  </p>
+
+  <h3>8.1 注意力机制：从稀疏到压缩-稀疏混合</h3>
+  <p>
+    V3.2 的 DSA 是在原始 KV 上做稀疏选择（O(Lk)），V4 则先压缩再选择。
+    CSA 的"压缩+稀疏"和 HCA 的"极端压缩+全注意力"形成互补，
+    前者保证精度，后者保证覆盖。这种混合策略可能成为长上下文模型的标准范式。
+  </p>
+
+  <h3>8.2 后训练：从混合 RL 到专家蒸馏</h3>
+  <p>
+    V3.2 将所有领域合并到一个 RL 阶段训练，虽然简单但存在灾难性遗忘风险；
+    V4 转向"独立训练专家 + OPD 蒸馏合并"的两阶段范式。
+    这反映了后训练规模扩大后，对模块化和可控性的更高需求。
+  </p>
+
+  <h3>8.3 效率优先：推理成本决定实际影响力</h3>
+  <p>
+    V4-Flash 以仅 13B 激活参数达到接近 V3.2（37B 激活）的性能，
+    KV Cache 在 1M 上下文下缩减到传统方案的 2%。
+    这表明架构创新（而非单纯堆叠参数）是提升效率的主要杠杆。
+    对于开源模型而言，推理成本可能比绝对性能更能决定其实际应用范围。
+  </p>
+
+  <h3>8.4 开源追赶：差距在缩小，但结构性挑战依然存在</h3>
+  <p>
+    DeepSeek-V4-Pro-Max 已在推理、代码、数学等维度上接近 GPT-5.4 / Gemini-3.1-Pro，
+    但在世界知识广度和 token 效率上仍存在差距。
+    这些差距主要源于预训练数据规模和质量的结构性劣势，而非架构能力的不足。
+  </p>
+
+  <div class="highlight">
+    <strong>展望：</strong>
+    DeepSeek-V4 系列标志着开源大模型在效率和性能上的一个重要里程碑。
+    原生百万 token 上下文支持打开了长期推理任务、复杂 Agent 流水线和测试时计算扩展（test-time scaling）的大门。
+    未来的方向可能包括：更高效的稀疏-压缩混合策略、在线学习范式的探索、
+    以及基于 1M 上下文的更复杂 Agent 系统构建。
+  </div>
+</div>
+
+<div class="footer">
+  <p>基于 DeepSeek-V3.2 和 DeepSeek-V4 技术报告整理 | DeepSeek-AI, 2025</p>
+</div>
+
+</div>
+</body>
+</html>

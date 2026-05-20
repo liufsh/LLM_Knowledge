@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大模型训练与推理的并行策略详解</title>
+<style>
+  :root{--primary:#1a1a2e;--accent:#0f3460;--highlight-bg:#f0f4ff;--highlight-border:#4a7dff;--text:#222;--border:#e0e0e0}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text);line-height:1.8;background:#fafafa}
+  .container{max-width:920px;margin:0 auto;padding:20px}
+  .cover{text-align:center;padding:70px 20px 50px;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);color:white;border-radius:12px;margin-bottom:40px}
+  .cover h1{font-size:2.1em;margin-bottom:12px;font-weight:700}
+  .cover .subtitle{font-size:1.05em;color:#aab;margin-bottom:24px}
+  .cover .tags{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}
+  .cover .tag{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:20px;padding:6px 18px;font-size:.9em;color:#dde}
+  .section{background:white;border-radius:10px;padding:36px 40px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid var(--border)}
+  h2{font-size:1.5em;color:var(--primary);margin-bottom:6px;padding-bottom:10px;border-bottom:2px solid var(--highlight-border)}
+  h3{font-size:1.15em;color:var(--accent);margin:22px 0 10px}
+  p{margin:12px 0;text-align:justify}
+  .highlight{background:var(--highlight-bg);border-left:4px solid var(--highlight-border);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .highlight strong{color:var(--accent)}
+  .warning{background:#fff8f0;border-left:4px solid #f0a500;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .success{background:#f0fff4;border-left:4px solid #2a9d8f;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  ul,ol{padding-left:24px;margin:10px 0} li{margin:6px 0}
+  .formula{text-align:center;padding:18px 20px;margin:18px 0;background:#f8f9ff;border-radius:8px;border:1px solid #e8eaf0;font-size:1.12em;font-family:"Times New Roman","STIX",serif;overflow-x:auto}
+  .figure{text-align:center;margin:24px 0;padding:16px;background:#fafafa;border-radius:8px;border:1px solid #eee}
+  .figure img{max-width:100%;height:auto;border-radius:4px}
+  .figure .caption{font-size:.88em;color:#666;margin-top:10px;font-style:italic}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.92em}
+  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid #eee}
+  th{background:var(--primary);color:white;font-weight:600} tr:hover{background:#f8f9ff}
+  td code{background:#f0f0f5;padding:2px 6px;border-radius:3px;font-size:.9em}
+  .card-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .card{background:linear-gradient(135deg,#f8f9ff,#f0f4ff);border:1px solid #d8e0f0;border-radius:10px;padding:20px 24px}
+  .card .num{display:inline-block;background:var(--highlight-border);color:white;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-size:.85em;font-weight:700;margin-right:8px}
+  .card h4{display:inline;color:var(--accent);font-size:1.05em}
+  .card p{margin-top:8px;font-size:.93em}
+  .pros-cons{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .pros,.cons{padding:16px;border-radius:8px}
+  .pros{background:#f0fff4;border:1px solid #c8e6c9} .cons{background:#fff8f0;border:1px solid #ffe0b2}
+  .pros h4{color:#2e7d32;margin-bottom:8px} .cons h4{color:#e65100;margin-bottom:8px}
+  .footer{text-align:center;color:#999;font-size:.85em;padding:30px 0;border-top:1px solid #eee;margin-top:20px}
+  @media(max-width:640px){.section{padding:24px 20px}.cover h1{font-size:1.6em}.pros-cons,.card-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="cover">
+  <h1>大模型训练与推理的并行策略详解</h1>
+  <div class="subtitle">从数据并行到 3D 混合并行 —— 千卡训练和高效推理的工程基石</div>
+  <div class="tags">
+    <span class="tag">Data Parallel</span>
+    <span class="tag">Tensor Parallel</span>
+    <span class="tag">Pipeline Parallel</span>
+    <span class="tag">ZeRO / FSDP</span>
+    <span class="tag">Expert Parallel</span>
+    <span class="tag">集合通信</span>
+  </div>
+</div>
+
+<!-- ===== 引言 ===== -->
+<div class="section">
+  <h2>引言：为什么需要并行？</h2>
+  <p>
+    LLaMA-65B 有 652 亿参数，以 FP16 存储需要约 130 GB——单张 A100 (80GB) 连模型都放不下，
+    更别说训练时还需要梯度、优化器状态和激活值。训练 1.4T token 需要 ~5.5&times;10<sup>23</sup> FLOPs，
+    即使单卡 A100 的 312 TFLOPS 峰值跑满，也需要 <strong>20,000+ 天</strong>。
+  </p>
+  <div class="highlight">
+    <strong>并行的两大目标：</strong>
+    (1) <strong>容量</strong>——将放不下的模型分散到多张 GPU 上；
+    (2) <strong>速度</strong>——将无法接受的训练时间缩短到可行范围（如 21 天 &times; 2048 张 A100）。
+  </div>
+  <p>
+    本文将系统介绍大模型训练和推理中的六种核心并行策略、底层的集合通信原语、以及工程实践中的组合方式。
+  </p>
+</div>
+
+<!-- ===== 1. Data Parallelism ===== -->
+<div class="section">
+  <h2>一、数据并行（Data Parallelism, DP）</h2>
+
+  <h3>1.1 核心思想</h3>
+  <p>
+    数据并行是最简单、最基础的并行方式：<strong>每张 GPU 持有完整的模型副本</strong>，
+    训练数据被均匀切分给各 GPU。每张 GPU 独立做前向和反向传播，然后<strong>同步梯度</strong>。
+  </p>
+
+  <div class="figure">
+    <img src="parallel_figures/data_parallel.png" alt="Data Parallelism">
+    <div class="caption">图 1：数据并行的工作流程。训练 batch 被分成 N 份，每张 GPU 用自己的子集独立计算梯度，
+    通过 AllReduce 取平均后各自更新参数。</div>
+  </div>
+
+  <h3>1.2 训练步骤</h3>
+  <ol>
+    <li><strong>数据切分：</strong>一个 global batch（如 32 样本）被分成 N 份 micro-batch（每 GPU 8 样本）</li>
+    <li><strong>独立计算：</strong>每张 GPU 用自己的 micro-batch 做前向 + 反向传播，计算局部梯度</li>
+    <li><strong>梯度同步：</strong>通过 <strong>AllReduce</strong> 操作对所有 GPU 的梯度取平均</li>
+    <li><strong>参数更新：</strong>每张 GPU 用相同的平均梯度更新自己的模型副本</li>
+  </ol>
+
+  <div class="formula">
+    通信量 = 2 &times; |params| &times; (N-1)/N &nbsp;&nbsp; (Ring AllReduce)
+  </div>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; 优点</h4>
+      <ul>
+        <li>实现简单（PyTorch DDP 几行代码）</li>
+        <li>近线性扩展（通信可与计算重叠）</li>
+        <li>GPU 间通信量与 GPU 数无关</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; 缺点</h4>
+      <ul>
+        <li><strong>每张 GPU 存全部参数</strong>——模型太大时放不下</li>
+        <li>优化器状态（Adam 2 份动量）也要每卡存一份</li>
+        <li>内存效率低：N 张卡存了 N 份相同的参数</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 2. Tensor Parallelism ===== -->
+<div class="section">
+  <h2>二、张量并行（Tensor Parallelism, TP）</h2>
+
+  <h3>2.1 核心思想</h3>
+  <p>
+    张量并行把<strong>单个层的权重矩阵切分到多张 GPU</strong>。每张 GPU 只持有权重的一部分，
+    计算也只做对应的部分，然后通过通信拼合结果。
+  </p>
+
+  <div class="figure">
+    <img src="parallel_figures/tensor_parallel.png" alt="Tensor Parallelism">
+    <div class="caption">图 2：张量并行将权重矩阵按列（或按行）切分到 4 张 GPU 上。
+    每 GPU 计算部分结果，通过 AllGather 拼合为完整输出。</div>
+  </div>
+
+  <h3>2.2 Megatron-LM 风格的切分</h3>
+  <p>
+    Megatron-LM（Shoeybi et al., 2019）提出了经典的 TP 方案，针对 Transformer 的两个子层：
+  </p>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>MLP 层切分</h4>
+      <p>第一个线性层 W<sub>1</sub> <strong>按列切分</strong>（Column Parallel），
+      每 GPU 计算输出的一部分维度。第二个线性层 W<sub>2</sub> <strong>按行切分</strong>（Row Parallel），
+      各 GPU 的部分结果直接相加得到最终输出。<br>
+      通信：前向 1 次 AllReduce，反向 1 次 AllReduce。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>Attention 层切分</h4>
+      <p>Q/K/V 投影矩阵按<strong>注意力头</strong>切分——每 GPU 负责 h/N 个头的完整计算。
+      输出投影 W<sub>O</sub> 按行切分。<br>
+      通信：前向 1 次 AllReduce，反向 1 次 AllReduce。</p>
+    </div>
+  </div>
+
+  <div class="warning">
+    <strong>通信频率高：</strong>TP 在<strong>每一层</strong>都需要通信（AllReduce 或 AllGather），
+    而 Transformer 可能有 80 层。因此 TP 强烈依赖<strong>高带宽互连</strong>——
+    通常要求 GPU 在同一节点内，通过 NVLink（600-900 GB/s）连接。
+    跨节点的 InfiniBand（200-400 GB/s）带宽不够用。
+  </div>
+
+  <h3>2.3 序列并行（Sequence Parallelism, SP）</h3>
+  <p>
+    Megatron-LM v2 引入了序列并行：在非张量并行的操作（如 LayerNorm、Dropout）上，
+    沿<strong>序列长度维度</strong>切分。这减少了激活值的冗余存储——
+    TP 中每张 GPU 的 LayerNorm 输入/输出本来是完整的 [seq, d]，
+    SP 将其切为 [seq/N, d]，内存进一步降低。
+  </p>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; 优点</h4>
+      <ul>
+        <li>单层的内存和计算都被 N 等分</li>
+        <li>降低单个 token 的推理延迟（多卡并行算一个请求）</li>
+        <li>与 DP、PP 正交，可自由组合</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; 缺点</h4>
+      <ul>
+        <li>每层两次 AllReduce，通信极频繁</li>
+        <li>必须在高带宽互连（NVLink）上使用</li>
+        <li>实现复杂，需要精心设计矩阵切分</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 3. Pipeline Parallelism ===== -->
+<div class="section">
+  <h2>三、流水线并行（Pipeline Parallelism, PP）</h2>
+
+  <h3>3.1 核心思想</h3>
+  <p>
+    流水线并行把模型<strong>按层分组</strong>，不同组放在不同 GPU 上。
+    数据像流水线一样依次通过各级 GPU。
+  </p>
+
+  <div class="figure">
+    <img src="parallel_figures/pipeline_parallel.png" alt="Pipeline Parallelism">
+    <div class="caption">图 3：流水线并行将 32 层模型分成 4 级（每级 8 层），分配到 4 张 GPU。
+    训练 batch 被切为多个 micro-batch，像流水线一样依次通过各级。灰色区域是"流水线气泡"（GPU 空闲）。</div>
+  </div>
+
+  <h3>3.2 流水线气泡（Pipeline Bubble）</h3>
+  <p>
+    PP 的核心问题是<strong>气泡</strong>——在流水线启动和排空阶段，部分 GPU 处于空闲状态。
+  </p>
+  <div class="formula">
+    气泡比例 &asymp; (P - 1) / (M + P - 1) &nbsp;&nbsp; P=流水线级数, M=micro-batch 数
+  </div>
+  <p>
+    例如 P=4, M=4 时气泡比例 = 3/7 &asymp; 43%，近一半时间被浪费！
+    解决方案是增大 M（更多 micro-batch），使 M >> P，气泡比例趋近于 0。
+  </p>
+
+  <h3>3.3 调度策略</h3>
+  <table>
+    <tr><th>策略</th><th>气泡率</th><th>内存</th><th>特点</th></tr>
+    <tr><td><strong>GPipe</strong></td><td>(P-1)/M</td><td>高（存所有 micro-batch 的激活）</td><td>简单，同步调度</td></tr>
+    <tr><td><strong>1F1B</strong></td><td>(P-1)/M</td><td>低（只存 P 个 micro-batch 的激活）</td><td>交错前向和反向</td></tr>
+    <tr><td><strong>Interleaved 1F1B</strong></td><td>(P-1)/(M&times;v)</td><td>中</td><td>每 GPU 持有多个不连续的层组，v 为虚拟级数</td></tr>
+    <tr><td><strong>Zero Bubble PP</strong></td><td>&asymp;0</td><td>高</td><td>将反向传播拆为 B 和 W 两步，用 W 步填充气泡</td></tr>
+  </table>
+
+  <div class="success">
+    <strong>PP 的通信优势：</strong>PP 只在相邻级之间做<strong>点对点（P2P）通信</strong>，
+    传输的是激活值张量（远小于完整参数）。通信量小、频率低，
+    适合<strong>跨节点</strong>（InfiniBand）使用——这是 PP 与 TP 的关键区别。
+  </div>
+</div>
+
+<!-- ===== 4. Collective Ops ===== -->
+<div class="section">
+  <h2>四、集合通信原语（Collective Operations）</h2>
+  <p>
+    所有并行策略的底层都依赖于一组<strong>集合通信操作</strong>。理解这些原语是理解并行策略的基础。
+  </p>
+
+  <div class="figure">
+    <img src="parallel_figures/collective_ops.png" alt="Collective Operations">
+    <div class="caption">图 4：六种基础集合通信操作的直观图解。每行表示一张 GPU，左列为操作前的数据分布，右列为操作后。</div>
+  </div>
+
+  <table>
+    <tr><th>操作</th><th>功能</th><th>通信量（每 GPU）</th><th>使用场景</th></tr>
+    <tr><td><strong>AllReduce</strong></td><td>所有 GPU 的数据求和/平均，结果发回所有 GPU</td><td>2&times;|data|&times;(N-1)/N</td><td>DP 梯度同步、TP 层间同步</td></tr>
+    <tr><td><strong>AllGather</strong></td><td>每 GPU 有一块，收集后所有 GPU 各得完整数据</td><td>|data|&times;(N-1)/N</td><td>FSDP 参数聚合、TP 输出拼合</td></tr>
+    <tr><td><strong>ReduceScatter</strong></td><td>先对所有 GPU 数据求和，再均分到各 GPU</td><td>|data|&times;(N-1)/N</td><td>FSDP 梯度分片</td></tr>
+    <tr><td><strong>Broadcast</strong></td><td>一个 GPU 的数据复制到所有 GPU</td><td>|data|</td><td>参数初始化、权重同步</td></tr>
+    <tr><td><strong>Scatter</strong></td><td>一个 GPU 的数据均分到所有 GPU</td><td>|data|/N</td><td>数据分发</td></tr>
+    <tr><td><strong>All-to-All</strong></td><td>每个 GPU 向其他所有 GPU 发送不同的数据块</td><td>|data|&times;(N-1)/N</td><td>MoE 专家并行 token 路由</td></tr>
+    <tr><td><strong>Send/Recv (P2P)</strong></td><td>两个 GPU 之间点对点传输</td><td>|data|</td><td>PP 层间激活传递</td></tr>
+  </table>
+
+  <div class="highlight">
+    <strong>关键关系：</strong>AllReduce = ReduceScatter + AllGather。
+    理解这个分解很重要——FSDP/ZeRO 正是利用这个拆分，将 AllReduce 拆成两步，
+    使得中间结果可以保持分片存储，从而减少内存占用。
+  </div>
+
+  <h3>4.2 Ring AllReduce</h3>
+  <p>
+    最常用的 AllReduce 实现是 <strong>Ring AllReduce</strong>：N 张 GPU 排成一个环，
+    数据被分成 N 块，经过 2&times;(N-1) 步传输完成。每步只传 |data|/N 的数据量，
+    总通信量为 2&times;|data|&times;(N-1)/N——<strong>与 GPU 数量 N 无关</strong>。
+  </p>
+
+  <h3>4.3 All-to-All 通信原语</h3>
+  <p>
+    <strong>All-to-All</strong>（也称 Personalized All-to-All 或 Transpose 操作）是所有集合通信中
+    <strong>最"个性化"</strong>的一个：<strong>每个 GPU 向其他每个 GPU 发送不同的数据块</strong>。
+    与 AllReduce（所有 GPU 发送相同数据）和 AllGather（每 GPU 发送一块、所有 GPU 收完整）不同，
+    All-to-All 的每一对 GPU 之间传输的数据内容都是独立的。
+  </p>
+
+  <div class="formula">
+    All-to-All: GPU<sub>i</sub> 的第 j 块数据 &rarr; GPU<sub>j</sub> 的第 i 块
+    <br><br>
+    等价于对 [N &times; N] 的数据块矩阵做<strong>转置</strong>
+  </div>
+
+  <div class="figure">
+    <img src="parallel_figures/all_to_all.png" alt="All-to-All communication">
+    <div class="caption">图 5：All-to-All 通信原语。左图：基本数据移动——GPU<sub>i</sub> 的第 j 块（颜色 = 目标 GPU）
+    发送到 GPU<sub>j</sub>。右图：MoE 中的实际应用——Router 为每个 token 指定目标专家，
+    All-to-All 将 token 路由到对应 GPU。</div>
+  </div>
+
+  <h4>All-to-All 的具体语义</h4>
+  <p>
+    假设有 4 个 GPU，每个 GPU 持有一个数据张量，被均分为 4 个块：
+  </p>
+  <table>
+    <tr><th></th><th>块 0（给 GPU0）</th><th>块 1（给 GPU1）</th><th>块 2（给 GPU2）</th><th>块 3（给 GPU3）</th></tr>
+    <tr><td><strong>GPU 0 持有</strong></td><td>A0</td><td>A1</td><td>A2</td><td>A3</td></tr>
+    <tr><td><strong>GPU 1 持有</strong></td><td>B0</td><td>B1</td><td>B2</td><td>B3</td></tr>
+    <tr><td><strong>GPU 2 持有</strong></td><td>C0</td><td>C1</td><td>C2</td><td>C3</td></tr>
+    <tr><td><strong>GPU 3 持有</strong></td><td>D0</td><td>D1</td><td>D2</td><td>D3</td></tr>
+  </table>
+  <p>
+    All-to-All 之后：
+  </p>
+  <table>
+    <tr><th></th><th>来自 GPU0</th><th>来自 GPU1</th><th>来自 GPU2</th><th>来自 GPU3</th></tr>
+    <tr><td><strong>GPU 0 收到</strong></td><td>A0</td><td>B0</td><td>C0</td><td>D0</td></tr>
+    <tr><td><strong>GPU 1 收到</strong></td><td>A1</td><td>B1</td><td>C1</td><td>D1</td></tr>
+    <tr><td><strong>GPU 2 收到</strong></td><td>A2</td><td>B2</td><td>C2</td><td>D2</td></tr>
+    <tr><td><strong>GPU 3 收到</strong></td><td>A3</td><td>B3</td><td>C3</td><td>D3</td></tr>
+  </table>
+
+  <div class="highlight">
+    <strong>直觉理解：</strong>如果把 N 个 GPU 的数据排成一个 [N &times; N] 的块矩阵，
+    All-to-All 就是对这个矩阵做<strong>转置</strong>——第 i 行第 j 列的块
+    移到第 j 行第 i 列。这就是为什么 All-to-All 也被称为 "Distributed Transpose"。
+  </div>
+
+  <h4>通信量分析</h4>
+  <div class="formula">
+    每个 GPU 发送 (N-1) 个块（自己留一块不需要发），每个块大小 = |data|/N
+    <br>
+    总通信量/GPU = |data| &times; (N-1)/N
+    <br>
+    系统总通信量 = N &times; |data| &times; (N-1)/N = |data| &times; (N-1)
+  </div>
+
+  <h4>All-to-All 在 MoE 中的两次调用</h4>
+  <p>
+    在 MoE（Mixture of Experts）层中，All-to-All 被调用<strong>两次</strong>：
+  </p>
+  <ol>
+    <li><strong>Dispatch（分发）：</strong>Router 为每个 token 选择 Top-k 个专家后，
+    All-to-All 将 token 的隐藏状态发送到目标专家所在的 GPU。每个 GPU 从所有其他 GPU
+    收集路由到本地专家的 token。</li>
+    <li><strong>Combine（收回）：</strong>专家计算完成后，All-to-All 将处理结果
+    <strong>发送回原始 GPU</strong>（按 token 的源 GPU 路由）。
+    这次传输的数据与第一次方向相反。</li>
+  </ol>
+
+  <div class="warning">
+    <strong>All-to-All 的工程挑战：</strong>
+    <ul>
+      <li><strong>通信模式不规则：</strong>不同 GPU 对之间的数据量可能不同（取决于 Router 的路由决策），
+      导致难以利用 Ring 等规则拓扑优化。</li>
+      <li><strong>负载不均衡：</strong>如果大量 token 被路由到同一个专家（"热门专家"问题），
+      对应 GPU 收到的数据远多于其他 GPU，成为瓶颈。</li>
+      <li><strong>带宽需求高：</strong>All-to-All 需要全连接带宽（每对 GPU 之间都有数据传输），
+      比 Ring 拓扑需要的带宽更高。通常要求高速互连（NVLink 或高带宽 InfiniBand）。</li>
+    </ul>
+  </div>
+
+  <h4>与其他原语的对比</h4>
+  <table>
+    <tr><th>特性</th><th>AllReduce</th><th>AllGather</th><th>All-to-All</th></tr>
+    <tr><td><strong>每 GPU 发送内容</strong></td><td>所有 GPU 发相同数据</td><td>所有 GPU 发相同块</td><td>每个目标 GPU 发<strong>不同</strong>数据</td></tr>
+    <tr><td><strong>每 GPU 接收内容</strong></td><td>相同的聚合结果</td><td>所有块的拼合</td><td>来自所有 GPU 的<strong>不同</strong>块</td></tr>
+    <tr><td><strong>是否涉及计算</strong></td><td>是（求和/平均）</td><td>否</td><td>否</td></tr>
+    <tr><td><strong>通信量/GPU</strong></td><td>2|data|(N-1)/N</td><td>|data|(N-1)/N</td><td>|data|(N-1)/N</td></tr>
+    <tr><td><strong>通信模式</strong></td><td>规则（Ring 友好）</td><td>规则（Ring 友好）</td><td><strong>不规则</strong>（全连接）</td></tr>
+    <tr><td><strong>典型实现</strong></td><td>Ring / Tree</td><td>Ring</td><td>直接 P2P / 分层</td></tr>
+    <tr><td><strong>主要应用</strong></td><td>DP 梯度同步</td><td>FSDP 参数聚合</td><td><strong>MoE 专家并行</strong></td></tr>
+  </table>
+
+  <div class="success">
+    <strong>优化策略：</strong>为缓解 All-to-All 的不规则性和负载不均衡，实际系统采用多种优化：
+    (1) <strong>辅助负载均衡损失</strong>鼓励 Router 均匀分配 token；
+    (2) <strong>容量因子</strong>限制每个专家处理的最大 token 数，溢出 token 被丢弃或交给共享专家；
+    (3) <strong>分层 All-to-All</strong>先在节点内（NVLink）做本地交换，再跨节点（InfiniBand）做远程交换；
+    (4) <strong>通信-计算重叠</strong>将本地专家的计算与远程 token 的传输并行执行。
+  </div>
+
+  <div class="figure">
+    <img src="parallel_figures/communication.png" alt="Communication comparison">
+    <div class="caption">图 6：左图：不同互连技术的带宽对比，NVLink 4（H100）达 900 GB/s；
+    右图：各并行策略的通信模式对比——TP 通信最频繁但数据量适中，DP 每步通信一次但数据量大。</div>
+  </div>
+</div>
+
+<!-- ===== 5. ZeRO & FSDP ===== -->
+<div class="section">
+  <h2>五、ZeRO 与 FSDP —— 内存高效的数据并行</h2>
+
+  <h3>5.1 问题：DP 的内存冗余</h3>
+  <p>
+    标准 DP 中，每张 GPU 存储完整的：参数 + 梯度 + 优化器状态。
+    对于一个 7B 参数的模型（FP16），每张 GPU 的内存占用为：
+  </p>
+  <ul>
+    <li>参数：7B &times; 2 bytes = <strong>14 GB</strong></li>
+    <li>梯度：<strong>14 GB</strong></li>
+    <li>Adam 优化器状态（FP32 参数副本 + 一阶动量 + 二阶动量）：7B &times; 12 bytes = <strong>84 GB</strong></li>
+    <li><strong>总计：112 GB / 卡</strong>——比 A100 的 80 GB 还大！</li>
+  </ul>
+
+  <h3>5.2 ZeRO 三阶段</h3>
+  <p>
+    <strong>ZeRO</strong>（Zero Redundancy Optimizer, Rajbhandari et al., 2020）的核心思想：
+    <strong>不同 GPU 各存 1/N 份</strong>，需要时再通信聚合。分三个渐进阶段：
+  </p>
+
+  <div class="figure">
+    <img src="parallel_figures/zero_stages.png" alt="ZeRO stages">
+    <div class="caption">图 7：ZeRO 三阶段的每 GPU 内存占用对比。从左到右：标准 DP（100%）→
+    ZeRO-1（分片优化器状态）→ ZeRO-2（+分片梯度）→ ZeRO-3（全部分片）。</div>
+  </div>
+
+  <table>
+    <tr><th>阶段</th><th>分片内容</th><th>内存节省</th><th>额外通信</th><th>等价名称</th></tr>
+    <tr><td><strong>ZeRO-1</strong></td><td>优化器状态</td><td>~4x</td><td>无额外通信</td><td>—</td></tr>
+    <tr><td><strong>ZeRO-2</strong></td><td>优化器状态 + 梯度</td><td>~8x</td><td>ReduceScatter 替代 AllReduce</td><td>—</td></tr>
+    <tr><td><strong>ZeRO-3</strong></td><td>优化器 + 梯度 + 参数</td><td>~N×</td><td>前向/反向时 AllGather 参数</td><td>FSDP</td></tr>
+  </table>
+
+  <h3>5.3 FSDP（Fully Sharded Data Parallel）</h3>
+  <p>
+    FSDP 是 PyTorch 对 ZeRO-3 的原生实现。其训练步骤：
+  </p>
+
+  <div class="figure">
+    <img src="parallel_figures/fsdp.png" alt="FSDP">
+    <div class="caption">图 8：FSDP 的单步训练流程。参数平时以分片形式存储（每 GPU 只存 1/N），
+    计算某层时通过 AllGather 临时聚合完整参数，计算完成后立即释放，反向传播后通过 ReduceScatter 分发梯度。</div>
+  </div>
+
+  <div class="warning">
+    <strong>通信开销：</strong>FSDP 在每一层的前向和反向传播中都要做一次 AllGather（聚合参数）
+    和一次 ReduceScatter（分发梯度），通信总量约为标准 DP 的 1.5 倍。
+    但由于通信可以与计算<strong>流水线重叠</strong>（prefetch 下一层参数），
+    实际训练速度损失通常仅 5-15%。
+  </div>
+</div>
+
+<!-- ===== 6. 3D Parallelism ===== -->
+<div class="section">
+  <h2>六、3D 混合并行 —— 实际训练的标准方案</h2>
+
+  <h3>6.1 为什么需要混合？</h3>
+  <p>
+    单一并行策略都有局限：DP 无法处理超大模型，TP 受限于节点内带宽，PP 有气泡开销。
+    实际训练<strong>将三者组合</strong>，各取所长：
+  </p>
+  <ul>
+    <li><strong>TP</strong>：在节点<strong>内</strong>使用（NVLink 高带宽），通常 TP=4 或 8</li>
+    <li><strong>PP</strong>：在节点<strong>间</strong>使用（InfiniBand），通常 PP=2-8</li>
+    <li><strong>DP/FSDP</strong>：在最外层使用，扩展到更多节点</li>
+  </ul>
+
+  <div class="figure">
+    <img src="parallel_figures/3d_parallel.png" alt="3D Parallelism">
+    <div class="caption">图 9：3D 并行的组织结构。16 张 GPU 被组织为 DP=2 &times; TP=4 &times; PP=2。
+    TP 组在节点内（NVLink），PP 和 DP 跨节点（InfiniBand）。</div>
+  </div>
+
+  <h3>6.2 实际配置示例</h3>
+  <table>
+    <tr><th>模型</th><th>总 GPU</th><th>DP</th><th>TP</th><th>PP</th><th>总计</th></tr>
+    <tr><td>LLaMA-7B</td><td>128</td><td>128</td><td>1</td><td>1</td><td>纯 DP（模型够小）</td></tr>
+    <tr><td>LLaMA-13B</td><td>256</td><td>64</td><td>2</td><td>2</td><td>DP=64, TP=2, PP=2</td></tr>
+    <tr><td>LLaMA-65B</td><td>2048</td><td>64</td><td>8</td><td>4</td><td>DP=64, TP=8, PP=4</td></tr>
+    <tr><td>GPT-4 级别</td><td>~25000</td><td>~400</td><td>8</td><td>~8</td><td>大规模 3D</td></tr>
+  </table>
+
+  <div class="highlight">
+    <strong>配置原则：</strong>
+    (1) TP 度 &le; 节点内 GPU 数（受 NVLink 约束）；
+    (2) PP 度适中（太大则气泡太多）；
+    (3) DP 度 = 总 GPU / (TP &times; PP)，越大越好（通信可重叠）；
+    (4) 总 batch size = DP &times; micro_batch &times; gradient_accumulation_steps。
+  </div>
+</div>
+
+<!-- ===== 7. Expert Parallelism ===== -->
+<div class="section">
+  <h2>七、专家并行（Expert Parallelism）</h2>
+
+  <h3>7.1 MoE 模型的并行需求</h3>
+  <p>
+    Mixture-of-Experts（MoE）模型（如 Mixtral 8x7B、DeepSeek-V3）将 FFN 层替换为多个"专家"，
+    每个 token 只激活其中 k 个。<strong>专家并行</strong>将不同专家放在不同 GPU 上：
+  </p>
+
+  <div class="figure">
+    <img src="parallel_figures/expert_parallel.png" alt="Expert Parallelism">
+    <div class="caption">图 10：专家并行的工作流程。Router 网络决定每个 token 交给哪两个专家处理（Top-2），
+    通过 All-to-All 通信将 token 路由到对应 GPU 上的专家，计算后再通过 All-to-All 收回结果。</div>
+  </div>
+
+  <h3>7.2 All-to-All 通信</h3>
+  <p>
+    专家并行的核心通信原语是 <strong>All-to-All</strong>：每张 GPU 向其他所有 GPU 发送不同的数据。
+    这与 AllReduce（所有 GPU 发送相同数据）不同——All-to-All 的通信模式更不规则，
+    对网络拓扑的要求更高。
+  </p>
+
+  <div class="warning">
+    <strong>负载均衡挑战：</strong>如果 Router 将大部分 token 路由到少数几个专家，
+    对应 GPU 成为瓶颈。实践中通过 <strong>辅助损失</strong>（auxiliary load balancing loss）
+    鼓励均匀路由，以及 <strong>容量因子</strong>（capacity factor）限制每个专家处理的 token 数。
+  </div>
+</div>
+
+<!-- ===== 8. Context Parallelism ===== -->
+<div class="section">
+  <h2>八、上下文并行（Context Parallelism, CP）</h2>
+
+  <h3>8.1 动机：长序列的内存瓶颈</h3>
+  <p>
+    当上下文窗口从 4K 扩展到 128K 甚至 1M 时，注意力计算的 <strong>O(N<sup>2</sup>)</strong>
+    内存需求成为训练的主要瓶颈——即使用了 FlashAttention 将峰值内存降为 O(N)，
+    <strong>KV Cache 和激活值</strong>仍然随序列长度线性增长。128K 序列的激活值可能占满整张 A100 的显存，
+    即使模型参数本身并不大。
+  </p>
+  <div class="highlight">
+    <strong>核心问题：</strong>TP 切分<strong>模型宽度</strong>（权重矩阵），PP 切分<strong>模型深度</strong>（层），
+    DP 切分<strong>数据 batch</strong>——但没有一个切分<strong>序列长度</strong>。
+    当单条序列太长时，这三种并行都无济于事。CP 正是填补这一空白的方案。
+  </div>
+
+  <h3>8.2 核心思想</h3>
+  <p>
+    上下文并行将<strong>单条序列沿序列长度维度切分</strong>到多张 GPU 上。
+    每张 GPU 只持有序列的一个片段（chunk），计算该片段的注意力时，
+    通过通信获取其他片段的 KV 信息。
+  </p>
+
+  <div class="figure">
+    <img src="parallel_figures/context_parallel.png" alt="Context Parallelism">
+    <div class="caption">图 11：上下文并行将 128K 序列切为 4 段，分配到 4 张 GPU。
+    每张 GPU 只存储自己片段的 Q、K、V 和激活值。通过 Ring Attention 机制，
+    KV 块在 GPU 之间沿环形拓扑传递，每个 GPU 逐步积累完整的注意力结果。</div>
+  </div>
+
+  <h3>8.3 Ring Attention：CP 的通信机制</h3>
+  <p>
+    Ring Attention（Liu et al., 2023）是实现 CP 的核心算法。其工作方式：
+  </p>
+  <ol>
+    <li><strong>初始化：</strong>将序列均分为 CP 份，GPU<sub>i</sub> 持有第 i 个片段的 Q<sub>i</sub>、K<sub>i</sub>、V<sub>i</sub></li>
+    <li><strong>本地计算：</strong>每张 GPU 先计算 Q<sub>i</sub> 与本地 K<sub>i</sub>、V<sub>i</sub> 的注意力（本地块）</li>
+    <li><strong>Ring 传递：</strong>每张 GPU 将自己的 KV 块发送给环中的下一张 GPU，同时从上一张接收 KV 块</li>
+    <li><strong>远程计算：</strong>用接收到的远程 KV 块更新注意力结果（使用 Online Softmax 在线累积）</li>
+    <li><strong>重复步骤 3-4</strong> 共 CP-1 轮，直到每张 GPU 都与所有 KV 块完成了注意力计算</li>
+  </ol>
+  <div class="formula">
+    每轮：GPU<sub>i</sub> 发送 KV<sub>i</sub> → GPU<sub>(i+1) mod CP</sub>
+    <br>
+    经过 CP-1 轮后，每张 GPU 已看到全部 CP 个 KV 块
+  </div>
+
+  <div class="success">
+    <strong>计算-通信重叠：</strong>Ring Attention 的关键优势在于，KV 传输和注意力计算可以<strong>完美重叠</strong>——
+    GPU 在计算当前接收到的 KV 块的注意力时，同时将上一个 KV 块发送给下一张 GPU。
+    只要每块的计算时间 &ge; 传输时间，通信开销就可以被完全隐藏。
+  </div>
+
+  <h3>8.4 内存节省分析</h3>
+
+  <div class="figure">
+    <img src="parallel_figures/cp_attention_split.png" alt="CP attention split">
+    <div class="caption">图 12：不同 CP 度下注意力矩阵的分配方式。
+    无 CP 时一张 GPU 存全部 N&times;N 矩阵；CP=2 时每 GPU 仅需 N&sup2;/4 的注意力内存；CP=4 时降至 N&sup2;/16。
+    不同颜色表示 KV 块的来源——深色为本地，浅色为通过 Ring 接收。</div>
+  </div>
+
+  <table>
+    <tr><th>资源</th><th>无 CP</th><th>CP = 2</th><th>CP = 4</th><th>CP = 8</th></tr>
+    <tr><td><strong>每 GPU Q/K/V 激活值</strong></td><td>O(N &times; d)</td><td>O(N/2 &times; d)</td><td>O(N/4 &times; d)</td><td>O(N/8 &times; d)</td></tr>
+    <tr><td><strong>注意力工作内存</strong></td><td>O(N)</td><td>O(N/2)</td><td>O(N/4)</td><td>O(N/8)</td></tr>
+    <tr><td><strong>KV Cache（推理）</strong></td><td>O(N)</td><td>O(N/2)</td><td>O(N/4)</td><td>O(N/8)</td></tr>
+    <tr><td><strong>通信轮次</strong></td><td>0</td><td>1</td><td>3</td><td>7</td></tr>
+    <tr><td><strong>每轮传输量</strong></td><td>—</td><td>2 &times; N/2 &times; d</td><td>2 &times; N/4 &times; d</td><td>2 &times; N/8 &times; d</td></tr>
+  </table>
+
+  <h3>8.5 CP 的变体与优化</h3>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>Ring Attention</h4>
+      <p>基础版本。KV 块沿环形拓扑逐步传递，与 FlashAttention 的分块计算天然兼容。
+      适用于因果注意力和双向注意力。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>Striped Attention</h4>
+      <p>不按连续段切分序列，而是<strong>交错</strong>分配 token（如 GPU0 取偶数位，GPU1 取奇数位）。
+      更均匀的负载分布，避免因果掩码导致的计算不均衡（前面的 chunk 工作量远少于后面的）。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>USP (Unified Sequence Parallel)</h4>
+      <p>DeepSpeed-Ulysses 方案。将 Q 沿序列维切分，K/V 通过 AllGather 聚合完整版本，
+      然后每 GPU 对自己的 Q 块做完整 Attention。通信模式更简单，但 KV 聚合占用更多内存。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>Hybrid CP + TP</h4>
+      <p>在节点内使用 TP（切权重），跨节点使用 CP（切序列），实现 4D 并行。
+      LLaMA-3.1 的 128K 训练采用此方案：TP=8（节点内）+ CP=4-8（跨节点）。</p>
+    </div>
+  </div>
+
+  <h3>8.6 因果掩码下的负载均衡</h3>
+  <p>
+    因果注意力中，序列前部的 token 只关注少数前文，后部的 token 需要关注全部前文。
+    如果按连续段切分，<strong>最后一个 chunk 的计算量远大于第一个</strong>，导致负载不均衡。
+  </p>
+  <div class="warning">
+    <strong>解决方案：</strong>
+    (1) <strong>Zigzag 分配：</strong>将 token 按锯齿形分配（0,7,8,15 给 GPU0；1,6,9,14 给 GPU1...），
+    使每 GPU 的计算量近似相等；
+    (2) <strong>Striped 分配：</strong>交错分配 token；
+    (3) <strong>过采样 + 丢弃：</strong>每 GPU 计算稍多的注意力对，丢弃掉被掩码的部分。
+  </div>
+
+  <h3>8.7 CP 与其他序列维并行的对比</h3>
+  <table>
+    <tr><th>方案</th><th>切分维度</th><th>通信模式</th><th>内存节省</th><th>适用互连</th><th>代表实现</th></tr>
+    <tr>
+      <td><strong>Sequence Parallel (SP)</strong></td>
+      <td>非 Attention 操作的序列维（LayerNorm, Dropout）</td>
+      <td>AllGather / ReduceScatter</td>
+      <td>仅激活值（小）</td>
+      <td>NVLink</td>
+      <td>Megatron-LM v2</td>
+    </tr>
+    <tr>
+      <td><strong>Context Parallel (CP)</strong></td>
+      <td>Attention 的序列维（Q/K/V 全切分）</td>
+      <td>Ring P2P / AllGather</td>
+      <td>激活值 + KV Cache（大）</td>
+      <td>NVLink / IB</td>
+      <td>Ring Attention, Megatron-CP</td>
+    </tr>
+    <tr>
+      <td><strong>Ulysses SP</strong></td>
+      <td>Q 沿序列维，K/V AllGather</td>
+      <td>AllGather + ReduceScatter</td>
+      <td>激活值（中）</td>
+      <td>NVLink</td>
+      <td>DeepSpeed-Ulysses</td>
+    </tr>
+  </table>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>&#10003; CP 优点</h4>
+      <ul>
+        <li>线性降低每 GPU 的激活值和 KV Cache 内存</li>
+        <li>通信可与计算完美重叠（Ring Attention）</li>
+        <li>与 TP/PP/DP 正交，可自由组合为 4D/5D 并行</li>
+        <li>使 128K-1M+ 上下文训练成为可能</li>
+        <li>不改变模型数学——输出与无 CP 时完全一致</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>&#10007; CP 缺点</h4>
+      <ul>
+        <li>通信轮次 = CP-1，CP 越大通信越多</li>
+        <li>因果掩码下负载不均衡需额外处理</li>
+        <li>实现复杂度高（在线 Softmax + 通信调度）</li>
+        <li>主要帮助长序列场景，短序列收益有限</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="success">
+    <strong>实际案例：</strong>LLaMA-3.1 将上下文从 8K 扩展到 128K，训练配置为
+    DP &times; TP=8 &times; PP=4 &times; CP=8 = 16,384 张 H100 GPU。
+    其中 CP=8 将 128K 序列切为 8 段，每 GPU 只处理 16K token 的注意力计算，
+    激活值内存降为原来的 1/8。没有 CP，128K 训练在当前硬件上基本不可行。
+  </div>
+</div>
+
+<!-- ===== 9. 推理并行 ===== -->
+<div class="section">
+  <h2>九、推理并行策略</h2>
+  <p>推理和训练的并行需求不同——推理没有反向传播，优化目标是<strong>低延迟</strong>或<strong>高吞吐</strong>。</p>
+
+  <div class="figure">
+    <img src="parallel_figures/inference_parallel.png" alt="Inference Parallelism">
+    <div class="caption">图 13：推理的两种并行策略。TP（左）将单个请求切分到多 GPU，降低延迟；
+    DP（右）不同 GPU 处理不同请求，提升吞吐。</div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>TP 推理（低延迟）</h4>
+      <p>将模型切分到多 GPU，单个请求并行计算。首 token 延迟（TTFT）和每 token 延迟都降低。
+      适合<strong>交互式场景</strong>（聊天、实时对话）。代价是需要 NVLink 互连。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>DP 推理（高吞吐）</h4>
+      <p>每 GPU 加载完整模型，不同请求发往不同 GPU。无 GPU 间通信。
+      适合<strong>批量处理场景</strong>（离线翻译、批量总结）。要求每卡能放下完整模型。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>PP 推理（流水线）</h4>
+      <p>适用于模型太大无法单卡放下，但不需要极低延迟的场景。
+      多个请求可以像流水线一样在不同层级间流动。延迟较高但吞吐可接受。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>Prefill-Decode 分离</h4>
+      <p>Prefill 阶段（计算密集）和 Decode 阶段（内存密集）分配到不同的 GPU 集群。
+      各自针对性优化硬件配置。代表：Splitwise, DistServe。</p>
+    </div>
+  </div>
+
+  <h3>推理框架对比</h3>
+  <table>
+    <tr><th>框架</th><th>并行支持</th><th>核心优化</th><th>适用规模</th></tr>
+    <tr><td><strong>vLLM</strong></td><td>TP + PP</td><td>PagedAttention, Continuous Batching</td><td>单节点到多节点</td></tr>
+    <tr><td><strong>TensorRT-LLM</strong></td><td>TP + PP + MoE EP</td><td>NVIDIA 硬件深度优化, FP8</td><td>NVIDIA GPU 集群</td></tr>
+    <tr><td><strong>SGLang</strong></td><td>TP + DP</td><td>RadixAttention, 前缀缓存</td><td>单节点为主</td></tr>
+    <tr><td><strong>DeepSpeed-Inference</strong></td><td>TP + PP</td><td>与 ZeRO 集成, 异构推理</td><td>大规模集群</td></tr>
+  </table>
+</div>
+
+<!-- ===== 9. 综合对比 ===== -->
+<div class="section">
+  <h2>十、综合对比与最佳实践</h2>
+
+  <table>
+    <tr><th>并行方式</th><th>切分维度</th><th>通信原语</th><th>通信频率</th><th>适用互连</th><th>内存节省</th></tr>
+    <tr><td><strong>DP</strong></td><td>数据 (batch)</td><td>AllReduce</td><td>每步 1 次</td><td>任意</td><td>无</td></tr>
+    <tr><td><strong>FSDP/ZeRO-3</strong></td><td>数据 + 参数分片</td><td>AllGather + ReduceScatter</td><td>每层 2 次</td><td>任意</td><td>N 倍</td></tr>
+    <tr><td><strong>TP</strong></td><td>权重矩阵 (列/行)</td><td>AllReduce / AllGather</td><td>每层 2 次</td><td>NVLink</td><td>N 倍/层</td></tr>
+    <tr><td><strong>PP</strong></td><td>模型层</td><td>P2P (Send/Recv)</td><td>每 micro-batch</td><td>InfiniBand</td><td>按层分摊</td></tr>
+    <tr><td><strong>SP</strong></td><td>序列长度</td><td>AllGather + ReduceScatter</td><td>每层</td><td>NVLink</td><td>激活值 N 倍</td></tr>
+    <tr><td><strong>CP</strong></td><td>序列长度</td><td>Ring P2P / AllGather</td><td>每层 CP-1 轮</td><td>NVLink / IB</td><td>激活+KV N倍</td></tr>
+    <tr><td><strong>EP (MoE)</strong></td><td>专家</td><td>All-to-All</td><td>每 MoE 层 2 次</td><td>NVLink / IB</td><td>按专家分摊</td></tr>
+  </table>
+
+  <h3>实践决策树</h3>
+  <div class="highlight">
+    <strong>1. 模型能放进单卡吗？</strong><br>
+    &nbsp;&nbsp;能 → 纯 <strong>DP</strong>（最简单、效率最高）<br><br>
+    <strong>2. 模型放不下单卡但能放进单节点（8 GPU）吗？</strong><br>
+    &nbsp;&nbsp;能 → <strong>TP=8</strong>（节点内 NVLink）+ DP 跨节点<br>
+    &nbsp;&nbsp;或 → <strong>FSDP</strong>（无需手动切分模型）<br><br>
+    <strong>3. 模型连单节点都放不下？</strong><br>
+    &nbsp;&nbsp;→ <strong>3D 并行</strong>：节点内 TP，节点间 PP + FSDP<br><br>
+    <strong>4. 序列超长（128K+）？</strong><br>
+    &nbsp;&nbsp;→ 在上述基础上加 <strong>CP</strong>（上下文并行），将序列切分到多 GPU<br><br>
+    <strong>5. MoE 模型？</strong><br>
+    &nbsp;&nbsp;→ 在上述基础上加 <strong>EP</strong> 切分专家
+  </div>
+</div>
+
+<!-- ===== 10. 总结 ===== -->
+<div class="section">
+  <h2>十一、总结</h2>
+  <p>大模型的并行训练是一个<strong>系统工程</strong>，需要在计算、内存和通信之间精心平衡：</p>
+  <ol>
+    <li><strong>数据并行</strong>是基础——简单、高效，但无法解决模型太大的问题。</li>
+    <li><strong>ZeRO/FSDP</strong> 通过参数分片消除冗余，以少量通信换取 N 倍内存节省。</li>
+    <li><strong>张量并行</strong>将矩阵运算切到节点内多 GPU，降低单层延迟，但要求高带宽互连。</li>
+    <li><strong>流水线并行</strong>将模型按层切到跨节点 GPU，通信量小但有气泡开销。</li>
+    <li><strong>上下文并行</strong>将序列沿长度维切分，通过 Ring Attention 使 128K+ 训练成为可能。</li>
+    <li><strong>专家并行</strong>是 MoE 模型的专用方案，通过 All-to-All 通信路由 token。</li>
+    <li><strong>多维混合并行</strong>组合上述策略（如 LLaMA-3.1 的 DP&times;TP&times;PP&times;CP），是千卡训练的标准方案。</li>
+  </ol>
+  <div class="highlight">
+    <strong>一句话总结：</strong>
+    TP 在节点<strong>内</strong>切矩阵，PP 在节点<strong>间</strong>切层，CP 沿<strong>序列</strong>切上下文，
+    DP/FSDP 在最<strong>外</strong>层切数据——多维正交组合，配合 AllReduce、AllGather、Ring P2P 等集合通信原语，
+    使得数万张 GPU 能协同训练出百亿甚至万亿参数的模型，支持 128K+ 的超长上下文。
+  </div>
+</div>
+
+<div class="footer">
+  深度学习基础系列 &middot; 大模型训练与推理的并行策略详解
+</div>
+
+</div>
+</body>
+</html>

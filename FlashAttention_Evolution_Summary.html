@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlashAttention 1-4 完整演化综述</title>
+<style>
+  :root{--primary:#1a1a2e;--accent:#0f3460;--highlight-bg:#f0f4ff;--highlight-border:#4a7dff;--text:#222;--border:#e0e0e0}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text);line-height:1.8;background:#fafafa}
+  .container{max-width:920px;margin:0 auto;padding:20px}
+  .cover{text-align:center;padding:70px 20px 50px;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);color:white;border-radius:12px;margin-bottom:40px}
+  .cover h1{font-size:2.1em;margin-bottom:12px;font-weight:700}
+  .cover .subtitle{font-size:1em;color:#aab;margin-bottom:24px}
+  .cover .tags{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}
+  .cover .tag{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:20px;padding:6px 18px;font-size:.88em;color:#dde}
+  .section{background:white;border-radius:10px;padding:36px 40px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid var(--border)}
+  h2{font-size:1.5em;color:var(--primary);margin-bottom:6px;padding-bottom:10px;border-bottom:2px solid var(--highlight-border)}
+  h3{font-size:1.15em;color:var(--accent);margin:22px 0 10px}
+  h4{font-size:1em;color:var(--accent);margin:14px 0 8px}
+  p{margin:12px 0;text-align:justify}
+  .highlight{background:var(--highlight-bg);border-left:4px solid var(--highlight-border);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .highlight strong{color:var(--accent)}
+  .warning{background:#fff8f0;border-left:4px solid #f0a500;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  .success{background:#f0fff4;border-left:4px solid #2a9d8f;padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+  ul,ol{padding-left:24px;margin:10px 0} li{margin:6px 0}
+  .formula{text-align:center;padding:16px 20px;margin:16px 0;background:#f8f9ff;border-radius:8px;border:1px solid #e8eaf0;font-size:1.05em;font-family:"Times New Roman","STIX",serif;overflow-x:auto}
+  .figure{text-align:center;margin:24px 0;padding:16px;background:#fafafa;border-radius:8px;border:1px solid #eee}
+  .figure img{max-width:100%;height:auto;border-radius:4px}
+  .figure .caption{font-size:.88em;color:#666;margin-top:10px;font-style:italic}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.9em}
+  th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #eee}
+  th{background:var(--primary);color:white;font-weight:600} tr:hover{background:#f8f9ff}
+  td code{background:#f0f0f5;padding:2px 6px;border-radius:3px;font-size:.9em}
+  .card-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .card{background:linear-gradient(135deg,#f8f9ff,#f0f4ff);border:1px solid #d8e0f0;border-radius:10px;padding:20px 24px}
+  .card .num{display:inline-block;background:var(--highlight-border);color:white;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-size:.85em;font-weight:700;margin-right:8px}
+  .card h4{display:inline;color:var(--accent);font-size:1.05em;margin:0}
+  .card p{margin-top:8px;font-size:.92em}
+  .version-card{background:white;border:2px solid;border-radius:12px;padding:24px;margin:16px 0}
+  .version-card h3{margin-top:0;padding-bottom:8px;border-bottom:1px solid currentColor}
+  .v1{border-color:#4a7dff} .v1 h3{color:#4a7dff}
+  .v2{border-color:#2a9d8f} .v2 h3{color:#2a9d8f}
+  .v3{border-color:#f0a500} .v3 h3{color:#f0a500}
+  .v4{border-color:#e63946} .v4 h3{color:#e63946}
+  .stats-row{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
+  .stat-pill{background:#f0f4ff;border:1px solid #d8e0f0;border-radius:20px;padding:6px 14px;font-size:.85em;font-weight:600;color:var(--accent)}
+  .footer{text-align:center;color:#999;font-size:.85em;padding:30px 0;border-top:1px solid #eee;margin-top:20px}
+  @media(max-width:640px){.section{padding:24px 20px}.cover h1{font-size:1.6em}.card-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ===== Cover ===== -->
+<div class="cover">
+  <h1>FlashAttention 1→4 完整演化综述</h1>
+  <div class="subtitle">
+    从 IO 感知分块到 Blackwell 硬件协同设计 —— 四代精确注意力算法的原理与工程进化<br>
+    FlashAttention (2022) · FA-2 (2023) · FA-3 (2024) · FA-4 (2026)
+  </div>
+  <div class="tags">
+    <span class="tag">Tiling + Online Softmax</span>
+    <span class="tag">Sequence Parallelism</span>
+    <span class="tag">Warp Specialization</span>
+    <span class="tag">FP8 / BF16</span>
+    <span class="tag">TMEM + 2-CTA MMA</span>
+    <span class="tag">A100 → H100 → B200</span>
+  </div>
+</div>
+
+<!-- ===== 引言 ===== -->
+<div class="section">
+  <h2>零、引言：一条贯穿四代的主线</h2>
+  <p>
+    FlashAttention 系列是近五年来 GPU 上<strong>精确注意力（exact attention）</strong>加速的里程碑工作，
+    由 Tri Dao 等人持续迭代。这四篇论文的演化并非简单的"性能优化"，而是一场
+    <strong>硬件-算法协同设计的教科书</strong>——每一代都精准地回应了当代 GPU 架构的新瓶颈。
+  </p>
+
+  <div class="highlight">
+    <strong>一条核心主线：</strong>
+    <em>"注意力的瓶颈不在算力，而在 IO；而 IO 的形态随硬件演化而不断变化"</em>。
+    FA-1 解决 HBM ↔ SRAM 的数据搬运；FA-2 解决 SRAM 内部的 warp 间通信；
+    FA-3 解决异步执行单元的同步开销；FA-4 解决 Tensor Core 之外的"次级单元"（SMEM、指数单元）瓶颈。
+    每一代都在问："当前硬件的<strong>下一个瓶颈</strong>在哪里？"
+  </div>
+
+  <h3>四代演化速查表</h3>
+  <table>
+    <tr><th>版本</th><th>发布时间</th><th>目标硬件</th><th>核心突破</th><th>峰值性能（FWD）</th></tr>
+    <tr>
+      <td><strong>FlashAttention</strong></td>
+      <td>2022.05</td>
+      <td>A100 (Ampere)</td>
+      <td>Tiling + Online Softmax + 重计算</td>
+      <td>~25% of peak (A100)</td>
+    </tr>
+    <tr>
+      <td><strong>FlashAttention-2</strong></td>
+      <td>2023.07</td>
+      <td>A100 / H100</td>
+      <td>减少非 matmul FLOPs + 序列维并行 + warp 分区优化</td>
+      <td>230 TFLOPS (73% of A100)</td>
+    </tr>
+    <tr>
+      <td><strong>FlashAttention-3</strong></td>
+      <td>2024.07</td>
+      <td>H100 (Hopper)</td>
+      <td>异步 WGMMA + Warp Specialization + Pingpong + FP8</td>
+      <td>740 TFLOPS FP16 / 1.2 PFLOPS FP8 (75% of H100)</td>
+    </tr>
+    <tr>
+      <td><strong>FlashAttention-4</strong></td>
+      <td>2026.03</td>
+      <td>B200 (Blackwell)</td>
+      <td>TMEM + 2-CTA MMA + 指数函数软件模拟 + CuTe-DSL</td>
+      <td>1613 TFLOPS BF16 (71% of B200)</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ===== FA1 ===== -->
+<div class="section">
+  <h2>一、FlashAttention（2022）：IO 感知的精确注意力基础</h2>
+
+  <div class="version-card v1">
+    <h3>FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness</h3>
+    <div class="stats-row">
+      <span class="stat-pill">Dao et al., NeurIPS 2022</span>
+      <span class="stat-pill">Stanford University</span>
+      <span class="stat-pill">A100 GPU</span>
+      <span class="stat-pill">精确非近似</span>
+    </div>
+  </div>
+
+  <h3>1.1 核心问题：标准注意力的 IO 瓶颈</h3>
+  <p>
+    标准 PyTorch 注意力实现的问题不在 FLOPs，而在<strong>显存访问</strong>。给定 Q, K, V ∈ R<sup>N×d</sup>：
+  </p>
+  <div class="formula">
+    S = QK<sup>T</sup> ∈ R<sup>N×N</sup> &nbsp;→&nbsp; 写 HBM<br>
+    P = softmax(S) ∈ R<sup>N×N</sup> &nbsp;→&nbsp; 读 S + 写 P 到 HBM<br>
+    O = PV ∈ R<sup>N×d</sup> &nbsp;→&nbsp; 读 P + 写 O 到 HBM
+  </div>
+  <p>
+    这种实现需要<strong>物化 N×N 注意力矩阵到 HBM</strong>，导致 O(N²) 的内存占用和大量的 HBM 读写。
+    而 softmax、mask、dropout 等 elementwise 操作都是<strong>内存受限（memory-bound）</strong>的，
+    实际耗时远超 matmul 本身。
+  </p>
+
+  <div class="figure">
+    <img src="flashattn_figures/fa1_fig1_overview.png" alt="FlashAttention overview">
+    <div class="caption">图 1：FlashAttention 核心架构。左：GPU 内存层次——SRAM（19 TB/s, 20 MB）远快于 HBM（1.5 TB/s, 40 GB），但容量小得多；
+    中：Tiling 算法——外循环遍历 K/V 块，内循环遍历 Q 块，在 SRAM 内计算后直接写回 HBM，<strong>不物化 N×N 矩阵</strong>；
+    右：GPT-2 上 PyTorch 标准注意力 vs FlashAttention 的耗时对比，后者通过融合单一 kernel 实现 7.6× 加速。</div>
+  </div>
+
+  <h3>1.2 两大核心技术</h3>
+
+  <h4>(1) Tiling（分块）+ Online Softmax</h4>
+  <p>
+    Tiling 的关键挑战是：softmax 需要"全局行最大值"和"全局行求和"来保证数值稳定，
+    而分块计算每次只看到一部分。<strong>Online Softmax</strong>（Milakov & Gimelshein, 2018）
+    通过维护运行中的最大值 m 和归一化因子 ℓ，在分块遍历过程中<strong>渐进式地纠正</strong>之前的结果：
+  </p>
+  <div class="formula">
+    m<sup>new</sup> = max(m<sup>old</sup>, rowmax(S<sup>(j)</sup>))<br>
+    ℓ<sup>new</sup> = e<sup>m<sup>old</sup>−m<sup>new</sup></sup> ℓ<sup>old</sup> + rowsum(e<sup>S<sup>(j)</sup>−m<sup>new</sup></sup>)<br>
+    O<sup>new</sup> = diag(ℓ<sup>new</sup>)<sup>−1</sup>(diag(ℓ<sup>old</sup>) e<sup>m<sup>old</sup>−m<sup>new</sup></sup> O<sup>old</sup> + e<sup>S<sup>(j)</sup>−m<sup>new</sup></sup>V<sup>(j)</sup>)
+  </div>
+  <p>
+    当遇到更大的 max 值时，通过 exp 差值<strong>追溯修正</strong>之前累积的 O 和 ℓ。
+    数学上<strong>与完整 softmax 等价</strong>——这是"精确"（exact）的关键。
+  </p>
+
+  <h4>(2) Recomputation（反向传播重计算）</h4>
+  <p>
+    传统做法需要在前向时保存 S 和 P（O(N²) 内存）以供反向传播。FA1 只保存
+    <strong>(m, ℓ) 行统计量</strong>（O(N) 内存），反向传播时在 SRAM 内<strong>重新计算 S、P</strong>。
+    虽然增加了 FLOPs，但由于 HBM 访问大幅减少，<strong>反向传播反而更快</strong>。
+    这是"用计算换 IO"的典型设计。
+  </p>
+
+  <h3>1.3 IO 复杂度分析（FA1 理论贡献）</h3>
+  <div class="formula">
+    标准注意力 HBM 访问：Θ(Nd + N²)<br>
+    FlashAttention HBM 访问：Θ(N²d² M<sup>−1</sup>) &nbsp;&nbsp;(M = SRAM 大小)
+  </div>
+  <p>
+    对于典型值 d=64-128, M≈100 KB，d² 远小于 M，所以 FA1 的 HBM 访问量<strong>远少于标准实现</strong>。
+    论文还证明了这是<strong>渐近最优</strong>的——不存在任何精确算法能在所有 SRAM 大小下
+    更少的 HBM 访问。
+  </p>
+
+  <div class="figure">
+    <img src="flashattn_figures/fa1_fig2_blocksize.png" alt="FA1 block size effect">
+    <div class="caption">图 2：(左) 块大小的影响——更大的块减少 HBM 访问，但受限于 SRAM 容量；
+    (右) 块稀疏 FlashAttention——稀疏性与加速比成正比。</div>
+  </div>
+
+  <h3>1.4 实验结果（A100）</h3>
+  <ul>
+    <li><strong>BERT-large：</strong>比 MLPerf 1.1 记录<strong>快 15%</strong>（17.4 vs 20.0 分钟）</li>
+    <li><strong>GPT-2：</strong>比 HuggingFace 快 <strong>3×</strong>、比 Megatron-LM 快 1.7×</li>
+    <li><strong>长序列（1K-4K）：</strong>Long-Range Arena <strong>快 2.4×</strong></li>
+    <li><strong>能力解锁：</strong>首次在 Path-X (16K)、Path-256 (64K) 上取得 better-than-chance 性能</li>
+    <li><strong>内存：</strong>从 O(N²) 降为 O(N)，GPT-2 上节省 10-20× 内存</li>
+  </ul>
+
+  <div class="success">
+    <strong>FA1 的历史意义：</strong>它证明了"精确注意力也可以显著加速"——不需要像 Linformer、Performer 那样
+    用近似牺牲质量。这改变了整个领域的方向——后续长序列工作几乎都建立在 FA 之上，而非近似方法。
+  </div>
+</div>
+
+<!-- ===== FA2 ===== -->
+<div class="section">
+  <h2>二、FlashAttention-2（2023）：更好的并行化与工作分区</h2>
+
+  <div class="version-card v2">
+    <h3>FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning</h3>
+    <div class="stats-row">
+      <span class="stat-pill">Tri Dao, 2023.07</span>
+      <span class="stat-pill">A100 / H100</span>
+      <span class="stat-pill">精确非近似</span>
+      <span class="stat-pill">2-4× faster than FA1</span>
+    </div>
+  </div>
+
+  <h3>2.1 问题：FA1 为什么只达到 25-40% 峰值？</h3>
+  <p>
+    FA1 虽然通过减少 HBM 访问获得了显著加速，但<strong>仍然远低于 GEMM 的极限</strong>——
+    FA1 只达到 A100 FP16 理论峰值的 25-40%，而优化的 GEMM 能达到 80-90%。
+    Tri Dao 通过 profiling 发现三个主要问题：
+  </p>
+  <div class="warning">
+    <ol>
+      <li><strong>非 matmul FLOPs 太多</strong>：A100 上 matmul 吞吐 312 TFLOPS，但非 matmul (FP32 普通浮点) 只有 19.5 TFLOPS——<strong>相差 16 倍</strong>。
+      FA1 的每步 Online Softmax 都要做 diag(ℓ)<sup>−1</sup> 这样的 rescale，这些非 matmul 操作占比过大。</li>
+      <li><strong>并行度不足</strong>：FA1 只在 batch 和 head 维度并行。当 batch 很小或序列很长时，SM 利用率低。</li>
+      <li><strong>Warp 间通信浪费</strong>：FA1 的 "split-K" warp 分区需要 warp 间通过共享内存通信中间结果。</li>
+    </ol>
+  </div>
+
+  <h3>2.2 三大改进</h3>
+
+  <h4>改进 1：减少非 matmul FLOPs（Online Softmax 改写）</h4>
+  <p>
+    FA1 每步都对 output 做 diag(ℓ)<sup>−1</sup> 归一化。FA2 发现：
+    <strong>可以维护一个"未归一化"的 Õ，最后再做一次归一化</strong>。
+  </p>
+  <div class="formula">
+    FA1: O<sup>(2)</sup> = diag(ℓ<sup>(1)</sup>/ℓ<sup>(2)</sup>)<sup>−1</sup> O<sup>(1)</sup> + diag(ℓ<sup>(2)</sup>)<sup>−1</sup> e<sup>S<sup>(2)</sup>−m<sup>(2)</sup></sup>V<sup>(2)</sup><br><br>
+    FA2: Õ<sup>(2)</sup> = diag(e<sup>m<sup>(1)</sup>−m<sup>(2)</sup></sup>) Õ<sup>(1)</sup> + e<sup>S<sup>(2)</sup>−m<sup>(2)</sup></sup>V<sup>(2)</sup><br>
+    最后：O = diag(ℓ<sup>(last)</sup>)<sup>−1</sup> Õ<sup>(last)</sup>
+  </div>
+  <p>
+    同时，反向传播时只需保存 <strong>L = m + log(ℓ)</strong>，而不需要同时保存 m 和 ℓ。
+  </p>
+
+  <div class="figure">
+    <img src="flashattn_figures/fa2_online_softmax.png" alt="FA2 online softmax">
+    <div class="caption">图 3：FA2 的 Online Softmax 图示——将 K 分为两块，分别计算本地注意力，
+    最后通过 rescaling 合并成正确的全局 softmax 输出。</div>
+  </div>
+
+  <h4>改进 2：序列维度上的并行（关键突破）</h4>
+  <p>
+    FA1 的外循环是 K/V 块，内循环是 Q 块——这意味着<strong>不同 Q 块之间有依赖</strong>（共享同一个 output），
+    无法直接并行。FA2 <strong>交换内外循环</strong>：外循环改为 Q 块，内循环为 K/V 块。
+  </p>
+  <div class="success">
+    <strong>为什么这个改变很重要？</strong>交换后，<strong>每个 Q 块的计算完全独立</strong>——
+    可以分配给不同的 thread block（SM）并行执行。这意味着：
+    (1) 前向传播在序列长度上"embarrassingly parallel"；
+    (2) 小 batch 长序列场景下，SM 利用率大幅提升。
+  </div>
+  <p>
+    此思路最初由 Phil Tillet 在 Triton 实现中提出，FA2 将其吸收到 CUDA 实现中。
+  </p>
+
+  <div class="figure">
+    <img src="flashattn_figures/fa2_parallelism.png" alt="FA2 parallelism">
+    <div class="caption">图 4：FA2 并行化方案。前向传播每个 worker 负责一个 Q 行块（完全独立）；
+    反向传播每个 worker 负责一个 K/V 列块，通过 atomic add 更新 dQ。</div>
+  </div>
+
+  <h4>改进 3：warp 间工作分区优化</h4>
+  <p>
+    FA1 采用 "split-K" 方案：4 个 warp 分别持有 K 的不同部分，所有 warp 共享 Q。
+    每个 warp 计算部分 QK<sup>T</sup>，然后需要<strong>通过共享内存同步和累加</strong>中间结果。
+  </p>
+  <p>
+    FA2 反其道而行：<strong>分 Q 而非分 K</strong>。每个 warp 持有 Q 的不同行块，共享 K、V。
+    每个 warp 独立计算自己的 output slice，<strong>不需要 warp 间通信</strong>。
+  </p>
+
+  <div class="figure">
+    <img src="flashattn_figures/fa2_warps.png" alt="FA2 warp partition">
+    <div class="caption">图 5：Warp 分区对比。左：FA1 "split-K"——4 个 warp 分 K，共享 Q，需要 warp 间同步；
+    右：FA2 "split-Q"——4 个 warp 分 Q，共享 K/V，每个 warp 独立写出自己的 output，无需 warp 间通信。</div>
+  </div>
+
+  <h3>2.3 实验结果</h3>
+  <div class="figure">
+    <img src="flashattn_figures/fa2_speedup.png" alt="FA2 speedup">
+    <div class="caption">图 6：A100 上的前向+反向速度。FA2 (紫色) 在所有设置下都显著超越 FA1 和 xformers，
+    头维度 128、16K 序列时达到 ~200 TFLOPS（FA1 的 ~2×）。</div>
+  </div>
+
+  <ul>
+    <li><strong>峰值性能：</strong>230 TFLOPS（A100 理论峰值的 <strong>73%</strong>），比 FA1 快 2×</li>
+    <li><strong>端到端训练：</strong>GPT-style 模型达到 <strong>225 TFLOPS/A100</strong>（72% MFU），比 FA1 快 1.3×</li>
+    <li><strong>H100 上：</strong>不改代码直接跑达到 335 TFLOPS（尚未使用 H100 的 TMA / WGMMA / FP8 新特性）</li>
+  </ul>
+
+  <div class="highlight">
+    <strong>FA2 的哲学：</strong>"让所有时间都花在 matmul 上"。通过精细的非 matmul FLOPs 优化、
+    序列维度并行、以及重新设计的 warp 工作分区，FA2 成功地把注意力从"部分内存受限"转变为
+    "接近 matmul 的计算受限"。
+  </div>
+</div>
+
+<!-- ===== FA3 ===== -->
+<div class="section">
+  <h2>三、FlashAttention-3（2024）：异步与低精度</h2>
+
+  <div class="version-card v3">
+    <h3>FlashAttention-3: Fast and Accurate Attention with Asynchrony and Low-precision</h3>
+    <div class="stats-row">
+      <span class="stat-pill">Shah, Bikshandi, Zhang, Thakkar, Ramani, Dao · 2024.07</span>
+      <span class="stat-pill">Colfax / Meta / NVIDIA / Princeton / Together AI</span>
+      <span class="stat-pill">H100 (Hopper)</span>
+      <span class="stat-pill">FP16 / FP8</span>
+    </div>
+  </div>
+
+  <h3>3.1 问题：H100 上 FA2 只有 35% 利用率</h3>
+  <p>
+    FA2 直接移植到 H100 时只能达到 35% 的利用率，远低于 GEMM 的 80-90%。原因是 H100 引入了
+    <strong>根本性的新硬件特性</strong>，而 FA2 的同步设计无法利用：
+  </p>
+  <ul>
+    <li><strong>Tensor Memory Accelerator (TMA)：</strong>异步 HBM ↔ SMEM 数据搬运，不占用 CUDA cores</li>
+    <li><strong>WGMMA (warpgroup MMA)：</strong>异步 warpgroup 级 matmul，可以从 SMEM 直接读数据</li>
+    <li><strong>FP8 Tensor Core：</strong>FP8 throughput 是 FP16 的 2×，但需要特殊的数据布局</li>
+    <li><strong>Thread block clusters：</strong>多个 CTA 可以协同（DSMEM）</li>
+  </ul>
+
+  <h3>3.2 三大核心技术</h3>
+
+  <h4>技术 1：Producer-Consumer 异步 + Warp Specialization</h4>
+  <p>
+    传统 CUDA kernel 所有 warp 执行相同的代码路径，但 H100 的异步单元让
+    "不同 warp 做不同的事"成为可能。FA3 将一个 CTA 的 warpgroups 分为两类：
+  </p>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">P</span>
+      <h4>Producer warpgroup</h4>
+      <p>专门负责发起 TMA 指令，从 HBM 异步加载 Q, K, V 到共享内存的循环 buffer。
+      不做任何计算。由于只需要一个线程发起 TMA，producer 可以<strong>释放大部分寄存器</strong>给 consumer 使用。</p>
+    </div>
+    <div class="card">
+      <span class="num">C</span>
+      <h4>Consumer warpgroup</h4>
+      <p>专门负责执行 WGMMA 矩阵乘、softmax 和输出更新。从循环 buffer 等待新数据到达，
+      计算完后释放 buffer 给 producer。<strong>占用更多的寄存器</strong>以加速计算。</p>
+    </div>
+  </div>
+  <p>
+    这种"生产者-消费者"范式让<strong>数据加载和计算可以完全重叠</strong>——
+    当 consumer 在处理第 j 块时，producer 已经在加载第 j+1 块。
+  </p>
+
+  <h4>技术 2：Pingpong Scheduling — 在 warpgroup 间重叠 GEMM 和 Softmax</h4>
+  <p>
+    在一个 warpgroup 内部，softmax 和 GEMM 是顺序执行的（softmax 依赖前一个 GEMM 的输出，后一个 GEMM 依赖 softmax）。
+    FA3 用<strong>两个 consumer warpgroup "乒乓调度"</strong>：
+  </p>
+  <div class="figure">
+    <img src="flashattn_figures/fa3_pingpong.png" alt="FA3 pingpong">
+    <div class="caption">图 7：Pingpong 调度。Warpgroup 1 做 softmax 时，warpgroup 2 的 Tensor Core 正在做 GEMM；
+    然后角色互换。这把 softmax 的时间"藏"在 GEMM 的阴影中。</div>
+  </div>
+  <div class="highlight">
+    <strong>为什么 pingpong 有效？</strong>H100 上 FP16 matmul 有 989 TFLOPS，但特殊函数（exp）只有 3.9 TFLOPS——
+    <strong>matmul 比 exp 快 256 倍</strong>。如果串行执行，exp 会占满 50% 的时间。
+    但 exp 在独立的 MUFU（multi-function unit）上执行，可以与 Tensor Core 并行——pingpong 正是利用了这一点。
+    实测从 570 TFLOPS 提升到 620-640 TFLOPS。
+  </div>
+
+  <h4>技术 3：Intra-Warpgroup 的 2-stage GEMM-Softmax Pipeline</h4>
+  <p>
+    即使在一个 warpgroup 内，也可以<strong>跨迭代流水线化</strong> GEMM 和 softmax。
+  </p>
+  <div class="figure">
+    <img src="flashattn_figures/fa3_pipeline.png" alt="FA3 2-stage pipeline">
+    <div class="caption">图 8：2-stage GEMM-Softmax 流水线。第 j 迭代的 softmax 与第 j+1 迭代的 GEMM0 (QK<sup>T</sup>)
+    并行执行；同时第 j−1 迭代的 GEMM1 (PV) 也在进行。代价是额外的寄存器存储中间 S 矩阵。</div>
+  </div>
+
+  <h4>技术 4：FP8 低精度 + Block Quantization + Incoherent Processing</h4>
+  <p>
+    直接用 FP8 Tensor Core 能翻倍吞吐，但面临两个问题：
+  </p>
+  <ol>
+    <li><strong>Layout 问题：</strong>WGMMA FP8 要求两个操作数都是 k-major，但 V 天然是 mn-major。
+    解决方案：用 <strong>in-kernel transpose</strong>（LDSM/STSM 指令）动态转置 V。</li>
+    <li><strong>精度问题：</strong>FP8 (e4m3) 只有 3 位尾数，LLM 常有 outlier 激活，per-tensor scaling 误差大。
+    FA3 采用两种技术：
+      <ul>
+        <li><strong>Block Quantization：</strong>每个块独立的 scale，融合到 rotary embedding 中零开销。</li>
+        <li><strong>Incoherent Processing：</strong>用随机 Hadamard 矩阵 M 变换 Q 和 K
+        （QM 和 KM），由于 MM<sup>T</sup> = I，<strong>不改变 attention 输出</strong>，
+        但把 outlier "分散"到所有维度，减少量化误差。</li>
+      </ul>
+    </li>
+  </ol>
+
+  <h3>3.3 实验结果（H100）</h3>
+  <div class="figure">
+    <img src="flashattn_figures/fa3_h100_bench.png" alt="FA3 H100 benchmark">
+    <div class="caption">图 9：H100 上的前向速度。FA3 (紫色) 在所有头维度和序列长度下都<strong>显著超越 FA2 和 cuDNN</strong>。
+    head dim 128、16K 序列时达到 <strong>~650 TFLOPS</strong>。对于 head dim 256，FA3 在 cuDNN 之前就已经是 state-of-the-art。</div>
+  </div>
+
+  <div class="figure">
+    <img src="flashattn_figures/fa3_fp8_bench.png" alt="FA3 FP8 benchmark">
+    <div class="caption">图 10：FP8 前向速度（head dim 256）。FA3 达到 <strong>接近 1.2 PFLOPS/s</strong>——FP16 的 1.5× 以上。</div>
+  </div>
+
+  <table>
+    <tr><th>精度</th><th>FA3 峰值 (H100)</th><th>vs FA2</th><th>RMSE (数值精度)</th></tr>
+    <tr><td>FP16</td><td>740 TFLOPS (75%)</td><td>1.5-2.0×</td><td>1.9e-4 (与 FA2 持平)</td></tr>
+    <tr><td>FP8</td><td>~1.2 PFLOPS</td><td>2-3×</td><td>9.1e-3 (比 baseline FP8 <strong>2.6× 更准确</strong>)</td></tr>
+  </table>
+
+  <div class="success">
+    <strong>FA3 的意义：</strong>证明了"新硬件特性必须被算法显式利用"——简单移植只能达到 35% 利用率，
+    而通过 warp specialization + pingpong + FP8 协同设计，可以达到 75%。
+    同时 incoherent processing 这一纯线性代数技巧，让 FP8 的精度损失降到可接受水平。
+  </div>
+</div>
+
+<!-- ===== FA4 ===== -->
+<div class="section">
+  <h2>四、FlashAttention-4（2026）：Blackwell 的非对称瓶颈</h2>
+
+  <div class="version-card v4">
+    <h3>FlashAttention-4: Algorithm and Kernel Pipelining Co-Design for Asymmetric Hardware Scaling</h3>
+    <div class="stats-row">
+      <span class="stat-pill">Zadouri, Hoehnerbach, Shah, Liu, Thakkar, Dao · 2026.03</span>
+      <span class="stat-pill">Princeton / Meta / Colfax / NVIDIA</span>
+      <span class="stat-pill">B200 (Blackwell)</span>
+      <span class="stat-pill">CuTe-DSL</span>
+    </div>
+  </div>
+
+  <h3>4.1 问题：硬件的"非对称扩展"</h3>
+  <p>
+    B200 相比 H100 看似全面升级，但仔细看会发现<strong>各硬件单元的扩展速度不均匀</strong>：
+  </p>
+  <table>
+    <tr><th>硬件单元</th><th>H100</th><th>B200</th><th>扩展比</th></tr>
+    <tr><td><strong>Tensor Core (BF16 MMA)</strong></td><td>1 PFLOPS</td><td>2.25 PFLOPS</td><td><strong>2.25×</strong></td></tr>
+    <tr><td><strong>共享内存带宽</strong></td><td>~128 B/cycle</td><td>~128 B/cycle</td><td>1.0× (不变)</td></tr>
+    <tr><td><strong>指数函数单元 (MUFU)</strong></td><td>16 ops/clock/SM</td><td>16 ops/clock/SM</td><td>1.0× (不变)</td></tr>
+    <tr><td><strong>新特性</strong></td><td>WGMMA + TMA</td><td>+ TMEM (256 KB/SM) + 2-CTA MMA + 128×128 tiles</td><td>—</td></tr>
+  </table>
+
+  <div class="warning">
+    <strong>瓶颈转移：</strong>当 Tensor Core 翻倍而其他单元不变时，"瓶颈"从 matmul 转移到
+    <strong>shared memory 带宽和指数函数单元</strong>。FA4 的 roofline 分析显示，
+    在 B200 上，SMEM 流量和 exp 操作<strong>共同主导</strong>了 attention 执行时间，
+    超过 MMA 25-60%。简单移植 FA3 会留下大量性能未被挖掘。
+  </div>
+
+  <h3>4.2 Blackwell 的新硬件特性</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>Tensor Memory (TMEM)</h4>
+      <p>每 SM 额外 256 KB 的片上内存，专门用于 <strong>存储 Tensor Core 的累加器</strong>。
+      Hopper 的累加器在寄存器中，造成严重寄存器压力；Blackwell 的 TMEM 释放了寄存器，
+      允许更大的 tile size。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>2-CTA MMA Mode</h4>
+      <p>两个 CTA 协同执行一个 MMA 指令：一个 CTA 初始化 MMA，另一个必须保持活跃。
+      <strong>每个 CTA 只存一半的 operand B</strong>，通过 DSMEM 共享——有效减少 SMEM 容量压力。
+      支持 M=128 或 256 的更大 tile。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>128×128 MMA Tiles</h4>
+      <p>从 Hopper 的 64×128 扩大一倍。更大的 tile = 更好的数据复用 = 更少的 SMEM 流量，
+      但要求更多的 TMEM/寄存器来容纳累加器。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>完全异步 MMA</h4>
+      <p>Blackwell MMA 直接写入 TMEM 异步返回，不阻塞寄存器回写。
+      这使得<strong>计算与其他操作可以更深度重叠</strong>。</p>
+    </div>
+  </div>
+
+  <h3>4.3 四大算法创新</h3>
+
+  <h4>创新 1：为 2-CTA + TMEM 重新设计的流水线</h4>
+  <div class="figure">
+    <img src="flashattn_figures/fa4_forward_pipeline.png" alt="FA4 forward pipeline">
+    <div class="caption">图 11：FA4 前向流水线。4 个 SM 协同处理 8 个 Q tile (CTA 0-3 各处理 2 个)。
+    Tensor Core 和 MUFU 在时间轴上完美交错——MUFU 在做 exp 时 Tensor Core 在算下一个 QK<sup>T</sup>。
+    每个 GEMM 需 512 cycles，每个 exp 需 1024 cycles——<strong>exp 需要两倍的时间，因此成为关键路径</strong>。</div>
+  </div>
+
+  <h4>创新 2：指数函数的软件模拟（解决 exp 瓶颈）</h4>
+  <p>
+    B200 上 MUFU 只提供 16 ops/clock/SM，而 MMA 有 8192 ops/clock/SM——<strong>差距 512 倍</strong>。
+    FA4 的巧妙解法：<strong>用 FMA 单元（FP 乘加）软件模拟 2<sup>x</sup></strong>，
+    与 MUFU 并行运行，把 exp 吞吐翻倍。
+  </p>
+  <div class="formula">
+    2<sup>x</sup> = 2<sup>⌊x⌋</sup> · 2<sup>x−⌊x⌋</sup>
+  </div>
+  <p>
+    整数部分 2<sup>⌊x⌋</sup> 通过 IEEE 754 位操作（移位到 exponent 字段）计算；
+    小数部分 2<sup>x<sub>frac</sub></sup> 用 3-5 阶多项式近似（Horner 求值 + FMA）。
+    <strong>3 阶多项式的误差 8.8×10<sup>−5</sup></strong>——在 BF16 量化误差（3.9×10<sup>−3</sup>）面前完全可以忽略。
+  </p>
+  <div class="success">
+    <strong>部分模拟策略：</strong>实际只对 10-25% 的 softmax 条目做软件模拟，剩余仍走 MUFU。
+    这样寄存器压力不会爆炸，同时 exp 吞吐得到提升。比例根据 MMA 和 exp 吞吐的经验比调整。
+  </div>
+
+  <h4>创新 3：条件化 Softmax Rescaling</h4>
+  <p>
+    Online softmax 每次遇到新的 max 都要对之前的 O 做 rescale（一次额外的向量乘法）。
+    FA4 观察到：<strong>可以容忍小的"slack"</strong>——当 m<sub>j</sub> − m<sub>j−1</sub> ≤ τ（典型 τ=log₂(256)=8）时
+    <strong>跳过 rescale</strong>，直接累加：
+  </p>
+  <div class="formula">
+    O<sub>j</sub> = e<sup>m<sub>j−1</sub>−m<sub>j</sub></sup> O<sub>j−1</sub> + e<sup>S<sub>j</sub>−m<sub>j</sub></sup> V<sub>j</sub> &nbsp; 如果 m<sub>j</sub> − m<sub>j−1</sub> &gt; τ<br>
+    O<sub>j</sub> = O<sub>j−1</sub> + e<sup>S<sub>j</sub>−m<sub>j−1</sub></sup> V<sub>j</sub> &nbsp; 否则
+  </div>
+  <p>
+    最终的归一化步骤会修正所有累积的小误差，<strong>数值精度不受影响</strong>。
+    这大幅减少了向量操作的频率。
+  </p>
+
+  <h4>创新 4：2-CTA 的反向传播（halving atomics）</h4>
+  <div class="figure">
+    <img src="flashattn_figures/fa4_backward_2cta.png" alt="FA4 backward 2-CTA">
+    <div class="caption">图 12：2-CTA 反向传播中的 dQ 计算。两个 CTA 通过 DSMEM 交换一半的 dS，
+    每个 CTA 形成 (M/2 × 2N) 的 operand，独立计算各自的 dQ 累加。
+    这<strong>将全局 atomic add 的次数减半</strong>，因为每个 CTA 只写 dQ 的一半。</div>
+  </div>
+  <p>
+    反向传播有 5 个 GEMM，shared memory 流量比前向大。FA4 在反向使用 M=256, N=128 的 tile
+    （在 2-CTA 模式下），让 operand B 的 SMEM 读取减半。同时通过 DSMEM 交换 dS，
+    将每个 CTA 的 dQ 累加 operand 形成 (M/2, 2N) 的形状，自然地<strong>把 atomic 次数减半</strong>。
+  </p>
+
+  <h3>4.4 CuTe-DSL：Python 内嵌的 DSL</h3>
+  <p>
+    FA4 的另一个重大变化是<strong>完全用 Python 中的 CuTe-DSL 实现</strong>，
+    而非 CUDA C++。优点：
+  </p>
+  <ul>
+    <li><strong>编译速度提升 20-30×</strong>：单 kernel 编译从 55 秒（FA3 C++）降到 2.5 秒</li>
+    <li><strong>保持 C++ 模板元编程的全部表达力</strong>：可以直接写 PTX escape hatch</li>
+    <li><strong>更快的迭代：</strong>研究者无需深厚 C++ 模板经验即可贡献新的注意力变体</li>
+  </ul>
+
+  <h3>4.5 实验结果（B200）</h3>
+  <div class="figure">
+    <img src="flashattn_figures/fa4_bench.png" alt="FA4 forward benchmark">
+    <div class="caption">图 13：B200 前向速度（head dim 128）。FA4 (紫色) 达到 <strong>~1613 TFLOPS (71% of peak)</strong>，
+    比 cuDNN 9.13 快 1.1-1.3×，比 Triton 快 2.1-2.7×。causal 情况下加速比更大（得益于 LPT 调度器）。</div>
+  </div>
+
+  <div class="figure">
+    <img src="flashattn_figures/fa4_backward_bench.png" alt="FA4 backward benchmark">
+    <div class="caption">图 14：B200 反向速度。FA4 在所有序列长度和 causal 设置下都显著领先。</div>
+  </div>
+
+  <h3>4.6 额外特性</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">a</span>
+      <h4>Deterministic Backward</h4>
+      <p>原子加导致的非确定性一直是训练调试的痛点。FA4 提供确定性反向传播模式——
+      用 semaphore 串行化 global 原子 reduction，通过 batch/head swizzling 减少 stall。
+      达到非确定性版本 <strong>75% 的速度</strong>。</p>
+    </div>
+    <div class="card">
+      <span class="num">b</span>
+      <h4>LPT (Longest-Processing-Time) 调度</h4>
+      <p>Causal 或变长序列会造成负载不均衡。FA4 使用 LPT 调度器——
+      先处理长的 worktile，让短的填充 tail。Causal 情况下获得 4-14% 额外收益。</p>
+    </div>
+  </div>
+
+  <div class="highlight">
+    <strong>FA4 的哲学：</strong>"当硬件非对称扩展时，瓶颈不再在最显眼的地方"。
+    当 Tensor Core 翻倍时，SMEM 带宽和 exp 单元成为新瓶颈——FA4 的每个优化都是在
+    <strong>绕过或分担这些次级资源</strong>。软件模拟 exp、条件化 rescale、2-CTA 共享 operand——
+    这些都是典型的"硬件 roofline 倒推算法设计"的例子。
+  </div>
+</div>
+
+<!-- ===== 综合对比 ===== -->
+<div class="section">
+  <h2>五、四代综合对比</h2>
+
+  <h3>5.1 技术演化矩阵</h3>
+  <table>
+    <tr><th>维度</th><th>FA1</th><th>FA2</th><th>FA3</th><th>FA4</th></tr>
+    <tr><td><strong>目标硬件</strong></td><td>A100</td><td>A100/H100</td><td>H100</td><td>B200</td></tr>
+    <tr><td><strong>核心瓶颈</strong></td><td>HBM IO</td><td>非 matmul FLOPs + 并行度</td><td>同步执行 + Tensor Core 新特性</td><td>SMEM 带宽 + exp 单元</td></tr>
+    <tr><td><strong>算法</strong></td><td>Tiling + Online Softmax + 重计算</td><td>改写 softmax + 序列维并行 + split-Q warps</td><td>Producer-Consumer + Pingpong + 2-stage pipeline</td><td>2-CTA + TMEM + exp 软件模拟 + 条件 rescale</td></tr>
+    <tr><td><strong>精度</strong></td><td>FP16 / BF16</td><td>FP16 / BF16</td><td>+ FP8 (block quant + incoherent)</td><td>FP16 / BF16 (B200)</td></tr>
+    <tr><td><strong>并行维度</strong></td><td>batch × head</td><td>+ seq_len</td><td>+ warp specialization</td><td>+ 2-CTA cluster</td></tr>
+    <tr><td><strong>内存层次利用</strong></td><td>HBM + SMEM</td><td>HBM + SMEM</td><td>HBM + SMEM (via TMA, 循环 buffer)</td><td>HBM + SMEM + <strong>TMEM</strong></td></tr>
+    <tr><td><strong>峰值（FWD）</strong></td><td>~80 TFLOPS (A100)</td><td>230 TFLOPS (A100) / 335 (H100)</td><td>740 TFLOPS (H100)</td><td>1613 TFLOPS (B200)</td></tr>
+    <tr><td><strong>峰值利用率</strong></td><td>25%</td><td>73%</td><td>75%</td><td>71%</td></tr>
+    <tr><td><strong>实现语言</strong></td><td>CUDA C++</td><td>CUDA C++</td><td>CUTLASS C++ templates</td><td><strong>Python + CuTe-DSL</strong></td></tr>
+  </table>
+
+  <h3>5.2 性能增长曲线</h3>
+  <div class="stats-row">
+    <div class="stat-pill">FA1 → FA2: 2-4×</div>
+    <div class="stat-pill">FA2 → FA3: 1.5-2.0×</div>
+    <div class="stat-pill">FA3 → FA4: 1.3× (vs cuDNN)</div>
+    <div class="stat-pill">FA1 → FA4: ~20× 累积加速</div>
+  </div>
+
+  <h3>5.3 关键洞察</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>每代都重新识别瓶颈</h4>
+      <p>FA 系列从不"在已有优化上再优化"——每一代都从 roofline 分析重新出发，
+      找出新架构下的<strong>下一个瓶颈</strong>（IO → 非matmul → 同步 → SMEM/exp）。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>精确算法优于近似</h4>
+      <p>FA 系列一直坚持"exact attention"——数学上与标准注意力等价。
+      这反证了 Linformer/Performer 等近似路线的多数结论（性能损失不可接受），
+      使得 FA 成为 Transformer 训练的事实标准。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>算法-硬件协同设计</h4>
+      <p>FA 系列的每个优化都需要<strong>深入理解硬件</strong>：
+      FA1 的 SRAM/HBM、FA2 的 warp 分区、FA3 的 TMA/WGMMA、FA4 的 TMEM/2-CTA。
+      这已经不是"算法研究"而是"协同系统研究"。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>Online Softmax 是贯穿四代的核心</h4>
+      <p>数学本质从未改变：Online Softmax + Tiling。
+      所有变化都是"如何在不同硬件上高效实现这个核心"——
+      这个核心是整个 FA 系列的"genetic code"。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 结论 ===== -->
+<div class="section">
+  <h2>六、结论与影响</h2>
+  <p>
+    FlashAttention 系列是<strong>硬件感知算法设计的典范</strong>。
+    四篇论文跨越 4 年、3 代 GPU 架构（Ampere → Hopper → Blackwell），
+    每一代都精准地解决当代硬件的特有瓶颈：
+  </p>
+  <ol>
+    <li><strong>FA1</strong> 识别出"注意力的瓶颈是 IO 而非 FLOPs"，用 tiling + online softmax 把 HBM 访问从 O(N²) 降为 O(N²·d²/M)，是精确注意力加速的"零到一"。</li>
+    <li><strong>FA2</strong> 把并行度从 "batch × head" 扩展到 "batch × head × seq_len"，同时精简非 matmul 运算，让 A100 达到 73% 利用率。</li>
+    <li><strong>FA3</strong> 用 warp specialization、pingpong、2-stage pipeline 榨取 H100 的异步特性，加上 block quantization + incoherent processing 让 FP8 精度可用。</li>
+    <li><strong>FA4</strong> 在 Blackwell 的非对称扩展（Tensor Core 翻倍、SMEM/exp 不变）下，通过 TMEM/2-CTA、软件模拟 exp、条件 rescale 等手段解决新瓶颈。</li>
+  </ol>
+
+  <div class="highlight">
+    <strong>对行业的影响：</strong>
+    FlashAttention 系列已成为所有主流 LLM 训练和推理框架的<strong>默认实现</strong>——
+    PyTorch (torch.nn.functional.scaled_dot_product_attention)、
+    vLLM、SGLang、TensorRT-LLM、Megatron-LM 等都深度集成。
+    可以说：<strong>没有 FA 系列，就没有今天的长上下文 LLM</strong>。
+    从 GPT-4 的 32K 到 Gemini 的 1M，每个长上下文模型背后都是 FA 系列的 kernel 在支撑。
+  </div>
+
+  <p>
+    <strong>未来方向：</strong>随着 B300/GB300 进一步提升 exp 吞吐（16→32 ops/clock/SM），
+    以及 FP4 量化（SageAttention 3 等）的成熟，
+    FA5 很可能需要重新审视"softmax 是否还需要精确计算"、
+    "低秩与稀疏是否可以重新进入精确范式"这类更深层问题。
+  </p>
+</div>
+
+<div class="footer">
+  论文综述 &middot; FlashAttention 1-4 完整演化（2022-2026）
+</div>
+
+</div>
+</body>
+</html>

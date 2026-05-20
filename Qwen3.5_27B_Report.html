@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Qwen3.5-27B 技术报告</title>
+<style>
+  :root { --primary:#1a1a2e; --accent:#7c3aed; --highlight-bg:#f5f0ff; --highlight-border:#9d6fff; --text:#222; --border:#e0e0e0; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif; color:var(--text); line-height:1.8; background:#fafafa; }
+  .container { max-width:920px; margin:0 auto; padding:20px; }
+  .cover { text-align:center; padding:70px 20px 50px; background:linear-gradient(135deg,#2d1b4e 0%,#4c2a85 50%,#7c3aed 100%); color:white; border-radius:12px; margin-bottom:40px; }
+  .cover h1 { font-size:2.1em; margin-bottom:12px; font-weight:700; }
+  .cover .subtitle { font-size:1.05em; color:#ddd; margin-bottom:24px; }
+  .cover .tags { display:flex; justify-content:center; gap:12px; flex-wrap:wrap; }
+  .cover .tag { background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.2); border-radius:20px; padding:6px 18px; font-size:0.9em; color:#eee; }
+  .section { background:white; border-radius:10px; padding:36px 40px; margin-bottom:24px; box-shadow:0 1px 4px rgba(0,0,0,0.06); border:1px solid var(--border); }
+  h2 { font-size:1.5em; color:var(--primary); margin-bottom:6px; padding-bottom:10px; border-bottom:2px solid var(--highlight-border); }
+  h3 { font-size:1.15em; color:var(--accent); margin:22px 0 10px; }
+  h4 { font-size:1.05em; color:#333; margin:16px 0 8px; }
+  p { margin:12px 0; text-align:justify; }
+  .highlight { background:var(--highlight-bg); border-left:4px solid var(--highlight-border); padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .highlight strong { color:var(--accent); }
+  .warning { background:#fff8f0; border-left:4px solid #f0a500; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .success { background:#f0fff4; border-left:4px solid #2a9d8f; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  ul,ol { padding-left:24px; margin:10px 0; }
+  li { margin:6px 0; }
+  .formula { text-align:center; padding:18px 20px; margin:18px 0; background:#f8f5ff; border-radius:8px; border:1px solid #e8e0f5; font-size:1.08em; font-family:"Times New Roman","STIX",serif; overflow-x:auto; }
+  .figure { text-align:center; margin:24px 0; padding:16px; background:#fafafa; border-radius:8px; border:1px solid #eee; }
+  .figure svg { max-width:100%; height:auto; }
+  .figure img { max-width:100%; height:auto; border-radius:4px; }
+  .figure .caption { font-size:0.88em; color:#666; margin-top:10px; font-style:italic; }
+  table { width:100%; border-collapse:collapse; margin:16px 0; font-size:0.9em; }
+  th,td { padding:9px 12px; text-align:left; border-bottom:1px solid #eee; }
+  th { background:var(--primary); color:white; font-weight:600; }
+  tr:hover { background:#f8f5ff; }
+  td code { background:#f0f0f5; padding:2px 6px; border-radius:3px; font-size:0.9em; }
+  .card-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0; }
+  .card { background:linear-gradient(135deg,#f8f5ff,#f0e8ff); border:1px solid #e0d4f0; border-radius:10px; padding:20px 24px; }
+  .card .num { display:inline-block; background:var(--highlight-border); color:white; width:28px; height:28px; border-radius:50%; text-align:center; line-height:28px; font-size:0.85em; font-weight:700; margin-right:8px; }
+  .card h4 { display:inline; color:var(--accent); font-size:1.05em; margin:0; }
+  .card p { margin-top:8px; font-size:0.93em; }
+  .pros-cons { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0; }
+  .pros,.cons { padding:16px; border-radius:8px; }
+  .pros { background:#f0fff4; border:1px solid #c8e6c9; }
+  .cons { background:#fff8f0; border:1px solid #ffe0b2; }
+  .pros h4 { color:#2e7d32; margin-bottom:8px; }
+  .cons h4 { color:#e65100; margin-bottom:8px; }
+  .pros li,.cons li { font-size:0.93em; }
+  .footer { text-align:center; color:#999; font-size:0.85em; padding:30px 0; border-top:1px solid #eee; margin-top:20px; }
+  @media(max-width:640px) { .section{padding:24px 20px;} .cover h1{font-size:1.6em;} .pros-cons,.card-grid{grid-template-columns:1fr;} }
+  .metric-best { font-weight:700; color:#2e7d32; }
+  .compare-table td:first-child { font-weight:600; background:#f8f5ff; }
+  .stat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:16px 0; }
+  .stat { background:linear-gradient(135deg,#f8f5ff,#f0e8ff); border:1px solid #e0d4f0; border-radius:8px; padding:16px; text-align:center; }
+  .stat .val { font-size:1.5em; font-weight:700; color:var(--accent); }
+  .stat .lbl { font-size:0.82em; color:#666; margin-top:4px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="cover">
+  <h1>Qwen3.5-27B 技术报告</h1>
+  <div class="subtitle">混合 Gated DeltaNet 架构 · 视觉语言统一 · 百万级上下文</div>
+  <div class="tags">
+    <span class="tag">Gated DeltaNet 线性注意力</span>
+    <span class="tag">Gated Attention</span>
+    <span class="tag">Hybrid 3:1 架构</span>
+    <span class="tag">MTP 多步训练</span>
+    <span class="tag">Vision Encoder</span>
+    <span class="tag">262K 原生 / 1M 扩展上下文</span>
+    <span class="tag">201 种语言</span>
+  </div>
+</div>
+
+<!-- 引言 -->
+<div class="section">
+  <h2>引言：Qwen3.5 系列与 27B 模型定位</h2>
+  <p>
+    Qwen3.5 系列是阿里巴巴通义实验室 2026 年推出的新一代基础模型家族，相比 Qwen3 系列，
+    其在<strong>多模态学习、架构效率、强化学习规模化、全球语言覆盖</strong>四个维度均实现显著突破。
+    系列包含多个规格：旗舰 Qwen3.5-122B-A10B（MoE）、紧凑型 Qwen3.5-27B（Dense）、轻量级 Qwen3.5-35B-A3B（MoE）等。
+  </p>
+  <p>
+    其中 <strong>Qwen3.5-27B</strong> 是一款参数量 27B 的 Dense 因果语言模型（带视觉编码器），
+    采用<strong>混合线性注意力 + 全注意力</strong>的全新架构 —— 在 64 层结构中以 3:1 比例交错排列
+    Gated DeltaNet（线性注意力）与 Gated Attention（全注意力），从根本上降低长上下文的计算与显存开销。
+    模型原生支持 <strong>262,144 tokens</strong> 上下文，并可扩展至约 <strong>1,010,000 tokens</strong>。
+  </p>
+
+  <div class="stat-grid">
+    <div class="stat"><div class="val">27B</div><div class="lbl">总参数量</div></div>
+    <div class="stat"><div class="val">64</div><div class="lbl">总层数</div></div>
+    <div class="stat"><div class="val">262K</div><div class="lbl">原生上下文</div></div>
+    <div class="stat"><div class="val">1.01M</div><div class="lbl">扩展上下文</div></div>
+    <div class="stat"><div class="val">5120</div><div class="lbl">隐藏维度</div></div>
+    <div class="stat"><div class="val">17408</div><div class="lbl">FFN 中间维度</div></div>
+    <div class="stat"><div class="val">248320</div><div class="lbl">词表大小</div></div>
+    <div class="stat"><div class="val">201</div><div class="lbl">支持语言数</div></div>
+  </div>
+
+  <div class="highlight">
+    <strong>核心创新主线：</strong>
+    Qwen3.5-27B 的关键设计在于"<strong>用线性注意力做绝大部分工作，用全注意力做关键检索</strong>"——
+    每 4 层中 3 层为 O(L) 复杂度的 Gated DeltaNet，仅 1 层为 O(L²) 的 Gated Attention（GQA + RoPE），
+    在保持全注意力建模能力的同时，将整体计算量、KV 缓存与解码延迟显著降低。
+  </div>
+</div>
+
+<!-- 背景知识 -->
+<div class="section">
+  <h2>一、背景知识</h2>
+
+  <h3>1.1 线性注意力与标准注意力的对比</h3>
+  <p>
+    标准 Softmax 注意力的核心公式为 <code>Attention(Q,K,V) = Softmax(QK<sup>T</sup>/√d) V</code>，
+    其计算复杂度为 O(L²d)，其中 L 为序列长度、d 为头维度。当 L 增大到数十万甚至百万时，
+    二次方的计算量与 O(Lhd) 的 KV 缓存成为推理效率的关键瓶颈。
+  </p>
+  <p>
+    <strong>线性注意力</strong>（Linear Attention）的核心思路是去掉 Softmax，将注意力写为
+    <code>LinearAttn(Q,K,V) = &phi;(Q) (&phi;(K)<sup>T</sup>V)</code>，
+    其中 &phi; 为某种特征映射。通过先计算 <code>&phi;(K)<sup>T</sup>V</code>（d×d 矩阵），
+    再乘以 <code>&phi;(Q)</code>，可将复杂度降为 O(Ld²)。更重要的是，线性注意力可写为 RNN 形式：
+  </p>
+  <div class="formula">
+    S<sub>t</sub> = S<sub>t-1</sub> + &phi;(k<sub>t</sub>) v<sub>t</sub><sup>T</sup> ,&nbsp;&nbsp;
+    o<sub>t</sub> = &phi;(q<sub>t</sub>) S<sub>t</sub>
+  </div>
+  <p>
+    其中 S<sub>t</sub> &isin; R<sup>d×d</sup> 为递推状态矩阵。在自回归解码时可以 O(1) 地生成每个 token，
+    无需维护完整 KV 缓存。但简单线性注意力的表达力往往弱于 Softmax 注意力——
+    因为 S<sub>t</sub> 是无选择地累加所有历史信息，缺乏"遗忘"机制。
+  </p>
+
+  <h3>1.2 Delta Rule 与 DeltaNet</h3>
+  <p>
+    <strong>DeltaNet</strong> 源自经典联想记忆中的 <strong>Delta Rule</strong>（增量学习规则）。
+    与简单线性注意力"只累加不遗忘"不同，Delta Rule 在每一步先从状态矩阵中
+    <strong>擦除当前键已关联的旧值</strong>，再写入新的键-值关联，使状态矩阵具有"选择性遗忘"能力：
+  </p>
+  <div class="formula">
+    S<sub>t</sub> = S<sub>t-1</sub> - &beta;<sub>t</sub> k<sub>t</sub> (k<sub>t</sub><sup>T</sup> S<sub>t-1</sub>) + &beta;<sub>t</sub> k<sub>t</sub> v<sub>t</sub><sup>T</sup>
+    = S<sub>t-1</sub> + &beta;<sub>t</sub> k<sub>t</sub> (v<sub>t</sub> - k<sub>t</sub><sup>T</sup> S<sub>t-1</sub>)<sup>T</sup>
+  </div>
+  <p>
+    其中 &beta;<sub>t</sub> &isin; (0,1] 为可学习的更新门控。直觉上：如果 k<sub>t</sub> 对应的旧值
+    k<sub>t</sub><sup>T</sup>S<sub>t-1</sub> 已经等于新值 v<sub>t</sub>，
+    则 &Delta; 项为零，不作无谓更新；否则按差值精确修正。这相当于一种
+    <strong>误差驱动的在线学习</strong>，使得状态矩阵能在有限容量下不断更新最相关的信息。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 800 340" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#7c3aed"/></marker>
+        <marker id="arr2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#e65100"/></marker>
+      </defs>
+      <text x="400" y="22" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">DeltaNet vs 简单线性注意力：状态更新对比</text>
+      <!-- 简单线性注意力 -->
+      <rect x="30" y="50" width="350" height="260" rx="10" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="205" y="75" text-anchor="middle" font-size="13" font-weight="600" fill="#0f3460">简单线性注意力（只累加）</text>
+      <rect x="60" y="95" width="90" height="45" rx="6" fill="#4a7dff" opacity="0.15" stroke="#4a7dff"/>
+      <text x="105" y="122" text-anchor="middle" font-size="12" fill="#0f3460">S<tspan font-size="9" dy="3">t-1</tspan></text>
+      <rect x="230" y="95" width="90" height="45" rx="6" fill="#4a7dff" opacity="0.3" stroke="#4a7dff"/>
+      <text x="275" y="122" text-anchor="middle" font-size="12" fill="#0f3460">S<tspan font-size="9" dy="3">t</tspan></text>
+      <line x1="150" y1="117" x2="222" y2="117" stroke="#4a7dff" stroke-width="2" marker-end="url(#arr)"/>
+      <text x="186" y="110" text-anchor="middle" font-size="11" fill="#4a7dff">+ k v<tspan font-size="8" dy="-4">T</tspan></text>
+      <text x="205" y="170" text-anchor="middle" font-size="11" fill="#555">所有历史信息不断累加</text>
+      <text x="205" y="190" text-anchor="middle" font-size="11" fill="#555">无法遗忘旧的无用关联</text>
+      <!-- 状态可视化 -->
+      <g transform="translate(60,210)">
+        <rect width="30" height="30" fill="#4a7dff" opacity="0.2" stroke="#4a7dff" stroke-width="0.5"/>
+        <rect x="30" width="30" height="30" fill="#4a7dff" opacity="0.3" stroke="#4a7dff" stroke-width="0.5"/>
+        <rect x="60" width="30" height="30" fill="#4a7dff" opacity="0.5" stroke="#4a7dff" stroke-width="0.5"/>
+        <rect x="90" width="30" height="30" fill="#4a7dff" opacity="0.6" stroke="#4a7dff" stroke-width="0.5"/>
+        <rect x="120" width="30" height="30" fill="#4a7dff" opacity="0.7" stroke="#4a7dff" stroke-width="0.5"/>
+        <rect x="150" width="30" height="30" fill="#4a7dff" opacity="0.8" stroke="#4a7dff" stroke-width="0.5"/>
+        <rect x="180" width="30" height="30" fill="#4a7dff" opacity="0.9" stroke="#4a7dff" stroke-width="0.5"/>
+        <text x="105" y="50" text-anchor="middle" font-size="10" fill="#666">状态不断膨胀，旧信息永不淘汰</text>
+      </g>
+
+      <!-- DeltaNet -->
+      <rect x="420" y="50" width="350" height="260" rx="10" fill="#f5f0ff" stroke="#7c3aed" stroke-width="1.5"/>
+      <text x="595" y="75" text-anchor="middle" font-size="13" font-weight="600" fill="#4c2a85">DeltaNet（Delta Rule：先擦除再写入）</text>
+      <rect x="450" y="95" width="90" height="45" rx="6" fill="#7c3aed" opacity="0.15" stroke="#7c3aed"/>
+      <text x="495" y="122" text-anchor="middle" font-size="12" fill="#4c2a85">S<tspan font-size="9" dy="3">t-1</tspan></text>
+      <rect x="620" y="95" width="90" height="45" rx="6" fill="#7c3aed" opacity="0.3" stroke="#7c3aed"/>
+      <text x="665" y="122" text-anchor="middle" font-size="12" fill="#4c2a85">S<tspan font-size="9" dy="3">t</tspan></text>
+      <line x1="540" y1="110" x2="612" y2="110" stroke="#e65100" stroke-width="1.5" marker-end="url(#arr2)" stroke-dasharray="4,3"/>
+      <text x="576" y="103" text-anchor="middle" font-size="10" fill="#e65100">- &beta; k(k<tspan font-size="7" dy="-3">T</tspan><tspan dy="3">S)</tspan></text>
+      <line x1="540" y1="127" x2="612" y2="127" stroke="#7c3aed" stroke-width="2" marker-end="url(#arr)"/>
+      <text x="576" y="143" text-anchor="middle" font-size="10" fill="#7c3aed">+ &beta; k v<tspan font-size="7" dy="-3">T</tspan></text>
+      <text x="595" y="170" text-anchor="middle" font-size="11" fill="#555">先擦除旧关联，再写入新关联</text>
+      <text x="595" y="190" text-anchor="middle" font-size="11" fill="#555">误差驱动的选择性更新</text>
+      <!-- 状态可视化 -->
+      <g transform="translate(450,210)">
+        <rect width="30" height="30" fill="#ccc" opacity="0.3" stroke="#999" stroke-width="0.5" stroke-dasharray="3,2"/>
+        <rect x="30" width="30" height="30" fill="#7c3aed" opacity="0.2" stroke="#7c3aed" stroke-width="0.5"/>
+        <rect x="60" width="30" height="30" fill="#ccc" opacity="0.3" stroke="#999" stroke-width="0.5" stroke-dasharray="3,2"/>
+        <rect x="90" width="30" height="30" fill="#7c3aed" opacity="0.6" stroke="#7c3aed" stroke-width="0.5"/>
+        <rect x="120" width="30" height="30" fill="#7c3aed" opacity="0.8" stroke="#7c3aed" stroke-width="0.5"/>
+        <rect x="150" width="30" height="30" fill="#ccc" opacity="0.3" stroke="#999" stroke-width="0.5" stroke-dasharray="3,2"/>
+        <rect x="180" width="30" height="30" fill="#7c3aed" opacity="0.9" stroke="#7c3aed" stroke-width="0.5"/>
+        <text x="105" y="50" text-anchor="middle" font-size="10" fill="#666">旧信息被擦除(虚线)，新信息精确写入</text>
+      </g>
+    </svg>
+    <div class="caption">图 1：简单线性注意力 vs DeltaNet 的状态更新对比。DeltaNet 的 Delta Rule 赋予模型"选择性遗忘"能力。</div>
+  </div>
+
+  <h3>1.3 Grouped-Query Attention（GQA）</h3>
+  <p>
+    GQA 是标准多头注意力（MHA）和多查询注意力（MQA）之间的折中方案。在 MHA 中每个 Q 头对应独立的 K/V 头，
+    而 MQA 所有 Q 头共享同一组 K/V。GQA 将 Q 头分成若干组，组内共享 K/V 头，
+    在减少 KV 缓存的同时保持较好的模型质量。
+  </p>
+  <p>
+    Qwen3.5-27B 的 Gated Attention 层使用 <strong>24 个 Q 头 / 4 个 KV 头</strong>（GQA-6 分组比），
+    每组 6 个 Q 头共享 1 组 KV，头维度 256，并在 64 维上施加 RoPE（partial_rotary_factor = 0.25，
+    即 25% 的头维度使用旋转位置编码），其余维度不加位置编码。
+  </p>
+
+  <h3>1.4 旋转位置编码（RoPE）</h3>
+  <p>
+    RoPE 通过将位置信息编码为旋转矩阵，在 Q/K 向量的各维度对上施加依赖于位置差的旋转角度。
+    其核心公式为：
+  </p>
+  <div class="formula">
+    RoPE(x<sub>m</sub>, m) = x<sub>m</sub> &otimes; e<sup>im&theta;</sup>,&nbsp;&nbsp;
+    &theta;<sub>i</sub> = &Theta;<sup>-2i/d</sup>,&nbsp;&nbsp;
+    其中 &Theta; 为频率基数
+  </div>
+  <p>
+    Qwen3.5-27B 采用 <strong>rope_theta = 10,000,000</strong>（一千万），远高于标准值 10,000，
+    这使得低频旋转角变得更小，有助于外推到更长序列。此外使用
+    <strong>partial_rotary_factor = 0.25</strong>，仅在头维度的前 25%（64 维）施加 RoPE，
+    其余 192 维保持位置无关，这种 Partial RoPE 设计有助于在位置编码与内容特征之间取得平衡。
+    对视觉特征还使用了 <strong>多分辨率 RoPE（M-RoPE）</strong>，
+    将 RoPE 维度分为 [11, 11, 10] 三段分别编码空间和时间位置。
+  </p>
+
+  <h3>1.5 Multi-Token Prediction（MTP）</h3>
+  <p>
+    传统自回归语言模型每步仅预测下一个 token。<strong>MTP（多步/多 token 预测）</strong>
+    让模型同时预测未来多个 token，作为辅助训练目标。Qwen3.5-27B 配置
+    <code>mtp_num_hidden_layers = 1</code>，即在主网络之上额外增加 1 层预测头，
+    用于预测下一步的 token，训练时产生更丰富的梯度信号，加速收敛并提升模型规划能力。
+    在推理时，MTP 预测头还可用于<strong>投机解码</strong>（Speculative Decoding），
+    即先用 MTP 头快速猜测多个后续 token，再由主网络一次性验证，显著提升解码吞吐量。
+  </p>
+</div>
+
+<!-- 整体架构 -->
+<div class="section">
+  <h2>二、整体架构详解</h2>
+
+  <h3>2.1 Hybrid 3:1 层布局</h3>
+  <p>
+    Qwen3.5-27B 的 64 层 Transformer 按严格的 <strong>3:1 模式</strong> 排列：
+  </p>
+  <div class="formula">
+    16 &times; ( 3 &times; (Gated DeltaNet &rarr; FFN) &rarr; 1 &times; (Gated Attention &rarr; FFN) )
+  </div>
+  <p>
+    即每 4 层为一个<strong>重复单元（Block）</strong>：前 3 层使用线性注意力（Gated DeltaNet），
+    第 4 层使用全注意力（Gated Attention）。共 16 个这样的 Block 构成完整模型。
+    这种设计的核心直觉是：
+  </p>
+  <ul>
+    <li><strong>Gated DeltaNet 层（第 1/2/3 层）</strong>：承担信息的增量压缩与局部推理，
+    以 O(L) 复杂度高效处理长序列，但其线性递推本质决定了无法做精确的全序列检索。</li>
+    <li><strong>Gated Attention 层（第 4 层）</strong>：以 O(L²) 复杂度提供全序列的精确注意力，
+    负责远程依赖捕获、精确信息检索等线性注意力难以胜任的任务。</li>
+  </ul>
+  <p>
+    通过将 75% 的层替换为线性注意力，模型的整体推理 FLOPs 和 KV 缓存大幅降低，
+    同时保留 25% 的全注意力层保障精确检索能力。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 840 520" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <text x="420" y="22" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">Qwen3.5-27B 整体架构：Hybrid 3:1 层布局</text>
+
+      <!-- Input -->
+      <rect x="320" y="40" width="200" height="36" rx="6" fill="#e8e0f5" stroke="#7c3aed"/>
+      <text x="420" y="63" text-anchor="middle" font-size="12" fill="#4c2a85">Input Embedding (248320)</text>
+
+      <!-- Block 1 -->
+      <g transform="translate(0,90)">
+        <rect x="100" y="0" width="640" height="250" rx="10" fill="#faf8ff" stroke="#d0c4e8" stroke-width="1" stroke-dasharray="6,3"/>
+        <text x="120" y="22" font-size="12" font-weight="600" fill="#7c3aed">Block 1 / 16</text>
+        <text x="640" y="22" font-size="11" fill="#999">full_attention_interval = 4</text>
+
+        <!-- Layer 0: DeltaNet -->
+        <rect x="130" y="35" width="175" height="70" rx="8" fill="#ede7ff" stroke="#9d6fff" stroke-width="1.5"/>
+        <text x="217" y="58" text-anchor="middle" font-size="11" font-weight="600" fill="#6d28d9">Gated DeltaNet</text>
+        <text x="217" y="75" text-anchor="middle" font-size="9.5" fill="#7c3aed">V:48h QK:16h dim:128</text>
+        <text x="217" y="89" text-anchor="middle" font-size="9" fill="#999">linear_attention (层 0)</text>
+
+        <!-- Layer 1: DeltaNet -->
+        <rect x="330" y="35" width="175" height="70" rx="8" fill="#ede7ff" stroke="#9d6fff" stroke-width="1.5"/>
+        <text x="417" y="58" text-anchor="middle" font-size="11" font-weight="600" fill="#6d28d9">Gated DeltaNet</text>
+        <text x="417" y="75" text-anchor="middle" font-size="9.5" fill="#7c3aed">V:48h QK:16h dim:128</text>
+        <text x="417" y="89" text-anchor="middle" font-size="9" fill="#999">linear_attention (层 1)</text>
+
+        <!-- Layer 2: DeltaNet -->
+        <rect x="530" y="35" width="175" height="70" rx="8" fill="#ede7ff" stroke="#9d6fff" stroke-width="1.5"/>
+        <text x="617" y="58" text-anchor="middle" font-size="11" font-weight="600" fill="#6d28d9">Gated DeltaNet</text>
+        <text x="617" y="75" text-anchor="middle" font-size="9.5" fill="#7c3aed">V:48h QK:16h dim:128</text>
+        <text x="617" y="89" text-anchor="middle" font-size="9" fill="#999">linear_attention (层 2)</text>
+
+        <!-- Arrows between DeltaNet layers -->
+        <line x1="305" y1="70" x2="325" y2="70" stroke="#9d6fff" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="505" y1="70" x2="525" y2="70" stroke="#9d6fff" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- FFN boxes (small) -->
+        <rect x="155" y="115" width="125" height="28" rx="5" fill="#f0fdf4" stroke="#86efac"/>
+        <text x="217" y="134" text-anchor="middle" font-size="10" fill="#166534">FFN (17408)</text>
+        <rect x="355" y="115" width="125" height="28" rx="5" fill="#f0fdf4" stroke="#86efac"/>
+        <text x="417" y="134" text-anchor="middle" font-size="10" fill="#166534">FFN (17408)</text>
+        <rect x="555" y="115" width="125" height="28" rx="5" fill="#f0fdf4" stroke="#86efac"/>
+        <text x="617" y="134" text-anchor="middle" font-size="10" fill="#166534">FFN (17408)</text>
+
+        <!-- Layer 3: Full Attention -->
+        <rect x="280" y="160" width="280" height="70" rx="8" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="420" y="183" text-anchor="middle" font-size="11" font-weight="600" fill="#92400e">Gated Attention (GQA + RoPE)</text>
+        <text x="420" y="200" text-anchor="middle" font-size="9.5" fill="#b45309">Q:24h KV:4h dim:256 RoPE:64d</text>
+        <text x="420" y="214" text-anchor="middle" font-size="9" fill="#999">full_attention (层 3)</text>
+
+        <rect x="355" y="237" width="125" height="28" rx="5" fill="#f0fdf4" stroke="#86efac"/>
+        <text x="417" y="256" text-anchor="middle" font-size="10" fill="#166534">FFN (17408)</text>
+      </g>
+
+      <!-- Block 2..16 indicator -->
+      <rect x="100" y="360" width="640" height="50" rx="10" fill="#f5f0ff" stroke="#d0c4e8" stroke-dasharray="4,4"/>
+      <text x="420" y="382" text-anchor="middle" font-size="12" fill="#7c3aed">Block 2 ~ Block 16（同构重复）</text>
+      <text x="420" y="398" text-anchor="middle" font-size="10" fill="#999">共 16 个 Block × 4 层/Block = 64 层</text>
+
+      <!-- Arrows -->
+      <line x1="420" y1="76" x2="420" y2="88" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arr)"/>
+      <line x1="420" y1="345" x2="420" y2="358" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- Output -->
+      <rect x="280" y="425" width="280" height="36" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="420" y="448" text-anchor="middle" font-size="12" fill="#92400e">RMSNorm + LM Head (248320)</text>
+      <line x1="420" y1="410" x2="420" y2="423" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- MTP Head -->
+      <rect x="600" y="425" width="170" height="36" rx="6" fill="#e0f2fe" stroke="#38bdf8"/>
+      <text x="685" y="448" text-anchor="middle" font-size="11" fill="#0369a1">MTP Head (1 layer)</text>
+      <line x1="560" y1="443" x2="595" y2="443" stroke="#38bdf8" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+
+      <!-- Legend -->
+      <g transform="translate(105,475)">
+        <rect width="16" height="12" rx="3" fill="#ede7ff" stroke="#9d6fff"/>
+        <text x="22" y="11" font-size="10" fill="#555">Gated DeltaNet (线性注意力, 48 层)</text>
+        <rect x="250" width="16" height="12" rx="3" fill="#fef3c7" stroke="#f59e0b"/>
+        <text x="272" y="11" font-size="10" fill="#555">Gated Attention (全注意力, 16 层)</text>
+        <rect x="490" width="16" height="12" rx="3" fill="#f0fdf4" stroke="#86efac"/>
+        <text x="512" y="11" font-size="10" fill="#555">SwiGLU FFN (64 层)</text>
+      </g>
+    </svg>
+    <div class="caption">图 2：Qwen3.5-27B 整体架构。64 层按 3:1 比例交替排列 Gated DeltaNet 与 Gated Attention，每层后跟 SwiGLU FFN。</div>
+  </div>
+
+  <h3>2.2 参数配置总览</h3>
+  <table>
+    <tr><th>配置项</th><th>参数值</th><th>说明</th></tr>
+    <tr><td>总参数量</td><td><code>27B</code></td><td>Dense 模型，全量激活</td></tr>
+    <tr><td>隐藏维度</td><td><code>5120</code></td><td>所有层共享</td></tr>
+    <tr><td>总层数</td><td><code>64</code></td><td>48 层 DeltaNet + 16 层 Attention</td></tr>
+    <tr><td>词表大小</td><td><code>248320</code></td><td>含视觉特殊 token，填充对齐</td></tr>
+    <tr><td>FFN 中间维度</td><td><code>17408</code></td><td>SwiGLU 激活，扩展比 ≈ 3.4x</td></tr>
+    <tr><td>DeltaNet V 头数</td><td><code>48</code></td><td>值投影使用更多头以保证容量</td></tr>
+    <tr><td>DeltaNet QK 头数</td><td><code>16</code></td><td>QK 共享头，节省参数</td></tr>
+    <tr><td>DeltaNet 头维度</td><td><code>128</code></td><td>状态矩阵 S &isin; R<sup>128×128</sup></td></tr>
+    <tr><td>DeltaNet 短卷积核</td><td><code>4</code></td><td>Conv1D 捕获局部 n-gram 模式</td></tr>
+    <tr><td>Attention Q 头数</td><td><code>24</code></td><td>查询侧多头</td></tr>
+    <tr><td>Attention KV 头数</td><td><code>4</code></td><td>GQA 分组比 6:1</td></tr>
+    <tr><td>Attention 头维度</td><td><code>256</code></td><td>高维头提升表达力</td></tr>
+    <tr><td>RoPE 维度</td><td><code>64</code></td><td>partial_rotary_factor = 0.25</td></tr>
+    <tr><td>RoPE theta</td><td><code>10,000,000</code></td><td>高基频支持长序列外推</td></tr>
+    <tr><td>上下文长度</td><td><code>262,144</code></td><td>原生支持，可扩展至 1,010,000</td></tr>
+    <tr><td>MTP 层数</td><td><code>1</code></td><td>额外 1 层预测头用于多步训练</td></tr>
+    <tr><td>输出门控</td><td><code>attn_output_gate = true</code></td><td>注意力输出乘以门控标量</td></tr>
+  </table>
+</div>
+
+<!-- Gated DeltaNet 详解 -->
+<div class="section">
+  <h2>三、Gated DeltaNet 线性注意力详解</h2>
+
+  <h3>3.1 核心原理</h3>
+  <p>
+    Qwen3.5-27B 中的 Gated DeltaNet 是对基础 DeltaNet 的增强版本，在 Delta Rule 递推基础上增加了
+    <strong>输入门控</strong>和<strong>短卷积</strong>，整体计算流程为：
+  </p>
+  <ol>
+    <li><strong>短卷积（Conv1D, kernel=4）</strong>：对输入隐状态先施加核大小为 4 的因果卷积，
+    捕获局部 n-gram 模式，弥补纯递推模型对局部模式感知不足的缺陷。</li>
+    <li><strong>QKV 投影</strong>：将卷积后的特征分别投影为 Q（16 头×128 维）、K（16 头×128 维）、
+    V（48 头×128 维）。注意 V 的头数是 QK 的 3 倍，这意味着每个 QK 头负责更新 3 个 V 头的状态矩阵，
+    从而增大模型的信息容量。</li>
+    <li><strong>门控生成</strong>：生成可学习的标量门控 &beta;<sub>t</sub>（更新强度）和
+    &alpha;<sub>t</sub>（遗忘强度），控制状态矩阵的更新与衰减。</li>
+    <li><strong>Delta Rule 状态更新</strong>：
+    <code>S<sub>t</sub> = &alpha;<sub>t</sub> S<sub>t-1</sub> + &beta;<sub>t</sub> k<sub>t</sub>(v<sub>t</sub> - k<sub>t</sub><sup>T</sup>S<sub>t-1</sub>)<sup>T</sup></code></li>
+    <li><strong>输出计算</strong>：<code>o<sub>t</sub> = q<sub>t</sub><sup>T</sup> S<sub>t</sub></code>，
+    并通过输出门控（output gate）调制最终结果。</li>
+  </ol>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 480" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="a3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#7c3aed"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">Gated DeltaNet 单层详细计算流程</text>
+
+      <!-- Input -->
+      <rect x="330" y="40" width="160" height="32" rx="6" fill="#e8e0f5" stroke="#7c3aed"/>
+      <text x="410" y="61" text-anchor="middle" font-size="11" fill="#4c2a85">x &isin; R<tspan font-size="8" dy="-4">L×5120</tspan></text>
+
+      <!-- Short Conv -->
+      <rect x="320" y="90" width="180" height="40" rx="8" fill="#dbeafe" stroke="#3b82f6"/>
+      <text x="410" y="115" text-anchor="middle" font-size="11" fill="#1e40af">Causal Conv1D (kernel=4)</text>
+      <line x1="410" y1="72" x2="410" y2="88" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#a3)"/>
+
+      <!-- Projection split -->
+      <line x1="410" y1="130" x2="410" y2="150" stroke="#7c3aed" stroke-width="1.5"/>
+      <line x1="130" y1="150" x2="690" y2="150" stroke="#7c3aed" stroke-width="1"/>
+
+      <!-- Q projection -->
+      <line x1="130" y1="150" x2="130" y2="165" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#a3)"/>
+      <rect x="60" y="167" width="140" height="42" rx="6" fill="#ede7ff" stroke="#9d6fff"/>
+      <text x="130" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">Q 投影</text>
+      <text x="130" y="200" text-anchor="middle" font-size="9" fill="#7c3aed">16 头 × 128 维</text>
+
+      <!-- K projection -->
+      <line x1="330" y1="150" x2="330" y2="165" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#a3)"/>
+      <rect x="260" y="167" width="140" height="42" rx="6" fill="#ede7ff" stroke="#9d6fff"/>
+      <text x="330" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">K 投影</text>
+      <text x="330" y="200" text-anchor="middle" font-size="9" fill="#7c3aed">16 头 × 128 维</text>
+
+      <!-- V projection -->
+      <line x1="490" y1="150" x2="490" y2="165" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#a3)"/>
+      <rect x="420" y="167" width="140" height="42" rx="6" fill="#fce7f3" stroke="#ec4899"/>
+      <text x="490" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#9d174d">V 投影</text>
+      <text x="490" y="200" text-anchor="middle" font-size="9" fill="#db2777">48 头 × 128 维</text>
+
+      <!-- Gate -->
+      <line x1="690" y1="150" x2="690" y2="165" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#a3)"/>
+      <rect x="620" y="167" width="140" height="42" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="690" y="184" text-anchor="middle" font-size="10.5" font-weight="600" fill="#92400e">门控 &alpha;, &beta;</text>
+      <text x="690" y="200" text-anchor="middle" font-size="9" fill="#b45309">遗忘 / 更新强度</text>
+
+      <!-- State Matrix -->
+      <rect x="220" y="245" width="380" height="80" rx="10" fill="#f5f0ff" stroke="#7c3aed" stroke-width="2"/>
+      <text x="410" y="270" text-anchor="middle" font-size="12" font-weight="700" fill="#4c2a85">Delta Rule 状态更新</text>
+      <text x="410" y="295" text-anchor="middle" font-size="11" fill="#6d28d9">S<tspan font-size="8" dy="2">t</tspan><tspan dy="-2"> = &alpha;</tspan><tspan font-size="8" dy="2">t</tspan><tspan dy="-2"> S</tspan><tspan font-size="8" dy="2">t-1</tspan><tspan dy="-2"> + &beta;</tspan><tspan font-size="8" dy="2">t</tspan><tspan dy="-2"> k</tspan><tspan font-size="8" dy="2">t</tspan><tspan dy="-2">(v</tspan><tspan font-size="8" dy="2">t</tspan><tspan dy="-2"> - k</tspan><tspan font-size="8" dy="2">t</tspan><tspan dy="-2" font-size="8">T</tspan><tspan dy="0"> S</tspan><tspan font-size="8" dy="2">t-1</tspan><tspan dy="-2">)</tspan><tspan dy="-2" font-size="8">T</tspan></text>
+      <text x="410" y="315" text-anchor="middle" font-size="9.5" fill="#999">S &isin; R<tspan font-size="7" dy="-3">128×128</tspan><tspan dy="3">, 每个 QK 头维护独立状态矩阵</tspan></text>
+
+      <!-- Connect projections to state -->
+      <line x1="130" y1="209" x2="130" y2="275" stroke="#9d6fff" stroke-width="1"/>
+      <line x1="130" y1="275" x2="218" y2="275" stroke="#9d6fff" stroke-width="1" marker-end="url(#a3)"/>
+      <line x1="330" y1="209" x2="330" y2="260" stroke="#9d6fff" stroke-width="1"/>
+      <line x1="330" y1="260" x2="218" y2="260" stroke="#9d6fff" stroke-width="1" marker-end="url(#a3)"/>
+      <line x1="490" y1="209" x2="490" y2="260" stroke="#ec4899" stroke-width="1"/>
+      <line x1="490" y1="260" x2="602" y2="260" stroke="#ec4899" stroke-width="1" marker-end="url(#a3)"/>
+      <line x1="690" y1="209" x2="690" y2="290" stroke="#f59e0b" stroke-width="1"/>
+      <line x1="690" y1="290" x2="602" y2="290" stroke="#f59e0b" stroke-width="1" marker-end="url(#a3)"/>
+
+      <!-- Output -->
+      <rect x="300" y="350" width="220" height="40" rx="6" fill="#ede7ff" stroke="#9d6fff"/>
+      <text x="410" y="375" text-anchor="middle" font-size="11" fill="#6d28d9">o<tspan font-size="8" dy="2">t</tspan><tspan dy="-2"> = q</tspan><tspan font-size="8" dy="2">t</tspan><tspan dy="-2" font-size="8">T</tspan><tspan dy="0"> S</tspan><tspan font-size="8" dy="2">t</tspan></text>
+      <line x1="410" y1="325" x2="410" y2="348" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#a3)"/>
+
+      <!-- Output gate -->
+      <rect x="300" y="405" width="220" height="35" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="410" y="427" text-anchor="middle" font-size="11" fill="#92400e">Output Gate + Linear Proj</text>
+      <line x1="410" y1="390" x2="410" y2="403" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#a3)"/>
+
+      <!-- Final output -->
+      <rect x="330" y="455" width="160" height="28" rx="6" fill="#e8e0f5" stroke="#7c3aed"/>
+      <text x="410" y="474" text-anchor="middle" font-size="11" fill="#4c2a85">输出 &isin; R<tspan font-size="8" dy="-4">L×5120</tspan></text>
+      <line x1="410" y1="440" x2="410" y2="453" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#a3)"/>
+    </svg>
+    <div class="caption">图 3：Gated DeltaNet 单层计算流程。短卷积捕获局部模式，QKV 投影后通过 Delta Rule 更新状态矩阵，门控调制输出。</div>
+  </div>
+
+  <h3>3.2 V/QK 头数不对称设计</h3>
+  <p>
+    一个引人注目的设计是 DeltaNet 层中 <strong>V 头数（48）是 QK 头数（16）的 3 倍</strong>。
+    这意味着每个 QK 头的键空间对应 3 个独立的值空间，即同一个键可以关联 3 组不同的值向量。
+    这种不对称设计显著增大了状态矩阵的总信息容量（16 × 3 = 48 个 128×128 状态矩阵），
+    而键的查询/匹配操作只需在 16 个头上进行，节省了计算量。
+  </p>
+  <div class="highlight">
+    <strong>直觉理解：</strong>
+    可将 QK 头看作"索引系统"，V 头看作"存储系统"。
+    使用较少的索引头（16）进行高效匹配，但每个索引下挂载更多的存储头（×3），
+    总存储容量 = 48 × 128 × 128 ≈ 786K 参数 / 层，远大于同参数量的标准设计。
+  </div>
+
+  <h3>3.3 训练与推理的双模式</h3>
+  <p>
+    DeltaNet 的 Delta Rule 递推本质上是顺序操作，但在训练时可利用<strong>分块并行</strong>（Chunkwise Parallel）
+    算法加速：将序列分为固定大小的块，块内使用并行矩阵乘法计算，块间传递递推状态。
+    这使得训练效率接近标准 Transformer，同时保留了推理时 O(1) 状态更新的优势。
+  </p>
+  <p>
+    在推理解码时，DeltaNet 层只需维护一个 128×128 的状态矩阵（每个 QK 头），
+    无需存储完整的 KV 缓存。而全注意力层仍需 KV 缓存，
+    但由于只有 16/64 = 25% 的层是全注意力，KV 缓存需求降低约 75%。
+  </p>
+</div>
+
+<!-- Gated Attention -->
+<div class="section">
+  <h2>四、Gated Attention 全注意力层详解</h2>
+
+  <h3>4.1 GQA 配置</h3>
+  <p>
+    Gated Attention 层使用 <strong>Grouped-Query Attention（GQA）</strong> 配置：
+    24 个查询头、4 个 KV 头，分组比 6:1。每组 6 个 Q 头共享 1 组 KV 头的键值投影。
+    头维度为 256，总注意力隐维度 = 24 × 256 = 6144，大于隐藏层维度 5120，
+    通过输入/输出投影在 5120 ↔ 6144 之间变换。
+  </p>
+
+  <h3>4.2 Partial RoPE</h3>
+  <p>
+    在头维度 256 中，仅前 <strong>64 维</strong>（25%）施加旋转位置编码（RoPE），
+    其余 192 维保持位置无关。这种 Partial RoPE 设计的优势在于：
+  </p>
+  <ul>
+    <li>位置编码维度较小，不会过度约束注意力的语义匹配能力</li>
+    <li>降低了 RoPE 频率外推在高维度上的不稳定性，有利于长上下文扩展</li>
+    <li>192 维的非位置特征可以自由学习纯内容匹配模式</li>
+  </ul>
+
+  <h3>4.3 输出门控（Output Gate）</h3>
+  <p>
+    配置 <code>attn_output_gate = true</code> 表示注意力输出 o 在投影回残差路径之前，
+    要乘以一个由输入生成的门控标量 g：<code>output = g &odot; W<sub>o</sub> · o</code>。
+    这为模型提供了一种自适应机制来控制每层注意力对残差流的贡献强度，
+    在训练稳定性和表达力之间取得平衡。DeltaNet 层也同样使用输出门控。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 380" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="a4" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#b45309"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">Gated Attention 层内部结构（GQA-6 + Partial RoPE）</text>
+
+      <!-- Input -->
+      <rect x="330" y="40" width="160" height="30" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="410" y="60" text-anchor="middle" font-size="11" fill="#92400e">x &isin; R<tspan font-size="8" dy="-3">L×5120</tspan></text>
+
+      <!-- Q/K/V projections -->
+      <line x1="410" y1="70" x2="410" y2="85" stroke="#b45309" stroke-width="1.5"/>
+      <line x1="140" y1="85" x2="680" y2="85" stroke="#b45309" stroke-width="1"/>
+
+      <!-- Q -->
+      <line x1="140" y1="85" x2="140" y2="100" stroke="#b45309" stroke-width="1.5" marker-end="url(#a4)"/>
+      <rect x="60" y="102" width="160" height="50" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="140" y="122" text-anchor="middle" font-size="10.5" font-weight="600" fill="#92400e">Q 投影 (24 头)</text>
+      <text x="140" y="140" text-anchor="middle" font-size="9" fill="#b45309">24 × 256 = 6144</text>
+
+      <!-- K -->
+      <line x1="340" y1="85" x2="340" y2="100" stroke="#b45309" stroke-width="1.5" marker-end="url(#a4)"/>
+      <rect x="260" y="102" width="160" height="50" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="340" y="122" text-anchor="middle" font-size="10.5" font-weight="600" fill="#92400e">K 投影 (4 头)</text>
+      <text x="340" y="140" text-anchor="middle" font-size="9" fill="#b45309">4 × 256 = 1024</text>
+
+      <!-- V -->
+      <line x1="540" y1="85" x2="540" y2="100" stroke="#b45309" stroke-width="1.5" marker-end="url(#a4)"/>
+      <rect x="460" y="102" width="160" height="50" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="540" y="122" text-anchor="middle" font-size="10.5" font-weight="600" fill="#92400e">V 投影 (4 头)</text>
+      <text x="540" y="140" text-anchor="middle" font-size="9" fill="#b45309">4 × 256 = 1024</text>
+
+      <!-- Gate -->
+      <line x1="680" y1="85" x2="680" y2="100" stroke="#b45309" stroke-width="1.5" marker-end="url(#a4)"/>
+      <rect x="620" y="102" width="120" height="50" rx="6" fill="#fce7f3" stroke="#ec4899"/>
+      <text x="680" y="122" text-anchor="middle" font-size="10.5" font-weight="600" fill="#9d174d">Output Gate</text>
+      <text x="680" y="140" text-anchor="middle" font-size="9" fill="#db2777">&sigma;(W<tspan font-size="7" dy="2">g</tspan><tspan dy="-2"> x)</tspan></text>
+
+      <!-- RoPE on Q,K -->
+      <rect x="100" y="170" width="120" height="30" rx="5" fill="#dbeafe" stroke="#3b82f6"/>
+      <text x="160" y="190" text-anchor="middle" font-size="10" fill="#1e40af">RoPE (dim 0-63)</text>
+      <rect x="300" y="170" width="120" height="30" rx="5" fill="#dbeafe" stroke="#3b82f6"/>
+      <text x="360" y="190" text-anchor="middle" font-size="10" fill="#1e40af">RoPE (dim 0-63)</text>
+      <line x1="140" y1="152" x2="160" y2="168" stroke="#3b82f6" stroke-width="1" marker-end="url(#a4)"/>
+      <line x1="340" y1="152" x2="360" y2="168" stroke="#3b82f6" stroke-width="1" marker-end="url(#a4)"/>
+
+      <!-- GQA block -->
+      <rect x="170" y="220" width="360" height="55" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+      <text x="350" y="244" text-anchor="middle" font-size="12" font-weight="700" fill="#92400e">Grouped-Query Attention (GQA-6)</text>
+      <text x="350" y="262" text-anchor="middle" font-size="10" fill="#b45309">每 6 个 Q 头共享 1 组 KV &nbsp;|&nbsp; Softmax(QK<tspan font-size="7" dy="-3">T</tspan><tspan dy="3">/&radic;256) V</tspan></text>
+
+      <!-- Connect -->
+      <line x1="160" y1="200" x2="240" y2="218" stroke="#b45309" stroke-width="1" marker-end="url(#a4)"/>
+      <line x1="360" y1="200" x2="320" y2="218" stroke="#b45309" stroke-width="1" marker-end="url(#a4)"/>
+      <line x1="540" y1="152" x2="450" y2="218" stroke="#b45309" stroke-width="1" marker-end="url(#a4)"/>
+
+      <!-- Output gate multiply -->
+      <rect x="260" y="295" width="220" height="35" rx="6" fill="#fce7f3" stroke="#ec4899"/>
+      <text x="370" y="317" text-anchor="middle" font-size="11" fill="#9d174d">g &odot; W<tspan font-size="8" dy="2">o</tspan><tspan dy="-2"> · o &nbsp;&rarr;&nbsp; R</tspan><tspan font-size="8" dy="-3">L×5120</tspan></text>
+      <line x1="350" y1="275" x2="350" y2="293" stroke="#b45309" stroke-width="1.5" marker-end="url(#a4)"/>
+      <line x1="680" y1="152" x2="680" y2="308" stroke="#ec4899" stroke-width="1" stroke-dasharray="4,3"/>
+      <line x1="680" y1="308" x2="482" y2="308" stroke="#ec4899" stroke-width="1" marker-end="url(#a4)"/>
+
+      <!-- Output -->
+      <rect x="310" y="345" width="160" height="28" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="390" y="364" text-anchor="middle" font-size="11" fill="#92400e">Add & RMSNorm</text>
+      <line x1="370" y1="330" x2="370" y2="343" stroke="#b45309" stroke-width="1.5" marker-end="url(#a4)"/>
+    </svg>
+    <div class="caption">图 4：Gated Attention 层结构。GQA-6 分组 + Partial RoPE（仅 64/256 维）+ 输出门控。</div>
+  </div>
+</div>
+
+<!-- 视觉编码器 -->
+<div class="section">
+  <h2>五、视觉编码器与多模态融合</h2>
+
+  <h3>5.1 视觉编码器架构</h3>
+  <p>
+    Qwen3.5-27B 原生集成了视觉编码器，支持图像与视频理解。编码器采用 ViT 架构：
+  </p>
+  <table>
+    <tr><th>配置</th><th>值</th><th>说明</th></tr>
+    <tr><td>深度</td><td><code>27 层</code></td><td>ViT 层数</td></tr>
+    <tr><td>隐藏维度</td><td><code>1152</code></td><td>视觉特征维度</td></tr>
+    <tr><td>注意力头数</td><td><code>16</code></td><td>头维度 = 1152/16 = 72</td></tr>
+    <tr><td>FFN 中间维度</td><td><code>4304</code></td><td>扩展比 ≈ 3.7x</td></tr>
+    <tr><td>Patch 大小</td><td><code>16 × 16</code></td><td>空间分辨率基本单位</td></tr>
+    <tr><td>时间 Patch</td><td><code>2</code></td><td>视频帧间隔采样</td></tr>
+    <tr><td>空间合并</td><td><code>2 × 2</code></td><td>相邻 4 个 Patch 合并为 1</td></tr>
+    <tr><td>输出维度</td><td><code>5120</code></td><td>对齐语言模型隐藏维度</td></tr>
+    <tr><td>位置嵌入</td><td><code>2304</code></td><td>最大位置数</td></tr>
+    <tr><td>激活函数</td><td><code>GELU (PyTorch tanh 近似)</code></td><td>—</td></tr>
+  </table>
+
+  <h3>5.2 早期融合策略</h3>
+  <p>
+    Qwen3.5 系列采用<strong>早期融合（Early Fusion）</strong>训练策略，
+    在预训练阶段即使用混合图文 token 序列训练模型。视觉编码器将图像/视频编码为视觉 token，
+    通过线性投影对齐到语言模型的 5120 维空间后，与文本 token 拼接成统一序列输入模型。
+    这种端到端训练方式使得多模态训练效率<strong>接近纯文本训练的 100%</strong>，
+    且视觉语言能力与纯语言能力实现"代际平齐"——即 Qwen3.5 的语言能力不弱于 Qwen3，
+    同时超越了 Qwen3-VL 的视觉理解能力。
+  </p>
+  <p>
+    视觉 token 使用特殊标记界定：<code>&lt;|vision_start|&gt;</code> 和
+    <code>&lt;|vision_end|&gt;</code>，图像使用 <code>&lt;|image_pad|&gt;</code>，
+    视频使用 <code>&lt;|video_pad|&gt;</code> 作为占位符。
+    对于视觉 token 的位置编码，使用<strong>多分辨率 RoPE（M-RoPE）</strong>，
+    将 RoPE 维度 64 拆分为 [11, 11, 10] 三段分别编码 H, W, T 三个空间-时间维度。
+  </p>
+</div>
+
+<!-- 效率分析 -->
+<div class="section">
+  <h2>六、效率分析：混合架构 vs 全注意力</h2>
+
+  <h3>6.1 计算复杂度对比</h3>
+  <p>
+    在序列长度 L 下，纯 Softmax Transformer 的注意力计算量为 O(L²hd)（h 为头数，d 为头维度）。
+    Qwen3.5-27B 的混合架构中：
+  </p>
+  <ul>
+    <li><strong>48 层 DeltaNet</strong>：每层 O(Ld²) 的递推计算（训练时分块并行化），
+    解码时 O(d²) per token</li>
+    <li><strong>16 层 GQA</strong>：每层 O(L²d)（全注意力），但由于 GQA-6 使 KV 头仅 4 个，
+    实际计算量远小于标准 MHA</li>
+  </ul>
+
+  <div class="figure">
+    <svg viewBox="0 0 780 320" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <text x="390" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">KV 缓存对比：纯 Transformer vs Qwen3.5-27B Hybrid</text>
+
+      <!-- Pure Transformer -->
+      <g transform="translate(50,50)">
+        <text x="140" y="0" text-anchor="middle" font-size="12" font-weight="600" fill="#0f3460">纯 Transformer (64 层全注意力)</text>
+        <rect x="0" y="15" width="280" height="30" rx="4" fill="#4a7dff" opacity="0.8"/>
+        <text x="140" y="35" text-anchor="middle" font-size="10" fill="white">64 层 × 完整 KV 缓存 = 100%</text>
+        <rect x="0" y="55" width="280" height="20" rx="3" fill="#e8eaf0"/>
+        <rect x="0" y="55" width="280" height="20" rx="3" fill="#ef4444" opacity="0.6"/>
+        <text x="140" y="70" text-anchor="middle" font-size="9" fill="white">显存占用: 100% 基线</text>
+      </g>
+
+      <!-- Qwen3.5-27B -->
+      <g transform="translate(430,50)">
+        <text x="140" y="0" text-anchor="middle" font-size="12" font-weight="600" fill="#7c3aed">Qwen3.5-27B Hybrid</text>
+        <!-- DeltaNet layers: no KV cache -->
+        <rect x="0" y="15" width="210" height="30" rx="4" fill="#9d6fff" opacity="0.3"/>
+        <text x="105" y="35" text-anchor="middle" font-size="10" fill="#4c2a85">48 层 DeltaNet: 固定状态 O(d²)</text>
+        <!-- Attention layers: KV cache -->
+        <rect x="210" y="15" width="70" height="30" rx="4" fill="#f59e0b" opacity="0.8"/>
+        <text x="245" y="35" text-anchor="middle" font-size="9" fill="white">16 层 KV</text>
+        <rect x="0" y="55" width="280" height="20" rx="3" fill="#e8eaf0"/>
+        <rect x="0" y="55" width="70" height="20" rx="3" fill="#22c55e" opacity="0.6"/>
+        <text x="140" y="70" text-anchor="middle" font-size="9" fill="#166534">显存占用: ~25% (仅 16/64 层需 KV)</text>
+      </g>
+
+      <!-- Bar chart -->
+      <g transform="translate(50,140)">
+        <text x="340" y="0" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1a2e">解码阶段每 token 计算量示意</text>
+        <!-- Axis -->
+        <line x1="80" y1="20" x2="80" y2="150" stroke="#ccc"/>
+        <line x1="80" y1="150" x2="680" y2="150" stroke="#ccc"/>
+
+        <!-- Pure Transformer bar -->
+        <rect x="130" y="30" width="100" height="120" rx="4" fill="#4a7dff" opacity="0.7"/>
+        <text x="180" y="100" text-anchor="middle" font-size="11" fill="white" font-weight="600">100%</text>
+        <text x="180" y="168" text-anchor="middle" font-size="10" fill="#555">64层 MHA</text>
+
+        <!-- Qwen3.5 bar (lower) -->
+        <rect x="300" y="80" width="100" height="70" rx="4" fill="#7c3aed" opacity="0.7"/>
+        <text x="350" y="120" text-anchor="middle" font-size="11" fill="white" font-weight="600">~40%</text>
+        <text x="350" y="168" text-anchor="middle" font-size="10" fill="#555">Qwen3.5-27B</text>
+        <!-- Break down -->
+        <rect x="300" y="80" width="100" height="18" rx="4" fill="#f59e0b" opacity="0.8"/>
+        <text x="350" y="93" text-anchor="middle" font-size="8" fill="white">16层 GQA-6</text>
+
+        <!-- Labels -->
+        <text x="60" y="35" text-anchor="end" font-size="9" fill="#999">高</text>
+        <text x="60" y="150" text-anchor="end" font-size="9" fill="#999">低</text>
+
+        <!-- Qwen3-235B comparison -->
+        <rect x="470" y="45" width="100" height="105" rx="4" fill="#94a3b8" opacity="0.5"/>
+        <text x="520" y="102" text-anchor="middle" font-size="11" fill="white" font-weight="600">~80%</text>
+        <text x="520" y="168" text-anchor="middle" font-size="10" fill="#555">Qwen3-235B</text>
+        <text x="520" y="180" text-anchor="middle" font-size="9" fill="#999">(22B 激活)</text>
+      </g>
+    </svg>
+    <div class="caption">图 5：KV 缓存与解码计算量对比。Hybrid 架构将 KV 缓存降至约 25%，解码计算量显著降低。</div>
+  </div>
+
+  <h3>6.2 KV 缓存节省</h3>
+  <p>
+    在 262K 上下文下，纯 Transformer 需要 64 层 × L × KV 大小的缓存。
+    Qwen3.5-27B 的 DeltaNet 层仅维护固定大小的状态矩阵（16 头 × 128 × 128 = 256K 参数/层），
+    <strong>与序列长度无关</strong>。只有 16 层全注意力需要传统 KV 缓存（4 个 KV 头 × 256 维），
+    且使用 GQA-6 进一步压缩。这使得模型能够在有限显存下处理百万级上下文。
+  </p>
+</div>
+
+<!-- 基准测试 -->
+<div class="section">
+  <h2>七、性能基准测试</h2>
+
+  <h3>7.1 语言能力评测</h3>
+  <p>
+    以下数据来源于 Qwen3.5-27B 官方 Model Card，对比了 GPT-5-mini、GPT-OSS-120B、Qwen3-235B-A22B
+    及 Qwen3.5 系列其他模型：
+  </p>
+  <table class="compare-table">
+    <tr>
+      <th>类别 / 基准</th><th>GPT-5-mini</th><th>Qwen3-235B</th><th>Qwen3.5-122B</th>
+      <th>Qwen3.5-27B</th><th>Qwen3.5-35B</th>
+    </tr>
+    <tr><td colspan="6" style="background:#f5f0ff;font-weight:600;color:#7c3aed;">知识</td></tr>
+    <tr><td>MMLU-Pro</td><td>83.7</td><td>84.4</td><td>86.7</td><td class="metric-best">86.1</td><td>85.3</td></tr>
+    <tr><td>MMLU-Redux</td><td>93.7</td><td>93.8</td><td>94.0</td><td>93.2</td><td>93.3</td></tr>
+    <tr><td>C-Eval</td><td>82.2</td><td>92.1</td><td>91.9</td><td class="metric-best">90.5</td><td>90.2</td></tr>
+    <tr><td>SuperGPQA</td><td>58.6</td><td>64.9</td><td>67.1</td><td class="metric-best">65.6</td><td>63.4</td></tr>
+    <tr><td colspan="6" style="background:#f5f0ff;font-weight:600;color:#7c3aed;">指令遵循</td></tr>
+    <tr><td>IFEval</td><td>93.9</td><td>87.8</td><td>93.4</td><td class="metric-best">95.0</td><td>91.9</td></tr>
+    <tr><td>IFBench</td><td>75.4</td><td>51.7</td><td>76.1</td><td class="metric-best">76.5</td><td>70.2</td></tr>
+    <tr><td>MultiChallenge</td><td>59.0</td><td>50.2</td><td>61.5</td><td class="metric-best">60.8</td><td>60.0</td></tr>
+    <tr><td colspan="6" style="background:#f5f0ff;font-weight:600;color:#7c3aed;">长上下文</td></tr>
+    <tr><td>AA-LCR</td><td>68.0</td><td>60.0</td><td>66.9</td><td class="metric-best">66.1</td><td>58.5</td></tr>
+    <tr><td>LongBench v2</td><td>56.8</td><td>54.8</td><td>60.2</td><td class="metric-best">60.6</td><td>59.0</td></tr>
+    <tr><td colspan="6" style="background:#f5f0ff;font-weight:600;color:#7c3aed;">STEM 与推理</td></tr>
+    <tr><td>HLE w/ CoT</td><td>19.4</td><td>18.2</td><td>25.3</td><td class="metric-best">24.3</td><td>22.4</td></tr>
+    <tr><td>GPQA Diamond</td><td>82.8</td><td>81.1</td><td>86.6</td><td class="metric-best">85.5</td><td>84.2</td></tr>
+    <tr><td>HMMT Feb 25</td><td>89.2</td><td>85.1</td><td>91.4</td><td class="metric-best">92.0</td><td>89.0</td></tr>
+    <tr><td>HMMT Nov 25</td><td>84.2</td><td>89.5</td><td>90.3</td><td class="metric-best">89.8</td><td>89.2</td></tr>
+    <tr><td colspan="6" style="background:#f5f0ff;font-weight:600;color:#7c3aed;">编程</td></tr>
+    <tr><td>SWE-bench Verified</td><td>72.0</td><td>--</td><td>72.0</td><td class="metric-best">72.4</td><td>69.2</td></tr>
+    <tr><td>LiveCodeBench v6</td><td>80.5</td><td>75.1</td><td>78.9</td><td class="metric-best">80.7</td><td>74.6</td></tr>
+    <tr><td>CodeForces</td><td>2160</td><td>2146</td><td>2100</td><td>1899</td><td>2028</td></tr>
+    <tr><td colspan="6" style="background:#f5f0ff;font-weight:600;color:#7c3aed;">Agent 能力</td></tr>
+    <tr><td>BFCL-V4</td><td>55.5</td><td>54.8</td><td>72.2</td><td class="metric-best">68.5</td><td>67.3</td></tr>
+    <tr><td>TAU2-Bench</td><td>69.8</td><td>58.5</td><td>79.5</td><td class="metric-best">79.0</td><td>81.2</td></tr>
+    <tr><td>VITA-Bench</td><td>13.9</td><td>31.6</td><td>33.6</td><td class="metric-best">41.9</td><td>31.9</td></tr>
+    <tr><td colspan="6" style="background:#f5f0ff;font-weight:600;color:#7c3aed;">搜索 Agent</td></tr>
+    <tr><td>HLE w/ tool</td><td>35.8</td><td>--</td><td>47.5</td><td class="metric-best">48.5</td><td>47.4</td></tr>
+    <tr><td>Browsecomp</td><td>48.1</td><td>--</td><td>63.8</td><td class="metric-best">61.0</td><td>61.0</td></tr>
+    <tr><td>WideSearch</td><td>47.2</td><td>--</td><td>60.5</td><td class="metric-best">61.1</td><td>57.1</td></tr>
+    <tr><td colspan="6" style="background:#f5f0ff;font-weight:600;color:#7c3aed;">多语言</td></tr>
+    <tr><td>MMMLU</td><td>86.2</td><td>83.4</td><td>86.7</td><td class="metric-best">85.9</td><td>85.2</td></tr>
+    <tr><td>PolyMATH</td><td>67.3</td><td>60.1</td><td>68.9</td><td class="metric-best">71.2</td><td>64.4</td></tr>
+    <tr><td>MAXIFE</td><td>85.3</td><td>83.2</td><td>87.9</td><td class="metric-best">88.0</td><td>86.6</td></tr>
+  </table>
+
+  <div class="highlight">
+    <strong>关键发现：</strong>Qwen3.5-27B 作为 27B Dense 模型，在多项基准上<strong>超越 GPT-5-mini</strong>，
+    与旗舰 Qwen3.5-122B-A10B（MoE）差距极小。特别在 IFEval（95.0）、HMMT Feb（92.0）、
+    SWE-bench（72.4）、LiveCodeBench（80.7）、VITA-Bench（41.9）、PolyMATH（71.2）、MAXIFE（88.0）
+    等多项上更优于旗舰模型，展示了 27B Dense 模型的极高性价比。
+  </div>
+
+  <h3>7.2 视觉语言评测</h3>
+  <table class="compare-table">
+    <tr>
+      <th>类别 / 基准</th><th>GPT-5-mini</th><th>Claude-S4.5</th><th>Qwen3-VL-235B</th>
+      <th>Qwen3.5-122B</th><th>Qwen3.5-27B</th>
+    </tr>
+    <tr><td colspan="6" style="background:#f5f0ff;font-weight:600;color:#7c3aed;">STEM 与视觉推理</td></tr>
+    <tr><td>MMMU</td><td>79.0</td><td>79.6</td><td>80.6</td><td>83.9</td><td class="metric-best">82.3</td></tr>
+    <tr><td>MMMU-Pro</td><td>67.3</td><td>68.4</td><td>69.3</td><td>76.9</td><td class="metric-best">75.0</td></tr>
+    <tr><td>MathVision</td><td>71.9</td><td>71.1</td><td>74.6</td><td>86.2</td><td class="metric-best">86.0</td></tr>
+    <tr><td>DynaMath</td><td>81.4</td><td>78.8</td><td>82.8</td><td>85.9</td><td class="metric-best">87.7</td></tr>
+    <tr><td colspan="6" style="background:#f5f0ff;font-weight:600;color:#7c3aed;">通用视觉 QA</td></tr>
+    <tr><td>MMStar</td><td>74.1</td><td>73.8</td><td>78.7</td><td>82.9</td><td class="metric-best">81.0</td></tr>
+    <tr><td>MMBench</td><td>86.8</td><td>88.3</td><td>89.7</td><td>92.8</td><td class="metric-best">92.6</td></tr>
+    <tr><td>HallusionBench</td><td>63.2</td><td>59.9</td><td>66.7</td><td>67.6</td><td class="metric-best">70.0</td></tr>
+    <tr><td>VlmsAreBlind</td><td>75.8</td><td>85.5</td><td>79.5</td><td>96.7</td><td class="metric-best">96.9</td></tr>
+    <tr><td colspan="6" style="background:#f5f0ff;font-weight:600;color:#7c3aed;">文档理解与 OCR</td></tr>
+    <tr><td>OmniDocBench1.5</td><td>77.0</td><td>85.8</td><td>84.5</td><td>89.8</td><td class="metric-best">88.9</td></tr>
+    <tr><td>CharXiv(RQ)</td><td>68.6</td><td>67.2</td><td>66.1</td><td>77.2</td><td class="metric-best">79.5</td></tr>
+    <tr><td>AI2D_TEST</td><td>88.2</td><td>87.0</td><td>89.2</td><td>93.3</td><td class="metric-best">92.9</td></tr>
+    <tr><td>OCRBench</td><td>82.1</td><td>76.6</td><td>87.5</td><td>92.1</td><td class="metric-best">89.4</td></tr>
+    <tr><td colspan="6" style="background:#f5f0ff;font-weight:600;color:#7c3aed;">视频理解</td></tr>
+    <tr><td>VideoMME (w/ sub)</td><td>83.5</td><td>81.1</td><td>83.8</td><td>87.3</td><td class="metric-best">87.0</td></tr>
+    <tr><td>VideoMMMU</td><td>82.5</td><td>77.6</td><td>80.0</td><td>82.0</td><td class="metric-best">82.3</td></tr>
+    <tr><td>MLVU</td><td>83.3</td><td>72.8</td><td>83.8</td><td>87.3</td><td class="metric-best">85.9</td></tr>
+    <tr><td colspan="6" style="background:#f5f0ff;font-weight:600;color:#7c3aed;">空间智能</td></tr>
+    <tr><td>CountBench</td><td>91.0</td><td>90.0</td><td>93.7</td><td>97.0</td><td class="metric-best">97.8</td></tr>
+    <tr><td>EmbSpatialBench</td><td>80.7</td><td>71.8</td><td>84.3</td><td>83.9</td><td class="metric-best">84.5</td></tr>
+    <tr><td>LingoQA</td><td>62.4</td><td>12.8</td><td>66.8</td><td>80.8</td><td class="metric-best">82.0</td></tr>
+  </table>
+
+  <div class="success">
+    <strong>视觉能力亮点：</strong>Qwen3.5-27B 在 DynaMath（87.7）、VlmsAreBlind（96.9）、
+    CharXiv（79.5）、HallusionBench（70.0）、CountBench（97.8）、LingoQA（82.0）、VideoMMMU（82.3）
+    等多项视觉基准上<strong>超越旗舰 122B MoE 模型</strong>，印证了早期融合训练策略的有效性。
+  </div>
+</div>
+
+<!-- 数据图表 -->
+<div class="section">
+  <h2>八、性能数据可视化</h2>
+
+  <div class="figure">
+    <svg viewBox="0 0 800 420" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <text x="400" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">Qwen3.5-27B vs 竞品模型：语言能力雷达图（归一化得分）</text>
+
+      <g transform="translate(400,240)">
+        <!-- Background circles -->
+        <circle r="170" fill="none" stroke="#e0e0e0" stroke-width="0.5"/>
+        <circle r="136" fill="none" stroke="#e0e0e0" stroke-width="0.5"/>
+        <circle r="102" fill="none" stroke="#e0e0e0" stroke-width="0.5"/>
+        <circle r="68" fill="none" stroke="#e0e0e0" stroke-width="0.5"/>
+        <circle r="34" fill="none" stroke="#e0e0e0" stroke-width="0.5"/>
+
+        <!-- 8 axes: Knowledge, IF, LongCtx, Reasoning, Coding, Agent, Search, Multilingual -->
+        <line x1="0" y1="-170" x2="0" y2="170" stroke="#ddd" stroke-width="0.5"/>
+        <line x1="-170" y1="0" x2="170" y2="0" stroke="#ddd" stroke-width="0.5"/>
+        <line x1="-120" y1="-120" x2="120" y2="120" stroke="#ddd" stroke-width="0.5"/>
+        <line x1="120" y1="-120" x2="-120" y2="120" stroke="#ddd" stroke-width="0.5"/>
+
+        <!-- Labels -->
+        <text x="0" y="-180" text-anchor="middle" font-size="10" fill="#555">知识</text>
+        <text x="130" y="-135" text-anchor="start" font-size="10" fill="#555">指令遵循</text>
+        <text x="178" y="5" text-anchor="start" font-size="10" fill="#555">长上下文</text>
+        <text x="130" y="140" text-anchor="start" font-size="10" fill="#555">推理</text>
+        <text x="0" y="190" text-anchor="middle" font-size="10" fill="#555">编程</text>
+        <text x="-130" y="140" text-anchor="end" font-size="10" fill="#555">Agent</text>
+        <text x="-178" y="5" text-anchor="end" font-size="10" fill="#555">搜索</text>
+        <text x="-130" y="-135" text-anchor="end" font-size="10" fill="#555">多语言</text>
+
+        <!-- GPT-5-mini (gray) - normalized scores -->
+        <polygon points="0,-147 124,-101 149,0 124,120 0,144 -97,97 -125,0 -124,-119"
+          fill="rgba(148,163,184,0.15)" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+        <!-- Qwen3-235B (blue) -->
+        <polygon points="0,-152 95,-81 134,0 119,128 0,126 -100,100 -102,0 -121,-118"
+          fill="rgba(74,125,255,0.1)" stroke="#4a7dff" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+        <!-- Qwen3.5-27B (purple, solid) -->
+        <polygon points="0,-155 133,-113 150,0 130,133 0,149 -120,118 -143,0 -134,-128"
+          fill="rgba(124,58,237,0.15)" stroke="#7c3aed" stroke-width="2.5"/>
+
+        <!-- Qwen3.5-122B (orange) -->
+        <polygon points="0,-158 135,-115 152,0 131,134 0,144 -122,120 -142,0 -136,-130"
+          fill="rgba(245,158,11,0.08)" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="6,3"/>
+
+        <!-- Data points for Qwen3.5-27B -->
+        <circle cx="0" cy="-155" r="4" fill="#7c3aed"/>
+        <circle cx="133" cy="-113" r="4" fill="#7c3aed"/>
+        <circle cx="150" cy="0" r="4" fill="#7c3aed"/>
+        <circle cx="130" cy="133" r="4" fill="#7c3aed"/>
+        <circle cx="0" cy="149" r="4" fill="#7c3aed"/>
+        <circle cx="-120" cy="118" r="4" fill="#7c3aed"/>
+        <circle cx="-143" cy="0" r="4" fill="#7c3aed"/>
+        <circle cx="-134" cy="-128" r="4" fill="#7c3aed"/>
+      </g>
+
+      <!-- Legend -->
+      <g transform="translate(50,395)">
+        <line x1="0" y1="0" x2="20" y2="0" stroke="#7c3aed" stroke-width="2.5"/>
+        <text x="25" y="4" font-size="10" fill="#555">Qwen3.5-27B</text>
+        <line x1="140" y1="0" x2="160" y2="0" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="6,3"/>
+        <text x="165" y="4" font-size="10" fill="#555">Qwen3.5-122B (MoE)</text>
+        <line x1="340" y1="0" x2="360" y2="0" stroke="#4a7dff" stroke-width="1.5" stroke-dasharray="4,3"/>
+        <text x="365" y="4" font-size="10" fill="#555">Qwen3-235B</text>
+        <line x1="480" y1="0" x2="500" y2="0" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4,3"/>
+        <text x="505" y="4" font-size="10" fill="#555">GPT-5-mini</text>
+      </g>
+    </svg>
+    <div class="caption">图 6：Qwen3.5-27B 与竞品模型的多维能力雷达对比。27B Dense 模型在多数维度接近甚至超越旗舰 MoE。</div>
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 800 350" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <text x="400" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">Qwen3.5-27B 关键基准得分柱状图</text>
+      <g transform="translate(60,50)">
+        <!-- Y axis -->
+        <line x1="40" y1="0" x2="40" y2="250" stroke="#ccc"/>
+        <text x="35" y="5" text-anchor="end" font-size="9" fill="#999">100</text>
+        <text x="35" y="68" text-anchor="end" font-size="9" fill="#999">75</text>
+        <text x="35" y="130" text-anchor="end" font-size="9" fill="#999">50</text>
+        <text x="35" y="193" text-anchor="end" font-size="9" fill="#999">25</text>
+        <text x="35" y="255" text-anchor="end" font-size="9" fill="#999">0</text>
+        <line x1="40" y1="0" x2="720" y2="0" stroke="#eee" stroke-dasharray="3,3"/>
+        <line x1="40" y1="62.5" x2="720" y2="62.5" stroke="#eee" stroke-dasharray="3,3"/>
+        <line x1="40" y1="125" x2="720" y2="125" stroke="#eee" stroke-dasharray="3,3"/>
+        <line x1="40" y1="187.5" x2="720" y2="187.5" stroke="#eee" stroke-dasharray="3,3"/>
+        <line x1="40" y1="250" x2="720" y2="250" stroke="#ccc"/>
+
+        <!-- Bars: score/100*250 = height, y = 250 - height -->
+        <!-- IFEval 95.0 -->
+        <rect x="55" y="12.5" width="50" height="237.5" rx="3" fill="#7c3aed" opacity="0.8"/>
+        <text x="80" y="8" text-anchor="middle" font-size="9" fill="#7c3aed" font-weight="600">95.0</text>
+        <text x="80" y="268" text-anchor="middle" font-size="8" fill="#555">IFEval</text>
+
+        <!-- HMMT 92.0 -->
+        <rect x="120" y="20" width="50" height="230" rx="3" fill="#7c3aed" opacity="0.75"/>
+        <text x="145" y="15" text-anchor="middle" font-size="9" fill="#7c3aed" font-weight="600">92.0</text>
+        <text x="145" y="268" text-anchor="middle" font-size="8" fill="#555">HMMT</text>
+
+        <!-- C-Eval 90.5 -->
+        <rect x="185" y="23.8" width="50" height="226.3" rx="3" fill="#7c3aed" opacity="0.7"/>
+        <text x="210" y="19" text-anchor="middle" font-size="9" fill="#7c3aed" font-weight="600">90.5</text>
+        <text x="210" y="268" text-anchor="middle" font-size="8" fill="#555">C-Eval</text>
+
+        <!-- MMLU-Pro 86.1 -->
+        <rect x="250" y="34.8" width="50" height="215.3" rx="3" fill="#9d6fff" opacity="0.7"/>
+        <text x="275" y="30" text-anchor="middle" font-size="9" fill="#7c3aed" font-weight="600">86.1</text>
+        <text x="275" y="268" text-anchor="middle" font-size="8" fill="#555">MMLU-P</text>
+
+        <!-- GPQA 85.5 -->
+        <rect x="315" y="36.3" width="50" height="213.8" rx="3" fill="#9d6fff" opacity="0.65"/>
+        <text x="340" y="32" text-anchor="middle" font-size="9" fill="#7c3aed" font-weight="600">85.5</text>
+        <text x="340" y="268" text-anchor="middle" font-size="8" fill="#555">GPQA</text>
+
+        <!-- LiveCodeBench 80.7 -->
+        <rect x="380" y="48.3" width="50" height="201.8" rx="3" fill="#9d6fff" opacity="0.6"/>
+        <text x="405" y="44" text-anchor="middle" font-size="9" fill="#7c3aed" font-weight="600">80.7</text>
+        <text x="405" y="268" text-anchor="middle" font-size="8" fill="#555">LCBv6</text>
+
+        <!-- SWE-bench 72.4 -->
+        <rect x="445" y="69" width="50" height="181" rx="3" fill="#f59e0b" opacity="0.7"/>
+        <text x="470" y="64" text-anchor="middle" font-size="9" fill="#b45309" font-weight="600">72.4</text>
+        <text x="470" y="268" text-anchor="middle" font-size="8" fill="#555">SWE</text>
+
+        <!-- BFCL-V4 68.5 -->
+        <rect x="510" y="78.8" width="50" height="171.3" rx="3" fill="#f59e0b" opacity="0.6"/>
+        <text x="535" y="74" text-anchor="middle" font-size="9" fill="#b45309" font-weight="600">68.5</text>
+        <text x="535" y="268" text-anchor="middle" font-size="8" fill="#555">BFCL</text>
+
+        <!-- LongBench 60.6 -->
+        <rect x="575" y="98.5" width="50" height="151.5" rx="3" fill="#22c55e" opacity="0.6"/>
+        <text x="600" y="94" text-anchor="middle" font-size="9" fill="#166534" font-weight="600">60.6</text>
+        <text x="600" y="268" text-anchor="middle" font-size="8" fill="#555">LBv2</text>
+
+        <!-- WideSearch 61.1 -->
+        <rect x="640" y="97.3" width="50" height="152.8" rx="3" fill="#22c55e" opacity="0.55"/>
+        <text x="665" y="93" text-anchor="middle" font-size="9" fill="#166534" font-weight="600">61.1</text>
+        <text x="665" y="268" text-anchor="middle" font-size="8" fill="#555">WdSch</text>
+      </g>
+    </svg>
+    <div class="caption">图 7：Qwen3.5-27B 在核心基准上的绝对得分。紫色为知识/推理/指令遵循，橙色为编程/Agent，绿色为长上下文/搜索。</div>
+  </div>
+</div>
+
+<!-- 训练方法 -->
+<div class="section">
+  <h2>九、训练方法论</h2>
+
+  <h3>9.1 预训练</h3>
+  <p>
+    Qwen3.5-27B 采用了多阶段预训练策略，在海量多语言文本和多模态数据上进行训练。
+    关键训练特点包括：
+  </p>
+  <ul>
+    <li><strong>多模态联合预训练</strong>：从预训练早期即融合图文 token，
+    实现视觉与语言能力的同步发展，多模态训练效率接近纯文本训练的 100%</li>
+    <li><strong>MTP 多步训练</strong>：使用额外 1 层预测头同时预测下一步 token，
+    提供更丰富的训练信号</li>
+    <li><strong>201 种语言覆盖</strong>：大幅扩展多语言数据，覆盖 201 种语言和方言</li>
+  </ul>
+
+  <h3>9.2 后训练与强化学习</h3>
+  <p>
+    Qwen3.5 系列在后训练阶段实现了<strong>大规模强化学习</strong>突破：
+  </p>
+  <ul>
+    <li><strong>百万级 Agent 环境</strong>：在百万级 Agent 环境中进行强化学习，
+    使用渐进复杂度的任务分布提升模型的实际适应能力</li>
+    <li><strong>异步 RL 框架</strong>：支持大规模 Agent scaffold 和环境编排的异步强化学习框架</li>
+    <li><strong>思维模式（Thinking Mode）</strong>：支持 <code>&lt;think&gt;...&lt;/think&gt;</code>
+    格式的推理链输出，可通过 <code>enable_thinking</code> 参数控制开启/关闭</li>
+  </ul>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>早期融合预训练</h4>
+      <p>文本与视觉 token 混合训练，多模态效率 ≈ 纯文本 100%，视觉语言能力代际平齐。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>MTP 多步预测</h4>
+      <p>额外 1 层预测头在训练时提供前瞻梯度信号，推理时可用于投机解码加速。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>大规模 Agent RL</h4>
+      <p>百万级环境 + 渐进任务分布 + 异步 RL 框架，驱动 Agent 能力跃升。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>超长上下文训练</h4>
+      <p>原生 262K 训练，DeltaNet + GQA 混合架构天然支持高效百万级上下文扩展。</p>
+    </div>
+  </div>
+</div>
+
+<!-- 关键技术创新 -->
+<div class="section">
+  <h2>十、关键技术创新总结</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>Hybrid 3:1 架构</h4>
+      <p>首次在大规模产品级模型中成功落地 DeltaNet + Attention 混合架构。
+      3:1 的层比例经过精心优化，在效率与精度之间取得最佳平衡。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>Gated DeltaNet</h4>
+      <p>在 Delta Rule 基础上增加遗忘门控 &alpha;、更新门控 &beta;、短卷积和输出门控，
+      显著提升线性注意力的表达力和训练稳定性。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>V/QK 头数不对称</h4>
+      <p>V 头数是 QK 的 3 倍（48 vs 16），以更少的键索引驱动更大的值存储空间，
+      在固定参数预算下最大化信息容量。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>Partial RoPE</h4>
+      <p>仅在头维度的 25%（64/256）施加旋转位置编码，
+      降低位置编码对语义匹配的干扰，同时有利于超长序列外推。</p>
+    </div>
+    <div class="card">
+      <span class="num">5</span><h4>M-RoPE 多分辨率位置</h4>
+      <p>将 RoPE 维度拆分为 [11,11,10] 三段分别编码 H/W/T 视觉空间-时间位置，
+      实现视觉与语言 token 的统一位置编码。</p>
+    </div>
+    <div class="card">
+      <span class="num">6</span><h4>统一多模态基座</h4>
+      <p>图文视频共享同一模型，27 层 ViT 编码器通过线性投影对齐至语言模型，
+      早期融合训练消除了模态间的能力权衡。</p>
+    </div>
+  </div>
+</div>
+
+<!-- 优劣势分析 -->
+<div class="section">
+  <h2>十一、优劣势分析</h2>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>优势</h4>
+      <ul>
+        <li>27B Dense 模型达到旗舰级性能，部署门槛低</li>
+        <li>DeltaNet 层 O(1) 状态更新，解码延迟低</li>
+        <li>KV 缓存仅需 25% 层，支持超长上下文</li>
+        <li>IFEval 95.0、SWE-bench 72.4 超越 GPT-5-mini</li>
+        <li>视觉语言统一架构，无需独立 VL 模型</li>
+        <li>201 种语言覆盖，全球化部署友好</li>
+        <li>MTP 头支持投机解码，进一步加速推理</li>
+        <li>思维模式可控，灵活适应不同场景</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>局限</h4>
+      <ul>
+        <li>DeltaNet 的递推状态容量有限（128×128），极端长序列的精确检索仍依赖全注意力层</li>
+        <li>CodeForces 1899，弱于 Qwen3-235B 的 2146，竞赛级编程仍需更大模型</li>
+        <li>全注意力层的 KV 缓存仍随序列长度线性增长</li>
+        <li>27B Dense 模型激活参数高于 MoE 的 Qwen3.5-35B-A3B（3B 激活）</li>
+        <li>DeltaNet 训练时分块并行效率低于标准注意力</li>
+        <li>Hybrid 架构的层间交互模式较复杂，调优难度较高</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- 总结与展望 -->
+<div class="section">
+  <h2>十二、总结与展望</h2>
+  <p>
+    Qwen3.5-27B 代表了<strong>混合线性-全注意力架构</strong>在大规模语言模型中的成功实践。
+    通过精心设计的 3:1 层布局（Gated DeltaNet + Gated Attention），
+    模型在 27B 参数量下实现了与旗舰 MoE 模型（122B-A10B）相当甚至更优的性能，
+    同时大幅降低推理成本和显存需求。
+  </p>
+  <p>其核心贡献可总结为三个层面：</p>
+  <ol>
+    <li><strong>架构层面</strong>：证明了 DeltaNet 线性注意力在大规模模型中的可行性和有效性，
+    3:1 的混合比例为后续研究提供了重要参考点。</li>
+    <li><strong>效率层面</strong>：75% 的层无需 KV 缓存，使得百万级上下文在单机上成为可能，
+    解码阶段每 token 计算量显著降低。</li>
+    <li><strong>能力层面</strong>：在多项基准上超越 GPT-5-mini 和 Qwen3-235B，
+    特别在指令遵循、数学推理、编程和 Agent 能力上表现突出。</li>
+  </ol>
+
+  <div class="highlight">
+    <strong>展望：</strong>
+    混合线性注意力架构正成为下一代大语言模型的重要趋势。未来的演进方向可能包括：
+    (1) 更激进的线性:全注意力比例（如 7:1 甚至更高）；
+    (2) 将 DeltaNet 与 MoE 结合，进一步扩展模型容量；
+    (3) 基于 DeltaNet 状态的硬件定制加速器设计；
+    (4) 多模态 DeltaNet，直接在视觉 token 上使用线性注意力。
+  </div>
+</div>
+
+<div class="footer">
+  Qwen3.5-27B 技术报告 &middot; 基于 HuggingFace Model Card 及公开资料整理 &middot; Apache 2.0 许可证
+</div>
+
+</div>
+</body>
+</html>

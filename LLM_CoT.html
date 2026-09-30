@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大模型 Chain-of-Thought 推理原理、训练与部署详解</title>
+<style>
+  :root { --primary:#1a1a2e; --accent:#0f3460; --highlight-bg:#f0f4ff; --highlight-border:#4a7dff; --text:#222; --text-light:#555; --border:#e0e0e0; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif; color:var(--text); line-height:1.8; background:#fafafa; }
+  .container { max-width:920px; margin:0 auto; padding:20px; }
+  .cover { text-align:center; padding:70px 20px 50px; background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%); color:white; border-radius:12px; margin-bottom:40px; }
+  .cover h1 { font-size:2.1em; margin-bottom:12px; font-weight:700; letter-spacing:1px; }
+  .cover .subtitle { font-size:1.05em; color:#aab; margin-bottom:24px; }
+  .cover .tags { display:flex; justify-content:center; gap:12px; flex-wrap:wrap; }
+  .cover .tag { background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.2); border-radius:20px; padding:6px 18px; font-size:0.9em; color:#dde; }
+  .section { background:white; border-radius:10px; padding:36px 40px; margin-bottom:24px; box-shadow:0 1px 4px rgba(0,0,0,0.06); border:1px solid var(--border); }
+  h2 { font-size:1.5em; color:var(--primary); margin-bottom:6px; padding-bottom:10px; border-bottom:2px solid var(--highlight-border); }
+  h3 { font-size:1.15em; color:var(--accent); margin:22px 0 10px; }
+  h4 { font-size:1.0em; color:#333; margin:14px 0 6px; }
+  p { margin:12px 0; text-align:justify; }
+  .highlight { background:var(--highlight-bg); border-left:4px solid var(--highlight-border); padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .highlight strong { color:var(--accent); }
+  .warning { background:#fff8f0; border-left:4px solid #f0a500; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .success { background:#f0fff4; border-left:4px solid #2a9d8f; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  ul,ol { padding-left:24px; margin:10px 0; }
+  li { margin:6px 0; }
+  .formula { text-align:center; padding:18px 20px; margin:18px 0; background:#f8f9ff; border-radius:8px; border:1px solid #e8eaf0; font-size:1.12em; font-family:"Times New Roman","STIX",serif; letter-spacing:0.5px; overflow-x:auto; }
+  .figure { text-align:center; margin:24px 0; padding:16px; background:#fafafa; border-radius:8px; border:1px solid #eee; }
+  .figure .caption { font-size:0.88em; color:#666; margin-top:10px; font-style:italic; }
+  table { width:100%; border-collapse:collapse; margin:16px 0; font-size:0.92em; }
+  th,td { padding:10px 14px; text-align:left; border-bottom:1px solid #eee; }
+  th { background:var(--primary); color:white; font-weight:600; }
+  tr:hover { background:#f8f9ff; }
+  td code { background:#f0f0f5; padding:2px 6px; border-radius:3px; font-size:0.9em; }
+  .card-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0; }
+  .card { background:linear-gradient(135deg,#f8f9ff,#f0f4ff); border:1px solid #d8e0f0; border-radius:10px; padding:20px 24px; }
+  .card .num { display:inline-block; background:var(--highlight-border); color:white; width:28px; height:28px; border-radius:50%; text-align:center; line-height:28px; font-size:0.85em; font-weight:700; margin-right:8px; }
+  .card h4 { display:inline; color:var(--accent); font-size:1.05em; }
+  .card p { margin-top:8px; font-size:0.93em; }
+  .pros-cons { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0; }
+  .pros,.cons { padding:16px; border-radius:8px; }
+  .pros { background:#f0fff4; border:1px solid #c8e6c9; }
+  .cons { background:#fff8f0; border:1px solid #ffe0b2; }
+  .pros h4 { color:#2e7d32; margin-bottom:8px; }
+  .cons h4 { color:#e65100; margin-bottom:8px; }
+  .pros li,.cons li { font-size:0.93em; }
+  .step-flow { display:flex; align-items:center; justify-content:center; gap:8px; margin:20px 0; flex-wrap:wrap; }
+  .step-box { background:var(--highlight-bg); border:1px solid var(--highlight-border); border-radius:8px; padding:10px 16px; font-size:0.92em; font-weight:600; color:var(--accent); text-align:center; min-width:100px; }
+  .step-arrow { font-size:1.4em; color:#aaa; }
+  .footer { text-align:center; color:#999; font-size:0.85em; padding:30px 0; border-top:1px solid #eee; margin-top:20px; }
+  @media(max-width:640px) { .section{padding:24px 20px;} .cover h1{font-size:1.6em;} .pros-cons,.card-grid{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ===== 封面 ===== -->
+<div class="cover">
+  <h1>大模型 Chain-of-Thought 推理原理与实现详解</h1>
+  <div class="subtitle">从"直觉回答"到"深度思考" —— 让大模型学会一步步推理</div>
+  <div class="tags">
+    <span class="tag">Chain-of-Thought</span>
+    <span class="tag">推理模型</span>
+    <span class="tag">RL 训练</span>
+    <span class="tag">训练数据设计</span>
+    <span class="tag">Test-Time Compute</span>
+    <span class="tag">DeepSeek-R1 / OpenAI o1</span>
+    <span class="tag">部署与蒸馏</span>
+  </div>
+</div>
+
+<!-- ===== 引言 ===== -->
+<div class="section">
+  <h2>引言：为什么大模型需要"思考"</h2>
+  <p>
+    标准 LLM 采用<strong>System 1 式</strong>的直觉快速响应——看到问题后立即生成答案。
+    这在简单任务上表现出色，但面对数学证明、逻辑推理、复杂编程等需要<strong>多步推理</strong>的任务时，
+    直接输出答案往往出错。<strong>Chain-of-Thought（CoT，思维链）</strong>让模型在给出最终答案前，
+    先生成一系列中间推理步骤——正如人类"打草稿"一样，将复杂问题逐步分解求解。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 280" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar0" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+        <marker id="ar0r" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#e74c3c"/></marker>
+      </defs>
+      <text x="410" y="24" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">标准回答 vs Chain-of-Thought 推理</text>
+
+      <!-- 左：标准回答 -->
+      <rect x="20" y="45" width="370" height="210" rx="10" fill="#fff8f0" stroke="#f0a500" stroke-width="1.5"/>
+      <text x="205" y="72" text-anchor="middle" font-size="13" font-weight="700" fill="#e65100">标准回答（System 1）</text>
+      <rect x="40" y="85" width="330" height="40" rx="6" fill="#f0a500" opacity="0.15"/>
+      <text x="55" y="108" font-size="10" fill="#555"><tspan font-weight="600">Q:</tspan> 小明有 5 个苹果，给了小红 2 个，又买了 3 个，共几个？</text>
+      <line x1="205" y1="127" x2="205" y2="147" stroke="#e74c3c" stroke-width="2" marker-end="url(#ar0r)"/>
+      <rect x="120" y="150" width="170" height="35" rx="6" fill="#e74c3c" opacity="0.85"/>
+      <text x="205" y="173" text-anchor="middle" fill="white" font-size="11" font-weight="700">A: 6 个</text>
+      <text x="205" y="210" text-anchor="middle" font-size="10" fill="#888">直接输出答案</text>
+      <text x="205" y="228" text-anchor="middle" font-size="10" fill="#888">无中间推理过程</text>
+      <text x="205" y="246" text-anchor="middle" font-size="10" fill="#e74c3c" font-weight="600">简单题正确，复杂题易错</text>
+
+      <!-- 右：CoT 推理 -->
+      <rect x="430" y="45" width="370" height="210" rx="10" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="615" y="72" text-anchor="middle" font-size="13" font-weight="700" fill="#4a7dff">CoT 推理（System 2）</text>
+      <rect x="450" y="85" width="330" height="40" rx="6" fill="#4a7dff" opacity="0.1"/>
+      <text x="465" y="108" font-size="10" fill="#555"><tspan font-weight="600">Q:</tspan> 小明有 5 个苹果，给了小红 2 个，又买了 3 个，共几个？</text>
+      <line x1="615" y1="127" x2="615" y2="137" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar0)"/>
+      <rect x="450" y="140" width="330" height="55" rx="6" fill="#667eea" opacity="0.12"/>
+      <text x="465" y="157" font-size="9" fill="#667eea" font-weight="600">思考过程（Thinking）：</text>
+      <text x="465" y="173" font-size="9" fill="#555">① 初始：5 个  ② 给出 2 个：5-2=3  ③ 买入 3 个：3+3=6</text>
+      <text x="465" y="188" font-size="9" fill="#555">所以最终有 6 个苹果。</text>
+      <rect x="500" y="200" width="230" height="30" rx="6" fill="#2a9d8f" opacity="0.85"/>
+      <text x="615" y="220" text-anchor="middle" fill="white" font-size="11" font-weight="700">A: 6 个 ✓</text>
+      <text x="615" y="246" text-anchor="middle" font-size="10" fill="#2a9d8f" font-weight="600">推理过程可追踪，复杂任务准确率大幅提升</text>
+
+      <text x="410" y="275" text-anchor="middle" font-size="10" fill="#888">CoT 的本质：用更多的推理 token（计算量）换取更高的答案质量——"Think before you answer"</text>
+    </svg>
+    <div class="caption">图 1：标准回答 vs CoT 推理。CoT 在回答前先生成中间推理步骤，使复杂任务的准确率大幅提升。</div>
+  </div>
+
+  <div class="highlight">
+    <strong>CoT 的核心洞察（Scaling Test-Time Compute）：</strong>
+    传统 Scaling Laws 关注训练阶段的计算量（更大模型 + 更多数据）。CoT 开辟了另一个维度——
+    在<strong>推理阶段</strong>投入更多计算量（生成更长的思考过程），同样可以大幅提升模型能力。
+    这被称为 <strong>Test-Time Compute Scaling</strong>。
+  </div>
+</div>
+
+<!-- ===== 一、CoT 推理原理 ===== -->
+<div class="section">
+  <h2>一、CoT 推理原理</h2>
+
+  <h3>1.1 CoT 的发展历程</h3>
+  <table>
+    <tr><th>时间</th><th>里程碑</th><th>核心贡献</th></tr>
+    <tr><td><strong>2022.01</strong></td><td>Chain-of-Thought Prompting（Google）</td><td>Wei et al. 发现在 Few-shot 示例中加入推理步骤可显著提升 LLM 推理能力</td></tr>
+    <tr><td><strong>2022.03</strong></td><td>Self-Consistency</td><td>采样多条推理路径，多数投票选最终答案，进一步提升准确率</td></tr>
+    <tr><td><strong>2022.05</strong></td><td>Zero-shot CoT</td><td>仅加 "Let's think step by step" 即可触发 CoT，无需人工示例</td></tr>
+    <tr><td><strong>2023.05</strong></td><td>Tree of Thoughts (ToT)</td><td>将 CoT 扩展为树形搜索，探索多条推理路径并回溯</td></tr>
+    <tr><td><strong>2024.09</strong></td><td>OpenAI o1</td><td>首个商用推理模型——通过大规模 RL 训练让模型学会长链推理</td></tr>
+    <tr><td><strong>2025.01</strong></td><td>DeepSeek-R1</td><td>开源推理模型——揭示了纯 RL 训练可从零涌现 CoT 能力</td></tr>
+    <tr><td><strong>2025.02</strong></td><td>OpenAI o3 / o4-mini</td><td>推理模型性能持续提升，支持工具调用的推理 Agent</td></tr>
+    <tr><td><strong>2025.04</strong></td><td>Claude Opus 4 (extended thinking)</td><td>长链思考 + Agent 能力结合，支持最长 128K token 思考</td></tr>
+  </table>
+
+  <h3>1.2 CoT 的工作机制</h3>
+  <p>
+    CoT 的核心原理并不复杂：让模型在输出最终答案之前，先生成一段<strong>中间推理过程</strong>。
+    从信息论的角度，这等价于<strong>增加模型的计算深度</strong>——
+    每个推理 token 都是一次"计算步骤"，将不可一步完成的复杂推理分解为多个可完成的子步骤。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 340" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">CoT 推理的计算原理</text>
+
+      <!-- 标准模型 -->
+      <rect x="20" y="50" width="360" height="120" rx="8" fill="#fff8f0" stroke="#f0a500" stroke-width="1.5"/>
+      <text x="200" y="75" text-anchor="middle" font-size="12" font-weight="700" fill="#e65100">标准 LLM：固定深度计算</text>
+      <rect x="40" y="90" width="80" height="40" rx="4" fill="#f0a500" opacity="0.8"/>
+      <text x="80" y="114" text-anchor="middle" fill="white" font-size="9" font-weight="600">输入 x</text>
+      <line x1="122" y1="110" x2="148" y2="110" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar1)"/>
+      <rect x="152" y="90" width="100" height="40" rx="4" fill="#667eea" opacity="0.8"/>
+      <text x="202" y="114" text-anchor="middle" fill="white" font-size="9" font-weight="600">L 层 Transformer</text>
+      <line x1="254" y1="110" x2="280" y2="110" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar1)"/>
+      <rect x="284" y="90" width="80" height="40" rx="4" fill="#e74c3c" opacity="0.8"/>
+      <text x="324" y="114" text-anchor="middle" fill="white" font-size="9" font-weight="600">答案 y</text>
+      <text x="200" y="155" text-anchor="middle" font-size="9" fill="#888">计算深度 = L（固定），无法动态增加</text>
+
+      <!-- CoT 模型 -->
+      <rect x="420" y="50" width="380" height="120" rx="8" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="610" y="75" text-anchor="middle" font-size="12" font-weight="700" fill="#4a7dff">CoT 模型：可变深度计算</text>
+      <rect x="440" y="90" width="60" height="40" rx="4" fill="#f0a500" opacity="0.8"/>
+      <text x="470" y="114" text-anchor="middle" fill="white" font-size="9" font-weight="600">x</text>
+      <line x1="502" y1="110" x2="516" y2="110" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar1)"/>
+      <rect x="520" y="90" width="40" height="40" rx="4" fill="#667eea" opacity="0.6"/>
+      <text x="540" y="114" text-anchor="middle" fill="white" font-size="8" font-weight="600">t₁</text>
+      <line x1="562" y1="110" x2="572" y2="110" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar1)"/>
+      <rect x="576" y="90" width="40" height="40" rx="4" fill="#667eea" opacity="0.7"/>
+      <text x="596" y="114" text-anchor="middle" fill="white" font-size="8" font-weight="600">t₂</text>
+      <line x1="618" y1="110" x2="628" y2="110" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar1)"/>
+      <rect x="632" y="90" width="40" height="40" rx="4" fill="#667eea" opacity="0.8"/>
+      <text x="652" y="114" text-anchor="middle" fill="white" font-size="8" font-weight="600">...</text>
+      <line x1="674" y1="110" x2="684" y2="110" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar1)"/>
+      <rect x="688" y="90" width="40" height="40" rx="4" fill="#667eea" opacity="0.9"/>
+      <text x="708" y="114" text-anchor="middle" fill="white" font-size="8" font-weight="600">tₙ</text>
+      <line x1="730" y1="110" x2="740" y2="110" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar1)"/>
+      <rect x="744" y="90" width="46" height="40" rx="4" fill="#2a9d8f" opacity="0.85"/>
+      <text x="767" y="114" text-anchor="middle" fill="white" font-size="8" font-weight="600">y</text>
+      <text x="610" y="155" text-anchor="middle" font-size="9" fill="#888">计算深度 = L × n（思考 token 数），随任务难度动态扩展</text>
+
+      <!-- 核心公式 -->
+      <rect x="100" y="190" width="620" height="60" rx="8" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="410" y="215" text-anchor="middle" font-size="12" font-weight="700" fill="#0f3460">核心洞察</text>
+      <text x="410" y="238" text-anchor="middle" font-size="11" fill="#555">每个思考 token t<tspan font-size="8" dy="3">i</tspan><tspan dy="-3"> 都经过 L 层 Transformer 计算 → 总计算量 = L × n × d²</tspan></text>
+
+      <!-- 底部说明 -->
+      <rect x="60" y="270" width="700" height="55" rx="8" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1"/>
+      <text x="80" y="292" font-size="10" fill="#555"><tspan font-weight="600" fill="#2a9d8f">关键类比：</tspan>标准 LLM 像"口算"——看到题目立刻说答案，计算量固定</text>
+      <text x="80" y="312" font-size="10" fill="#555">CoT 模型像"笔算"——在草稿纸上一步步演算，思考越多结果越可靠，计算量随难度动态调整</text>
+    </svg>
+    <div class="caption">图 2：CoT 的计算原理。标准 LLM 的计算深度固定为 L 层，CoT 通过生成 n 个思考 token 将有效计算深度扩展到 L×n。</div>
+  </div>
+
+  <h3>1.3 CoT 的核心变体</h3>
+  <table>
+    <tr><th>方法</th><th>原理</th><th>触发方式</th><th>推理成本</th><th>效果</th></tr>
+    <tr>
+      <td><strong>Few-shot CoT</strong></td>
+      <td>在 prompt 中给出带推理步骤的示例</td>
+      <td>Prompt 工程</td>
+      <td>低</td>
+      <td>中（依赖示例质量）</td>
+    </tr>
+    <tr>
+      <td><strong>Zero-shot CoT</strong></td>
+      <td>添加 "Let's think step by step"</td>
+      <td>固定指令</td>
+      <td>低</td>
+      <td>中低</td>
+    </tr>
+    <tr>
+      <td><strong>Self-Consistency</strong></td>
+      <td>采样多条路径 + 多数投票</td>
+      <td>采样策略</td>
+      <td>中（k 次采样）</td>
+      <td>高</td>
+    </tr>
+    <tr>
+      <td><strong>Tree of Thoughts</strong></td>
+      <td>树形搜索 + 自我评估 + 回溯</td>
+      <td>搜索算法</td>
+      <td>高</td>
+      <td>高</td>
+    </tr>
+    <tr>
+      <td><strong>内化 CoT（o1/R1 范式）</strong></td>
+      <td>通过 RL 训练让模型自主生成长链推理</td>
+      <td>模型原生能力</td>
+      <td>高（长序列）</td>
+      <td>最高</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ===== 二、CoT 训练与微调 ===== -->
+<div class="section">
+  <h2>二、CoT 模型训练与微调</h2>
+
+  <h3>2.1 训练范式总览</h3>
+  <p>
+    让 LLM 获得强大 CoT 推理能力，主要有三种训练范式：
+    <strong>CoT SFT（监督微调）、CoT RL（强化学习）</strong>和<strong>CoT 蒸馏</strong>。
+    以 DeepSeek-R1 的技术报告为核心参考，这三种方法各有适用场景。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 330" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">CoT 推理能力的三大训练范式</text>
+
+      <!-- 范式 1: SFT -->
+      <rect x="20" y="50" width="240" height="145" rx="10" fill="#f0f4ff" stroke="#667eea" stroke-width="2"/>
+      <rect x="20" y="50" width="240" height="32" rx="10" fill="#667eea"/>
+      <rect x="20" y="68" width="240" height="14" fill="#667eea"/>
+      <text x="140" y="72" text-anchor="middle" fill="white" font-size="12" font-weight="700">范式 1：CoT SFT</text>
+      <text x="40" y="105" font-size="10" fill="#555">用标注好的推理轨迹做监督微调</text>
+      <text x="40" y="125" font-size="10" fill="#555" font-weight="600">优点：训练简单、成本低</text>
+      <text x="40" y="145" font-size="10" fill="#555" font-weight="600">缺点：天花板受限于标注数据</text>
+      <text x="40" y="170" font-size="9" fill="#888">代表：LLaMA-3 CoT SFT、开源微调</text>
+      <text x="40" y="185" font-size="9" fill="#888">数据量：10K~100K 条 CoT 轨迹</text>
+
+      <!-- 范式 2: RL -->
+      <rect x="290" y="50" width="240" height="145" rx="10" fill="#f0fff4" stroke="#2a9d8f" stroke-width="2"/>
+      <rect x="290" y="50" width="240" height="32" rx="10" fill="#2a9d8f"/>
+      <rect x="290" y="68" width="240" height="14" fill="#2a9d8f"/>
+      <text x="410" y="72" text-anchor="middle" fill="white" font-size="12" font-weight="700">范式 2：CoT RL（核心）</text>
+      <text x="310" y="105" font-size="10" fill="#555">用 RL 让模型自主探索推理策略</text>
+      <text x="310" y="125" font-size="10" fill="#555" font-weight="600">优点：可超越人类标注水平</text>
+      <text x="310" y="145" font-size="10" fill="#555" font-weight="600">缺点：训练复杂、成本高</text>
+      <text x="310" y="170" font-size="9" fill="#888">代表：OpenAI o1/o3、DeepSeek-R1</text>
+      <text x="310" y="185" font-size="9" fill="#888">需要：可验证问题 + 奖励信号</text>
+
+      <!-- 范式 3: 蒸馏 -->
+      <rect x="560" y="50" width="240" height="145" rx="10" fill="#fff8f0" stroke="#f0a500" stroke-width="2"/>
+      <rect x="560" y="50" width="240" height="32" rx="10" fill="#f0a500"/>
+      <rect x="560" y="68" width="240" height="14" fill="#f0a500"/>
+      <text x="680" y="72" text-anchor="middle" fill="white" font-size="12" font-weight="700">范式 3：CoT 蒸馏</text>
+      <text x="580" y="105" font-size="10" fill="#555">用强推理模型的输出训练弱模型</text>
+      <text x="580" y="125" font-size="10" fill="#555" font-weight="600">优点：低成本获得推理能力</text>
+      <text x="580" y="145" font-size="10" fill="#555" font-weight="600">缺点：能力受限于教师模型</text>
+      <text x="580" y="170" font-size="9" fill="#888">代表：DeepSeek-R1-Distill 系列</text>
+      <text x="580" y="185" font-size="9" fill="#888">数据量：60K~800K 条蒸馏轨迹</text>
+
+      <!-- 关系箭头 -->
+      <line x1="410" y1="200" x2="410" y2="225" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar2)"/>
+      <line x1="680" y1="200" x2="680" y2="225" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar2)"/>
+
+      <!-- 关键总结 -->
+      <rect x="40" y="225" width="740" height="85" rx="8" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="60" y="250" font-size="11" font-weight="700" fill="#0f3460">DeepSeek-R1 揭示的核心发现：</text>
+      <text x="60" y="272" font-size="10" fill="#555">1. <tspan font-weight="600" fill="#2a9d8f">纯 RL 可以从零涌现 CoT 能力</tspan>——不需要 CoT SFT 作为前置，直接对 Base Model 做 RL 即可涌现长链推理（R1-Zero）</text>
+      <text x="60" y="292" font-size="10" fill="#555">2. <tspan font-weight="600" fill="#f0a500">蒸馏小模型 > RL 训练小模型</tspan>——将 R1-671B 的推理轨迹蒸馏到 7B/14B 模型，效果远优于直接对小模型做 RL</text>
+    </svg>
+    <div class="caption">图 3：CoT 推理能力的三大训练范式。CoT RL 是最强但最贵的方案，CoT 蒸馏是性价比最高的方案，CoT SFT 适合快速实验。</div>
+  </div>
+
+  <h3>2.2 CoT RL 训练详解（核心方法）</h3>
+  <p>
+    CoT RL 是当前最先进推理模型（o1、R1）的核心训练方法。
+    其关键思路是：<strong>在可以自动验证答案的任务上（数学、代码），
+    用任务的正确性作为奖励信号，通过强化学习训练模型自主探索推理策略</strong>。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 350" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar2b" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+        <marker id="ar2g" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2a9d8f"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">CoT RL 训练流程（以 DeepSeek-R1 为例）</text>
+
+      <!-- Step 1 -->
+      <rect x="20" y="50" width="175" height="80" rx="8" fill="#667eea" opacity="0.85"/>
+      <text x="107" y="75" text-anchor="middle" fill="white" font-size="11" font-weight="700">Step 1: 冷启动</text>
+      <text x="107" y="95" text-anchor="middle" fill="white" font-size="8">少量 CoT SFT 数据</text>
+      <text x="107" y="112" text-anchor="middle" fill="white" font-size="8">教模型基本的思考格式</text>
+      <line x1="197" y1="90" x2="217" y2="90" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar2b)"/>
+
+      <!-- Step 2 -->
+      <rect x="221" y="50" width="175" height="80" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="308" y="75" text-anchor="middle" fill="white" font-size="11" font-weight="700">Step 2: 大规模 RL</text>
+      <text x="308" y="95" text-anchor="middle" fill="white" font-size="8">GRPO 算法优化</text>
+      <text x="308" y="112" text-anchor="middle" fill="white" font-size="8">数学/代码可验证任务</text>
+      <line x1="398" y1="90" x2="418" y2="90" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar2b)"/>
+
+      <!-- Step 3 -->
+      <rect x="422" y="50" width="175" height="80" rx="8" fill="#f0a500" opacity="0.85"/>
+      <text x="509" y="75" text-anchor="middle" fill="white" font-size="11" font-weight="700">Step 3: 拒绝采样 SFT</text>
+      <text x="509" y="95" text-anchor="middle" fill="white" font-size="8">用 RL 模型生成数据</text>
+      <text x="509" y="112" text-anchor="middle" fill="white" font-size="8">筛选正确轨迹做 SFT</text>
+      <line x1="599" y1="90" x2="619" y2="90" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar2b)"/>
+
+      <!-- Step 4 -->
+      <rect x="623" y="50" width="175" height="80" rx="8" fill="#e74c3c" opacity="0.85"/>
+      <text x="710" y="75" text-anchor="middle" fill="white" font-size="11" font-weight="700">Step 4: 二轮 RL</text>
+      <text x="710" y="95" text-anchor="middle" fill="white" font-size="8">全场景对齐训练</text>
+      <text x="710" y="112" text-anchor="middle" fill="white" font-size="8">有用性 + 安全性 + 格式</text>
+
+      <!-- RL 详解 -->
+      <rect x="40" y="155" width="740" height="170" rx="8" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="60" y="180" font-size="12" font-weight="700" fill="#0f3460">GRPO 强化学习的核心机制：</text>
+
+      <text x="60" y="205" font-size="10" fill="#555">1. <tspan font-weight="600">给定问题：</tspan>从数学/代码题库中采样一道题</text>
+      <text x="60" y="225" font-size="10" fill="#555">2. <tspan font-weight="600">Group Sampling：</tspan>让模型对同一道题生成 G 个不同的推理轨迹（如 G=64）</text>
+      <text x="60" y="245" font-size="10" fill="#555">3. <tspan font-weight="600">奖励计算：</tspan>用规则验证器（数学答案核验 / 代码运行测试）判断每个轨迹的答案是否正确</text>
+      <text x="60" y="265" font-size="10" fill="#555">   正确 → reward = 1，错误 → reward = 0（也可加格式奖励）</text>
+      <text x="60" y="285" font-size="10" fill="#555">4. <tspan font-weight="600">Relative Advantage：</tspan>在 Group 内部计算相对优势 → 正确轨迹被强化，错误轨迹被抑制</text>
+      <text x="60" y="305" font-size="10" fill="#555">5. <tspan font-weight="600">KL 约束：</tspan>加 KL 惩罚防止模型偏离 base 分布过远（防止 reward hacking）</text>
+    </svg>
+    <div class="caption">图 4：DeepSeek-R1 的 CoT RL 训练流程。冷启动 → 大规模 GRPO RL → 拒绝采样 SFT → 二轮对齐 RL，四阶段逐步提升推理能力。</div>
+  </div>
+
+  <div class="formula">
+    J<sub>GRPO</sub>(θ) = E<sub>q~D</sub> [ 1/G · Σ<sub>i=1..G</sub> min( r<sub>i</sub>(θ) · Â<sub>i</sub> , clip(r<sub>i</sub>(θ), 1-ε, 1+ε) · Â<sub>i</sub> ) − β · KL(π<sub>θ</sub> ‖ π<sub>ref</sub>) ]
+    <br><br>
+    <span style="font-size:0.82em;">r<sub>i</sub>(θ) = π<sub>θ</sub>(o<sub>i</sub>|q) / π<sub>old</sub>(o<sub>i</sub>|q)，Â<sub>i</sub> = (r<sub>i</sub> − mean(r)) / std(r)，奖励在 Group 内标准化计算相对优势</span>
+  </div>
+
+  <h3>2.3 CoT 训练中的涌现现象</h3>
+  <div class="success">
+    <strong>DeepSeek-R1-Zero 的惊人发现——CoT 从 RL 中自发涌现：</strong>
+    <ul>
+      <li><strong>自我验证（Self-Verification）：</strong>模型学会在推理过程中回头检查自己的步骤</li>
+      <li><strong>反思（Reflection）：</strong>模型生成 "Wait, let me reconsider..."、"Hmm, that doesn't seem right" 等自我纠错模式</li>
+      <li><strong>探索多路径：</strong>模型学会 "Let me try a different approach" 主动切换推理策略</li>
+      <li><strong>推理长度自适应：</strong>简单问题生成短思考链，复杂问题自动生成长链推理</li>
+      <li><strong>"Aha moment"：</strong>训练过程中模型突然学会在关键步骤重新审视推理，准确率阶跃提升</li>
+    </ul>
+    这些能力都不是人工设计或标注的——它们完全从 RL 的奖励信号中自发涌现。
+  </div>
+</div>
+
+<!-- ===== 三、训练数据设计与准备 ===== -->
+<div class="section">
+  <h2>三、CoT 训练数据设计与准备</h2>
+
+  <h3>3.1 各训练阶段的数据需求</h3>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 320" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">CoT 各阶段训练数据全景</text>
+
+      <!-- 冷启动 -->
+      <rect x="20" y="50" width="185" height="240" rx="10" fill="#f0f4ff" stroke="#667eea" stroke-width="1.5"/>
+      <rect x="20" y="50" width="185" height="30" rx="10" fill="#667eea"/>
+      <rect x="20" y="67" width="185" height="13" fill="#667eea"/>
+      <text x="112" y="70" text-anchor="middle" fill="white" font-size="11" font-weight="700">冷启动数据</text>
+      <text x="35" y="102" font-size="10" fill="#333" font-weight="600">规模：数千条</text>
+      <text x="35" y="122" font-size="10" fill="#555">格式：&lt;think&gt;...&lt;/think&gt;</text>
+      <text x="35" y="142" font-size="10" fill="#555">含详细推理步骤</text>
+      <text x="35" y="167" font-size="10" fill="#555">来源：人工精标 +</text>
+      <text x="35" y="187" font-size="10" fill="#555">强模型(GPT-4o)生成</text>
+      <text x="35" y="212" font-size="10" fill="#555">覆盖：数学、逻辑、</text>
+      <text x="35" y="232" font-size="10" fill="#555">编程、科学推理</text>
+      <text x="35" y="260" font-size="9" fill="#e74c3c" font-weight="600">目的：教会基本格式</text>
+      <text x="35" y="278" font-size="9" fill="#888">质量 >> 数量</text>
+
+      <!-- RL 题库 -->
+      <rect x="225" y="50" width="185" height="240" rx="10" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.5"/>
+      <rect x="225" y="50" width="185" height="30" rx="10" fill="#2a9d8f"/>
+      <rect x="225" y="67" width="185" height="13" fill="#2a9d8f"/>
+      <text x="317" y="70" text-anchor="middle" fill="white" font-size="11" font-weight="700">RL 训练题库</text>
+      <text x="240" y="102" font-size="10" fill="#333" font-weight="600">规模：数十万~百万题</text>
+      <text x="240" y="122" font-size="10" fill="#555">格式：(问题, 标准答案)</text>
+      <text x="240" y="142" font-size="10" fill="#555">无需推理过程标注</text>
+      <text x="240" y="167" font-size="10" fill="#555">来源：竞赛题库、</text>
+      <text x="240" y="187" font-size="10" fill="#555">数学/代码平台、合成</text>
+      <text x="240" y="212" font-size="10" fill="#555">要求：答案可自动验证</text>
+      <text x="240" y="232" font-size="10" fill="#555">（数学答案/代码测试）</text>
+      <text x="240" y="260" font-size="9" fill="#e74c3c" font-weight="600">目的：提供 RL 奖励信号</text>
+      <text x="240" y="278" font-size="9" fill="#888">难度梯度覆盖是关键</text>
+
+      <!-- 蒸馏数据 -->
+      <rect x="430" y="50" width="185" height="240" rx="10" fill="#fff8f0" stroke="#f0a500" stroke-width="1.5"/>
+      <rect x="430" y="50" width="185" height="30" rx="10" fill="#f0a500"/>
+      <rect x="430" y="67" width="185" height="13" fill="#f0a500"/>
+      <text x="522" y="70" text-anchor="middle" fill="white" font-size="11" font-weight="700">蒸馏数据</text>
+      <text x="445" y="102" font-size="10" fill="#333" font-weight="600">规模：60K~800K 条</text>
+      <text x="445" y="122" font-size="10" fill="#555">格式：(问题, 完整CoT,</text>
+      <text x="445" y="142" font-size="10" fill="#555">最终答案)</text>
+      <text x="445" y="167" font-size="10" fill="#555">来源：强推理模型</text>
+      <text x="445" y="187" font-size="10" fill="#555">(R1-671B/o1)的输出</text>
+      <text x="445" y="212" font-size="10" fill="#555">筛选：拒绝采样，</text>
+      <text x="445" y="232" font-size="10" fill="#555">只保留答案正确的轨迹</text>
+      <text x="445" y="260" font-size="9" fill="#e74c3c" font-weight="600">目的：低成本训练小模型</text>
+      <text x="445" y="278" font-size="9" fill="#888">R1 蒸馏 7B 超过非蒸馏 70B</text>
+
+      <!-- 对齐数据 -->
+      <rect x="635" y="50" width="165" height="240" rx="10" fill="#f0f0ff" stroke="#9b59b6" stroke-width="1.5"/>
+      <rect x="635" y="50" width="165" height="30" rx="10" fill="#9b59b6"/>
+      <rect x="635" y="67" width="165" height="13" fill="#9b59b6"/>
+      <text x="717" y="70" text-anchor="middle" fill="white" font-size="11" font-weight="700">对齐数据</text>
+      <text x="650" y="102" font-size="10" fill="#333" font-weight="600">规模：数万条</text>
+      <text x="650" y="122" font-size="10" fill="#555">通用对话 + 安全</text>
+      <text x="650" y="142" font-size="10" fill="#555">偏好标注数据</text>
+      <text x="650" y="167" font-size="10" fill="#555">来源：人工标注 +</text>
+      <text x="650" y="187" font-size="10" fill="#555">合成拒绝/安全样本</text>
+      <text x="650" y="212" font-size="10" fill="#555">覆盖：有用性、</text>
+      <text x="650" y="232" font-size="10" fill="#555">格式规范、安全拒绝</text>
+      <text x="650" y="260" font-size="9" fill="#e74c3c" font-weight="600">目的：安全对齐</text>
+      <text x="650" y="278" font-size="9" fill="#888">防止推理中的有害输出</text>
+    </svg>
+    <div class="caption">图 5：CoT 各阶段训练数据全景。冷启动靠少量精标数据，RL 靠大量可验证题库，蒸馏靠强模型的推理输出，对齐靠偏好和安全数据。</div>
+  </div>
+
+  <h3>3.2 RL 训练题库的设计要点</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>可验证性是前提</h4>
+      <p>RL 的奖励信号来自答案验证。数学题可核验最终数值，代码题可运行测试用例，逻辑题可检查真值。<strong>开放式问答不适合</strong>纯 RL 训练。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>难度梯度覆盖</h4>
+      <p>题库需包含从简单到竞赛级的完整难度梯度。过易 → 模型不需要深度推理即可答对；过难 → 奖励信号过于稀疏，训练效率低。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>领域多样性</h4>
+      <p>单一领域训练的推理能力泛化性差。需覆盖代数、几何、组合、概率、数论、编程（多语言）、逻辑推理等。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>数据去污染</h4>
+      <p>必须严格排除评测集中的题目（AIME、MATH、HumanEval 等），防止 data contamination 导致虚假的高分。</p>
+    </div>
+  </div>
+
+  <h3>3.3 主流模型的 CoT 训练数据</h3>
+  <table>
+    <tr><th>模型</th><th>冷启动数据</th><th>RL 题库</th><th>蒸馏数据</th><th>数据特点</th></tr>
+    <tr>
+      <td><strong>DeepSeek-R1</strong></td>
+      <td>数千条长 CoT 标注</td>
+      <td>数学 + 代码 + 逻辑 + 科学（规模未公开）</td>
+      <td>约 80 万条（用于蒸馏小模型）</td>
+      <td>R1-Zero 验证了纯 RL 可行性；冷启动仅用于改善格式和可读性</td>
+    </tr>
+    <tr>
+      <td><strong>OpenAI o1/o3</strong></td>
+      <td>未公开（推测：精选 CoT 示例）</td>
+      <td>未公开（推测：百万级竞赛题+代码题）</td>
+      <td>o1-mini / o4-mini 可能使用蒸馏</td>
+      <td>业界最早的大规模推理 RL 训练；数据体系高度保密</td>
+    </tr>
+    <tr>
+      <td><strong>Qwen-QwQ</strong></td>
+      <td>CoT SFT 数据（多语言）</td>
+      <td>数学/代码/逻辑/科学</td>
+      <td>用 QwQ-72B 蒸馏到小模型</td>
+      <td>中英双语推理数据；多阶段 RL 训练</td>
+    </tr>
+    <tr>
+      <td><strong>Claude (extended thinking)</strong></td>
+      <td>未公开</td>
+      <td>未公开</td>
+      <td>—</td>
+      <td>原生 extended thinking 能力；支持最长 128K token 思考序列</td>
+    </tr>
+    <tr>
+      <td><strong>Kimi k1.5</strong></td>
+      <td>长 CoT + 短 CoT 混合</td>
+      <td>数学/代码/视觉推理</td>
+      <td>—</td>
+      <td>首个公开的长-短 CoT 联合训练方案；在 RL 中同时训练长推理和短推理能力</td>
+    </tr>
+    <tr>
+      <td><strong>LLaMA-3 + CoT SFT</strong></td>
+      <td>~10 万条 CoT 轨迹（合成+标注）</td>
+      <td>—（纯 SFT，无 RL）</td>
+      <td>可用 R1/o1 输出蒸馏</td>
+      <td>开源社区最常用的方案：SFT + 蒸馏，无需 RL 基础设施</td>
+    </tr>
+  </table>
+
+  <h3>3.4 蒸馏数据的构建流程</h3>
+  <div class="step-flow">
+    <div class="step-box">选择问题集<br><span style="font-weight:400;font-size:0.85em;">数学/代码/推理</span></div>
+    <span class="step-arrow">→</span>
+    <div class="step-box">强模型生成 CoT<br><span style="font-weight:400;font-size:0.85em;">R1/o1 多次采样</span></div>
+    <span class="step-arrow">→</span>
+    <div class="step-box">答案验证过滤<br><span style="font-weight:400;font-size:0.85em;">保留正确轨迹</span></div>
+    <span class="step-arrow">→</span>
+    <div class="step-box">长度/质量筛选<br><span style="font-weight:400;font-size:0.85em;">去除冗余推理</span></div>
+    <span class="step-arrow">→</span>
+    <div class="step-box">SFT 训练小模型<br><span style="font-weight:400;font-size:0.85em;">7B/14B/32B</span></div>
+  </div>
+
+  <div class="warning">
+    <strong>蒸馏数据的关键发现（DeepSeek-R1 技术报告）：</strong>
+    将 R1-671B 的 80 万条推理轨迹蒸馏到 Qwen-2.5-32B 上，
+    在 AIME 2024 上达到 72.6% 的准确率——<strong>超过了 OpenAI o1-mini 的 63.6%</strong>。
+    甚至蒸馏到 14B 模型也能达到 69.7%，超过 QwQ-32B-Preview。
+    这说明<strong>高质量推理数据的蒸馏效率远超预期</strong>——小模型 + 好数据 > 大模型 + 差数据。
+  </div>
+</div>
+
+<!-- ===== 四、CoT 推理关键技术 ===== -->
+<div class="section">
+  <h2>四、CoT 推理的关键技术</h2>
+
+  <h3>4.1 思考 Token 的格式设计</h3>
+  <p>
+    推理模型需要区分"思考过程"和"最终回答"。主流做法是使用<strong>特殊标记</strong>包裹思考内容：
+  </p>
+  <div class="highlight">
+    <strong>典型的推理输出格式：</strong>
+    <pre style="margin-top:8px;font-size:0.88em;line-height:1.6;white-space:pre-wrap;font-family:monospace;color:#333;">
+&lt;think&gt;
+让我分析这个问题。需要求 1 到 100 中所有 3 的倍数之和。
+首先，3 的倍数有：3, 6, 9, ..., 99
+这是一个等差数列，首项 a₁=3，末项 aₙ=99，公差 d=3
+项数 n = (99-3)/3 + 1 = 33
+求和 S = n(a₁+aₙ)/2 = 33×(3+99)/2 = 33×51 = 1683
+让我验证一下：33×51 = 33×50 + 33 = 1650 + 33 = 1683 ✓
+&lt;/think&gt;
+
+1 到 100 中所有 3 的倍数之和为 **1683**。</pre>
+  </div>
+
+  <table>
+    <tr><th>模型</th><th>思考标记</th><th>思考可见性</th><th>最大思考长度</th></tr>
+    <tr><td><strong>DeepSeek-R1</strong></td><td><code>&lt;think&gt;...&lt;/think&gt;</code></td><td>完全可见（开源）</td><td>~32K tokens</td></tr>
+    <tr><td><strong>OpenAI o1/o3</strong></td><td>内部 reasoning tokens</td><td>仅显示摘要（隐藏原文）</td><td>~100K tokens</td></tr>
+    <tr><td><strong>Claude (extended thinking)</strong></td><td><code>thinking</code> block</td><td>API 可见，前端显示摘要</td><td>~128K tokens</td></tr>
+    <tr><td><strong>Qwen-QwQ</strong></td><td><code>&lt;think&gt;...&lt;/think&gt;</code></td><td>完全可见</td><td>~32K tokens</td></tr>
+    <tr><td><strong>Gemini 2.5 (thinking)</strong></td><td>内部 thinking tokens</td><td>API 可见</td><td>~64K tokens</td></tr>
+  </table>
+
+  <h3>4.2 关键推理技巧</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>自我验证</h4>
+      <p>"让我检查一下这个结果..."——模型在推理过程中回头验证中间步骤，减少累积错误。这是 RL 训练中自发涌现的能力。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>回溯与重试</h4>
+      <p>"这条路走不通，换个方法..."——模型主动放弃错误的推理路径，尝试新的解法。类似 Tree of Thoughts 的内化版本。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>问题分解</h4>
+      <p>"这个问题可以分为三个子问题..."——将复杂问题分解为可独立解决的子问题，逐个攻克后合并答案。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>类比推理</h4>
+      <p>"这类似于之前遇到的 XX 问题..."——利用训练中学到的模式迁移到新问题，减少从零推理的难度。</p>
+    </div>
+  </div>
+
+  <h3>4.3 Test-Time Compute Scaling</h3>
+  <p>
+    推理模型的一个核心特性是<strong>思考时间越长，性能越好</strong>——直到边际收益递减。
+    这构成了一个新的 Scaling 维度：不是增大模型参数，而是增加推理时的计算量。
+  </p>
+  <div class="formula">
+    Performance ∝ log(Test-Time Compute)
+    <br><br>
+    <span style="font-size:0.85em;">思考 token 数从 1K → 10K → 100K，性能持续提升但边际递减</span>
+  </div>
+</div>
+
+<!-- ===== 五、主流 CoT 模型方案 ===== -->
+<div class="section">
+  <h2>五、主流 CoT 模型实现方案</h2>
+
+  <h3>5.1 全景对比</h3>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 340" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar5" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">主流推理模型技术路线对比</text>
+
+      <!-- 表头 -->
+      <rect x="20" y="42" width="780" height="28" rx="4" fill="#1a1a2e"/>
+      <text x="70" y="60" text-anchor="middle" fill="white" font-size="9" font-weight="700">模型</text>
+      <text x="180" y="60" text-anchor="middle" fill="white" font-size="9" font-weight="700">训练方法</text>
+      <text x="310" y="60" text-anchor="middle" fill="white" font-size="9" font-weight="700">基座模型</text>
+      <text x="430" y="60" text-anchor="middle" fill="white" font-size="9" font-weight="700">开源</text>
+      <text x="530" y="60" text-anchor="middle" fill="white" font-size="9" font-weight="700">AIME 2024</text>
+      <text x="640" y="60" text-anchor="middle" fill="white" font-size="9" font-weight="700">MATH-500</text>
+      <text x="740" y="60" text-anchor="middle" fill="white" font-size="9" font-weight="700">核心特点</text>
+
+      <!-- o1 -->
+      <rect x="20" y="73" width="780" height="36" fill="#f0f4ff"/>
+      <text x="70" y="94" text-anchor="middle" font-size="9" fill="#333" font-weight="600">OpenAI o1</text>
+      <text x="180" y="94" text-anchor="middle" font-size="9" fill="#555">大规模 RL</text>
+      <text x="310" y="94" text-anchor="middle" font-size="9" fill="#555">GPT-4 级别</text>
+      <text x="430" y="94" text-anchor="middle" font-size="9" fill="#e74c3c">否</text>
+      <text x="530" y="94" text-anchor="middle" font-size="9" fill="#555">74.4%</text>
+      <text x="640" y="94" text-anchor="middle" font-size="9" fill="#555">96.4%</text>
+      <text x="740" y="94" text-anchor="middle" font-size="8" fill="#555">首个商用推理模型</text>
+
+      <!-- o3 -->
+      <rect x="20" y="112" width="780" height="36" fill="white"/>
+      <text x="70" y="133" text-anchor="middle" font-size="9" fill="#333" font-weight="600">OpenAI o3</text>
+      <text x="180" y="133" text-anchor="middle" font-size="9" fill="#555">大规模 RL</text>
+      <text x="310" y="133" text-anchor="middle" font-size="9" fill="#555">未公开</text>
+      <text x="430" y="133" text-anchor="middle" font-size="9" fill="#e74c3c">否</text>
+      <text x="530" y="133" text-anchor="middle" font-size="9" fill="#555">~91.6%</text>
+      <text x="640" y="133" text-anchor="middle" font-size="9" fill="#555">—</text>
+      <text x="740" y="133" text-anchor="middle" font-size="8" fill="#555">支持工具调用+推理</text>
+
+      <!-- R1 -->
+      <rect x="20" y="151" width="780" height="36" fill="#f0f4ff"/>
+      <text x="70" y="172" text-anchor="middle" font-size="9" fill="#333" font-weight="600">DeepSeek-R1</text>
+      <text x="180" y="172" text-anchor="middle" font-size="9" fill="#555">冷启动+GRPO RL</text>
+      <text x="310" y="172" text-anchor="middle" font-size="9" fill="#555">DeepSeek-V3 671B</text>
+      <text x="430" y="172" text-anchor="middle" font-size="9" fill="#2a9d8f" font-weight="600">是</text>
+      <text x="530" y="172" text-anchor="middle" font-size="9" fill="#555">79.8%</text>
+      <text x="640" y="172" text-anchor="middle" font-size="9" fill="#555">97.3%</text>
+      <text x="740" y="172" text-anchor="middle" font-size="8" fill="#555">开源 + 蒸馏生态</text>
+
+      <!-- R1 Distill -->
+      <rect x="20" y="190" width="780" height="36" fill="white"/>
+      <text x="70" y="211" text-anchor="middle" font-size="9" fill="#333" font-weight="600">R1-Distill-32B</text>
+      <text x="180" y="211" text-anchor="middle" font-size="9" fill="#555">蒸馏 SFT</text>
+      <text x="310" y="211" text-anchor="middle" font-size="9" fill="#555">Qwen-2.5-32B</text>
+      <text x="430" y="211" text-anchor="middle" font-size="9" fill="#2a9d8f" font-weight="600">是</text>
+      <text x="530" y="211" text-anchor="middle" font-size="9" fill="#555">72.6%</text>
+      <text x="640" y="211" text-anchor="middle" font-size="9" fill="#555">94.3%</text>
+      <text x="740" y="211" text-anchor="middle" font-size="8" fill="#555">蒸馏超越 o1-mini</text>
+
+      <!-- QwQ -->
+      <rect x="20" y="229" width="780" height="36" fill="#f0f4ff"/>
+      <text x="70" y="250" text-anchor="middle" font-size="9" fill="#333" font-weight="600">Qwen-QwQ-32B</text>
+      <text x="180" y="250" text-anchor="middle" font-size="9" fill="#555">SFT + RL</text>
+      <text x="310" y="250" text-anchor="middle" font-size="9" fill="#555">Qwen-2.5-32B</text>
+      <text x="430" y="250" text-anchor="middle" font-size="9" fill="#2a9d8f" font-weight="600">是</text>
+      <text x="530" y="250" text-anchor="middle" font-size="9" fill="#555">—</text>
+      <text x="640" y="250" text-anchor="middle" font-size="9" fill="#555">90.6%</text>
+      <text x="740" y="250" text-anchor="middle" font-size="8" fill="#555">中文推理最强开源</text>
+
+      <!-- Claude -->
+      <rect x="20" y="268" width="780" height="36" fill="white"/>
+      <text x="70" y="289" text-anchor="middle" font-size="9" fill="#333" font-weight="600">Claude Opus 4</text>
+      <text x="180" y="289" text-anchor="middle" font-size="9" fill="#555">未公开</text>
+      <text x="310" y="289" text-anchor="middle" font-size="9" fill="#555">未公开</text>
+      <text x="430" y="289" text-anchor="middle" font-size="9" fill="#e74c3c">否</text>
+      <text x="530" y="289" text-anchor="middle" font-size="9" fill="#555">—</text>
+      <text x="640" y="289" text-anchor="middle" font-size="9" fill="#555">—</text>
+      <text x="740" y="289" text-anchor="middle" font-size="8" fill="#555">128K思考+Agent</text>
+
+      <!-- Gemini -->
+      <rect x="20" y="307" width="780" height="28" fill="#f0f4ff"/>
+      <text x="70" y="325" text-anchor="middle" font-size="9" fill="#333" font-weight="600">Gemini 2.5 Pro</text>
+      <text x="180" y="325" text-anchor="middle" font-size="9" fill="#555">未公开</text>
+      <text x="310" y="325" text-anchor="middle" font-size="9" fill="#555">Gemini 架构</text>
+      <text x="430" y="325" text-anchor="middle" font-size="9" fill="#e74c3c">否</text>
+      <text x="530" y="325" text-anchor="middle" font-size="9" fill="#555">—</text>
+      <text x="640" y="325" text-anchor="middle" font-size="9" fill="#555">—</text>
+      <text x="740" y="325" text-anchor="middle" font-size="8" fill="#555">原生thinking模式</text>
+    </svg>
+    <div class="caption">图 6：主流推理模型技术路线对比。DeepSeek-R1 是唯一完全开源的推理模型，其蒸馏系列在同参数量下表现最优。</div>
+  </div>
+
+  <h3>5.2 DeepSeek-R1 技术深度剖析</h3>
+  <div class="highlight">
+    <strong>DeepSeek-R1 的四阶段训练流水线：</strong>
+    <ol>
+      <li><strong>冷启动 SFT：</strong>用数千条带 <code>&lt;think&gt;</code> 标记的长 CoT 数据微调 DeepSeek-V3 Base，教会模型输出结构化推理格式</li>
+      <li><strong>推理 RL（面向推理）：</strong>在数学和代码任务上进行大规模 GRPO 训练。奖励信号 = 答案正确性 + 格式规范性。训练过程中模型推理链逐步变长（从 ~1K 到 ~10K+ tokens）</li>
+      <li><strong>拒绝采样 + SFT：</strong>用 RL 模型对新问题集生成大量推理轨迹，筛选正确的做 SFT。同时混入通用对话和写作数据（~20 万条），保持通用能力</li>
+      <li><strong>二轮 RL（全场景对齐）：</strong>在推理任务上继续用规则奖励，在通用任务上使用人类偏好奖励。同时施加安全和格式约束</li>
+    </ol>
+  </div>
+
+  <h3>5.3 OpenAI o1/o3 系列</h3>
+  <p>
+    OpenAI 的推理模型系列（o1 → o1-pro → o3 → o4-mini）是商业推理模型的标杆。
+    虽然训练细节高度保密，但从公开信息可以推断：
+  </p>
+  <ul>
+    <li><strong>训练方法：</strong>大规模 RL + 过程奖励模型（PRM），推测使用了比 R1 更大规模的 RL 训练</li>
+    <li><strong>过程奖励模型：</strong>不仅奖励最终答案正确，还对推理过程的每一步进行评分（Process Reward Model）</li>
+    <li><strong>推理 token 隐藏：</strong>出于安全和商业考虑，o1 的思考过程不对用户展示原文，只显示摘要</li>
+    <li><strong>工具调用 + 推理：</strong>o3 开始支持在推理过程中调用工具（搜索、代码执行），将 CoT 与 Agent 结合</li>
+    <li><strong>自适应计算：</strong>o3 支持 low/medium/high 三种思考级别，让用户在速度和质量间权衡</li>
+  </ul>
+</div>
+
+<!-- ===== 六、部署与应用 ===== -->
+<div class="section">
+  <h2>六、CoT 模型的部署与应用</h2>
+
+  <h3>6.1 部署的核心挑战</h3>
+  <table>
+    <tr><th>挑战</th><th>原因</th><th>解决方案</th></tr>
+    <tr>
+      <td><strong>推理延迟高</strong></td>
+      <td>思考过程可能生成数千~数万 token</td>
+      <td>流式输出思考过程；支持 thinking budget 限制；使用更快的小蒸馏模型</td>
+    </tr>
+    <tr>
+      <td><strong>推理成本高</strong></td>
+      <td>Token 用量可能是普通模型的 5~50 倍</td>
+      <td>思考 token 定价低于输出 token；按需开启思考模式；缓存常见推理模式</td>
+    </tr>
+    <tr>
+      <td><strong>KV Cache 显存大</strong></td>
+      <td>长推理链导致 KV Cache 显存消耗激增</td>
+      <td>GQA / MLA 压缩 KV Cache；分页 Attention（PagedAttention）；量化 KV Cache</td>
+    </tr>
+    <tr>
+      <td><strong>思考内容审核</strong></td>
+      <td>思考过程可能包含不当内容</td>
+      <td>输出过滤器；隐藏思考过程原文（如 o1）；安全对齐训练</td>
+    </tr>
+    <tr>
+      <td><strong>何时启用 CoT</strong></td>
+      <td>简单问题不需要长链推理</td>
+      <td>路由模型判断难度；用户手动选择思考模式；动态 thinking budget</td>
+    </tr>
+  </table>
+
+  <h3>6.2 部署架构</h3>
+  <div class="figure">
+    <svg viewBox="0 0 820 260" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar6" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">CoT 推理模型部署架构</text>
+
+      <!-- 用户请求 -->
+      <rect x="20" y="50" width="130" height="55" rx="8" fill="#1a1a2e"/>
+      <text x="85" y="75" text-anchor="middle" fill="white" font-size="10" font-weight="700">用户请求</text>
+      <text x="85" y="92" text-anchor="middle" fill="white" font-size="8">"证明 √2 是无理数"</text>
+      <line x1="152" y1="77" x2="175" y2="77" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar6)"/>
+
+      <!-- 路由层 -->
+      <rect x="180" y="50" width="120" height="55" rx="8" fill="#f0a500" opacity="0.85"/>
+      <text x="240" y="72" text-anchor="middle" fill="white" font-size="10" font-weight="700">智能路由</text>
+      <text x="240" y="88" text-anchor="middle" fill="white" font-size="8">判断是否需要深度</text>
+      <text x="240" y="100" text-anchor="middle" fill="white" font-size="8">推理 → 选择模型</text>
+
+      <line x1="302" y1="60" x2="350" y2="50" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar6)"/>
+      <line x1="302" y1="90" x2="350" y2="100" stroke="#2a9d8f" stroke-width="1.5" marker-end="url(#ar6)"/>
+
+      <!-- 推理模型 -->
+      <rect x="355" y="30" width="200" height="50" rx="8" fill="#667eea" opacity="0.85"/>
+      <text x="455" y="52" text-anchor="middle" fill="white" font-size="10" font-weight="700">推理模型（R1/o1）</text>
+      <text x="455" y="70" text-anchor="middle" fill="white" font-size="8">需要深度推理的复杂问题</text>
+
+      <!-- 普通模型 -->
+      <rect x="355" y="90" width="200" height="50" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="455" y="112" text-anchor="middle" fill="white" font-size="10" font-weight="700">快速模型（V3/Sonnet）</text>
+      <text x="455" y="130" text-anchor="middle" fill="white" font-size="8">简单问答 → 直接回答</text>
+
+      <line x1="557" y1="55" x2="595" y2="70" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar6)"/>
+      <line x1="557" y1="115" x2="595" y2="100" stroke="#2a9d8f" stroke-width="1.5" marker-end="url(#ar6)"/>
+
+      <!-- 流式输出 -->
+      <rect x="600" y="55" width="190" height="65" rx="8" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="695" y="78" text-anchor="middle" font-size="10" font-weight="700" fill="#0f3460">流式输出</text>
+      <text x="695" y="97" text-anchor="middle" font-size="9" fill="#555">思考过程 → 实时展示/隐藏</text>
+      <text x="695" y="113" text-anchor="middle" font-size="9" fill="#555">最终答案 → 格式化输出</text>
+
+      <!-- 基础设施说明 -->
+      <rect x="40" y="155" width="740" height="85" rx="8" fill="#f8f9ff" stroke="#e8eaf0"/>
+      <text x="60" y="178" font-size="11" font-weight="700" fill="#0f3460">部署基础设施要点：</text>
+      <text x="60" y="200" font-size="10" fill="#555">· <tspan font-weight="600">推理框架：</tspan>vLLM + PagedAttention（支持长序列高效推理）、SGLang、TensorRT-LLM</text>
+      <text x="60" y="218" font-size="10" fill="#555">· <tspan font-weight="600">量化部署：</tspan>FP8 / INT4 量化降低显存和成本，R1-Distill-7B 量化后可单卡部署</text>
+      <text x="60" y="236" font-size="10" fill="#555">· <tspan font-weight="600">Speculative Decoding：</tspan>用小模型预测 + 大模型验证，加速推理 token 生成速度</text>
+    </svg>
+    <div class="caption">图 7：CoT 推理模型部署架构。智能路由根据问题复杂度分配模型，推理模型用于深度推理，快速模型处理简单问题。</div>
+  </div>
+
+  <h3>6.3 应用场景与最佳实践</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>适合用 CoT 的场景</h4>
+      <ul>
+        <li>数学证明与计算</li>
+        <li>复杂编程与算法设计</li>
+        <li>逻辑推理与分析</li>
+        <li>科学问题求解</li>
+        <li>复杂规划与决策</li>
+        <li>多步骤问题分解</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>不适合用 CoT 的场景</h4>
+      <ul>
+        <li>简单问答（知识检索）</li>
+        <li>翻译和改写</li>
+        <li>创意写作</li>
+        <li>闲聊对话</li>
+        <li>延迟敏感的实时应用</li>
+        <li>成本敏感的批量处理</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>6.4 Thinking Budget：推理成本控制</h3>
+  <p>
+    推理模型的成本远高于普通模型。<strong>Thinking Budget（思考预算）</strong>是控制成本的核心机制——
+    限制模型生成的最大思考 token 数量。
+  </p>
+  <table>
+    <tr><th>Thinking Budget</th><th>适用场景</th><th>延迟</th><th>成本</th><th>效果</th></tr>
+    <tr><td><strong>关闭思考</strong></td><td>简单问答、翻译</td><td>~1s</td><td>1×</td><td>与普通模型相同</td></tr>
+    <tr><td><strong>Low（~1K tokens）</strong></td><td>中等难度推理</td><td>~5s</td><td>3~5×</td><td>显著提升</td></tr>
+    <tr><td><strong>Medium（~10K tokens）</strong></td><td>复杂数学/代码</td><td>~30s</td><td>10~20×</td><td>大幅提升</td></tr>
+    <tr><td><strong>High（~100K tokens）</strong></td><td>竞赛级难题</td><td>~5min</td><td>50~100×</td><td>接近模型上限</td></tr>
+  </table>
+</div>
+
+<!-- ===== 七、CoT 的局限与挑战 ===== -->
+<div class="section">
+  <h2>七、CoT 的局限与挑战</h2>
+
+  <h3>7.1 已知问题</h3>
+  <table>
+    <tr><th>问题</th><th>表现</th><th>原因</th><th>缓解措施</th></tr>
+    <tr>
+      <td><strong>过度推理</strong></td>
+      <td>简单问题也生成冗长思考链</td>
+      <td>RL 训练激励更长推理，模型难以判断何时"够了"</td>
+      <td>Thinking Budget；路由模型；长短 CoT 联合训练（Kimi k1.5）</td>
+    </tr>
+    <tr>
+      <td><strong>推理幻觉</strong></td>
+      <td>推理过程看似合理但前提错误</td>
+      <td>模型"编造"不存在的定理或性质用于推理</td>
+      <td>自我验证训练；工具辅助验证（计算器/代码执行）</td>
+    </tr>
+    <tr>
+      <td><strong>语言混杂</strong></td>
+      <td>思考过程中中英文混杂</td>
+      <td>训练数据中英文推理数据更多</td>
+      <td>语言一致性奖励；更多非英语 CoT 数据</td>
+    </tr>
+    <tr>
+      <td><strong>推理循环</strong></td>
+      <td>在错误路径上反复尝试，不收敛</td>
+      <td>缺乏有效的"放弃"策略</td>
+      <td>最大步数限制；反思机制；回溯训练</td>
+    </tr>
+    <tr>
+      <td><strong>安全隐患</strong></td>
+      <td>思考过程中可能出现不安全内容</td>
+      <td>思考空间比直接回答更难约束</td>
+      <td>安全 RL 对齐；思考内容过滤；隐藏原始思考</td>
+    </tr>
+  </table>
+
+  <h3>7.2 "思考是否真实"的争论</h3>
+  <div class="warning">
+    <strong>Faithfulness 问题：</strong>模型的思考过程是否真正反映了其内部计算？
+    <ul>
+      <li>研究表明，CoT 的思考过程与模型的实际推理路径<strong>可能不完全一致</strong>——模型可能在思考中"事后合理化"而非真正"推理"</li>
+      <li>隐藏思考过程（如 o1）使外部审查更加困难，引发 AI 安全领域的关注</li>
+      <li>目前没有可靠方法完全验证 CoT 的"忠实性"（faithfulness）</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===== 八、发展趋势 ===== -->
+<div class="section">
+  <h2>八、发展趋势与未来</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>推理 + Agent 融合</h4>
+      <p>o3/Claude Opus 4 已开始将 CoT 与工具调用结合——模型在推理过程中可以调用搜索、代码执行等工具辅助思考，形成"思考中行动"的新范式。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>多模态推理</h4>
+      <p>推理能力从纯文本扩展到图像（几何题看图推理）、视频（理解动态场景）、音频等多模态输入，形成统一的多模态推理模型。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>高效推理</h4>
+      <p>减少推理冗余：CoT 压缩（只保留关键步骤）、隐式推理（在隐层中完成推理而非生成显式 token）、推测解码加速。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>自适应计算深度</h4>
+      <p>模型自动判断问题难度，动态调整思考长度——简单题秒答，难题深思熟虑。消除"用牛刀杀鸡"的计算浪费。</p>
+    </div>
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 170" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar8" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">CoT 技术演进路线</text>
+
+      <rect x="20" y="50" width="130" height="50" rx="6" fill="#667eea" opacity="0.7"/>
+      <text x="85" y="72" text-anchor="middle" fill="white" font-size="9" font-weight="700">2022: Prompt CoT</text>
+      <text x="85" y="88" text-anchor="middle" fill="white" font-size="8">"Let's think..."</text>
+      <line x1="152" y1="75" x2="168" y2="75" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar8)"/>
+
+      <rect x="172" y="50" width="130" height="50" rx="6" fill="#4a7dff" opacity="0.8"/>
+      <text x="237" y="72" text-anchor="middle" fill="white" font-size="9" font-weight="700">2024: RL 训练 CoT</text>
+      <text x="237" y="88" text-anchor="middle" fill="white" font-size="8">o1 / R1</text>
+      <line x1="304" y1="75" x2="320" y2="75" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar8)"/>
+
+      <rect x="324" y="50" width="130" height="50" rx="6" fill="#2a9d8f" opacity="0.85"/>
+      <text x="389" y="72" text-anchor="middle" fill="white" font-size="9" font-weight="700">2025: CoT + Agent</text>
+      <text x="389" y="88" text-anchor="middle" fill="white" font-size="8">o3 / Claude Opus 4</text>
+      <line x1="456" y1="75" x2="472" y2="75" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar8)"/>
+
+      <rect x="476" y="50" width="130" height="50" rx="6" fill="#f0a500" opacity="0.85"/>
+      <text x="541" y="72" text-anchor="middle" fill="white" font-size="9" font-weight="700">2025+: 高效推理</text>
+      <text x="541" y="88" text-anchor="middle" fill="white" font-size="8">隐式 CoT / 压缩</text>
+      <line x1="608" y1="75" x2="624" y2="75" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar8)"/>
+
+      <rect x="628" y="50" width="170" height="50" rx="6" fill="#e74c3c" opacity="0.85"/>
+      <text x="713" y="72" text-anchor="middle" fill="white" font-size="9" font-weight="700">未来: 通用深度推理</text>
+      <text x="713" y="88" text-anchor="middle" fill="white" font-size="8">自适应 · 多模态 · 可信</text>
+
+      <rect x="60" y="120" width="700" height="35" rx="6" fill="#f8f9ff" stroke="#e8eaf0"/>
+      <text x="410" y="142" text-anchor="middle" font-size="10" fill="#555">核心趋势：从 Prompt 触发 → 模型原生能力 → 与 Agent 融合 → 高效化 → 通用化</text>
+    </svg>
+    <div class="caption">图 8：CoT 技术演进路线。从最初的 Prompt 工程到 RL 训练的原生能力，再到与 Agent 融合和高效推理，CoT 正在成为 LLM 的标配能力。</div>
+  </div>
+</div>
+
+<!-- ===== 总结 ===== -->
+<div class="section">
+  <h2>总结</h2>
+  <p>Chain-of-Thought 推理代表了大模型从"快速直觉"到"深度思考"的范式跃迁。本文系统介绍了 CoT 的完整体系：</p>
+  <ol>
+    <li><strong>推理原理：</strong>CoT 通过生成中间推理步骤将有效计算深度从 L 扩展到 L×n，本质是 Test-Time Compute Scaling</li>
+    <li><strong>训练方法：</strong>CoT RL（GRPO）是核心方法——用可验证任务的正确性作为奖励，让推理能力从 RL 中自发涌现</li>
+    <li><strong>训练数据：</strong>冷启动靠少量精标数据，RL 靠大量可验证题库，蒸馏靠强模型的推理输出——高质量蒸馏数据的效率远超预期</li>
+    <li><strong>关键技术：</strong>自我验证、回溯重试、问题分解等推理技巧从 RL 训练中自然涌现</li>
+    <li><strong>主流方案：</strong>OpenAI o1/o3 是商业标杆，DeepSeek-R1 是开源标杆，蒸馏系列是性价比之选</li>
+    <li><strong>部署应用：</strong>智能路由 + Thinking Budget 是成本控制的关键；推理模型适用于复杂推理任务，不适合简单问答</li>
+  </ol>
+
+  <div class="success">
+    <strong>CoT 的深层意义：</strong>CoT 揭示了一个深刻的发现——
+    <strong>推理能力可以从简单的奖励信号（答对/答错）中自发涌现</strong>，
+    无需人工设计推理模板或标注推理过程。这意味着通向更强通用智能的路径可能比预想的更简单：
+    给模型足够的计算量和正确的奖励信号，让它自己学会思考。
+  </div>
+</div>
+
+<div class="footer">
+  大模型 Chain-of-Thought 推理原理与实现详解 · 内容仅供学习参考 · 技术细节持续演进中
+</div>
+</div>
+</body>
+</html>

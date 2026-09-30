@@ -1,0 +1,2163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大模型 Agent 原理、工具调用与主流实现方案详解</title>
+<style>
+  :root { --primary:#1a1a2e; --accent:#0f3460; --highlight-bg:#f0f4ff; --highlight-border:#4a7dff; --text:#222; --text-light:#555; --border:#e0e0e0; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif; color:var(--text); line-height:1.8; background:#fafafa; }
+  .container { max-width:920px; margin:0 auto; padding:20px; }
+  .cover { text-align:center; padding:70px 20px 50px; background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%); color:white; border-radius:12px; margin-bottom:40px; }
+  .cover h1 { font-size:2.1em; margin-bottom:12px; font-weight:700; letter-spacing:1px; }
+  .cover .subtitle { font-size:1.05em; color:#aab; margin-bottom:24px; }
+  .cover .tags { display:flex; justify-content:center; gap:12px; flex-wrap:wrap; }
+  .cover .tag { background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.2); border-radius:20px; padding:6px 18px; font-size:0.9em; color:#dde; }
+  .section { background:white; border-radius:10px; padding:36px 40px; margin-bottom:24px; box-shadow:0 1px 4px rgba(0,0,0,0.06); border:1px solid var(--border); }
+  h2 { font-size:1.5em; color:var(--primary); margin-bottom:6px; padding-bottom:10px; border-bottom:2px solid var(--highlight-border); }
+  h3 { font-size:1.15em; color:var(--accent); margin:22px 0 10px; }
+  h4 { font-size:1.0em; color:#333; margin:14px 0 6px; }
+  p { margin:12px 0; text-align:justify; }
+  .highlight { background:var(--highlight-bg); border-left:4px solid var(--highlight-border); padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .highlight strong { color:var(--accent); }
+  .warning { background:#fff8f0; border-left:4px solid #f0a500; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .success { background:#f0fff4; border-left:4px solid #2a9d8f; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+  ul,ol { padding-left:24px; margin:10px 0; }
+  li { margin:6px 0; }
+  .formula { text-align:center; padding:18px 20px; margin:18px 0; background:#f8f9ff; border-radius:8px; border:1px solid #e8eaf0; font-size:1.12em; font-family:"Times New Roman","STIX",serif; letter-spacing:0.5px; overflow-x:auto; }
+  .figure { text-align:center; margin:24px 0; padding:16px; background:#fafafa; border-radius:8px; border:1px solid #eee; }
+  .figure img { max-width:100%; height:auto; border-radius:4px; }
+  .figure .caption { font-size:0.88em; color:#666; margin-top:10px; font-style:italic; }
+  table { width:100%; border-collapse:collapse; margin:16px 0; font-size:0.92em; }
+  th,td { padding:10px 14px; text-align:left; border-bottom:1px solid #eee; }
+  th { background:var(--primary); color:white; font-weight:600; }
+  tr:hover { background:#f8f9ff; }
+  td code { background:#f0f0f5; padding:2px 6px; border-radius:3px; font-size:0.9em; }
+  .card-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0; }
+  .card { background:linear-gradient(135deg,#f8f9ff,#f0f4ff); border:1px solid #d8e0f0; border-radius:10px; padding:20px 24px; }
+  .card .num { display:inline-block; background:var(--highlight-border); color:white; width:28px; height:28px; border-radius:50%; text-align:center; line-height:28px; font-size:0.85em; font-weight:700; margin-right:8px; }
+  .card h4 { display:inline; color:var(--accent); font-size:1.05em; }
+  .card p { margin-top:8px; font-size:0.93em; }
+  .pros-cons { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0; }
+  .pros,.cons { padding:16px; border-radius:8px; }
+  .pros { background:#f0fff4; border:1px solid #c8e6c9; }
+  .cons { background:#fff8f0; border:1px solid #ffe0b2; }
+  .pros h4 { color:#2e7d32; margin-bottom:8px; }
+  .cons h4 { color:#e65100; margin-bottom:8px; }
+  .pros li,.cons li { font-size:0.93em; }
+  .step-flow { display:flex; align-items:center; justify-content:center; gap:8px; margin:20px 0; flex-wrap:wrap; }
+  .step-box { background:var(--highlight-bg); border:1px solid var(--highlight-border); border-radius:8px; padding:10px 16px; font-size:0.92em; font-weight:600; color:var(--accent); text-align:center; min-width:100px; }
+  .step-arrow { font-size:1.4em; color:#aaa; }
+  .footer { text-align:center; color:#999; font-size:0.85em; padding:30px 0; border-top:1px solid #eee; margin-top:20px; }
+  @media(max-width:640px) { .section{padding:24px 20px;} .cover h1{font-size:1.6em;} .pros-cons,.card-grid{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ===== 封面 ===== -->
+<div class="cover">
+  <h1>大模型 Agent 原理与实现详解</h1>
+  <div class="subtitle">从工具调用到自主决策 —— LLM 如何成为能行动的智能体</div>
+  <div class="tags">
+    <span class="tag">Agent 架构</span>
+    <span class="tag">工具调用 / Function Calling</span>
+    <span class="tag">ReAct / Plan-and-Execute</span>
+    <span class="tag">Agent 训练与微调</span>
+    <span class="tag">训练数据设计</span>
+    <span class="tag">Multi-Agent</span>
+    <span class="tag">主流实现方案</span>
+  </div>
+</div>
+
+<!-- ===== 引言 ===== -->
+<div class="section">
+  <h2>引言：从语言模型到智能体</h2>
+  <p>
+    大语言模型（LLM）本质上是一个"文本生成器"——给定输入，生成续写。
+    但人类的智能远不止于语言：我们能<strong>感知环境、制定计划、使用工具、执行动作、从反馈中学习</strong>。
+    <strong>Agent（智能体）</strong>正是让 LLM 突破"纯文本对话"的局限，使其能够自主地与外部世界交互、完成复杂任务的范式。
+  </p>
+
+  <div class="highlight">
+    <strong>Agent 的核心定义：</strong>Agent = LLM（大脑）+ 工具（手脚）+ 记忆（经验）+ 规划（策略）。
+    它不仅能"说"，还能"做"——搜索网页、执行代码、调用 API、读写文件、操控浏览器，
+    并根据执行结果动态调整后续行动。
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 320" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar0" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+        <marker id="ar0g" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2a9d8f"/></marker>
+        <marker id="ar0r" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#e74c3c"/></marker>
+      </defs>
+      <text x="410" y="24" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">LLM Agent 核心架构</text>
+
+      <!-- 中心：LLM 大脑 -->
+      <rect x="280" y="100" width="260" height="100" rx="50" fill="#667eea" opacity="0.9"/>
+      <text x="410" y="140" text-anchor="middle" fill="white" font-size="16" font-weight="700">LLM（大脑）</text>
+      <text x="410" y="165" text-anchor="middle" fill="white" font-size="10">理解、推理、决策、生成</text>
+      <text x="410" y="182" text-anchor="middle" fill="white" font-size="9">GPT-4 / Claude / Qwen / DeepSeek</text>
+
+      <!-- 工具 -->
+      <rect x="20" y="55" width="200" height="80" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="120" y="82" text-anchor="middle" fill="white" font-size="13" font-weight="700">工具（Tools）</text>
+      <text x="120" y="102" text-anchor="middle" fill="white" font-size="9">搜索 · 代码执行 · API · 数据库</text>
+      <text x="120" y="118" text-anchor="middle" fill="white" font-size="9">文件读写 · 浏览器 · 计算器</text>
+      <line x1="222" y1="95" x2="278" y2="130" stroke="#2a9d8f" stroke-width="2" marker-end="url(#ar0g)"/>
+      <line x1="278" y1="150" x2="222" y2="115" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar0)"/>
+
+      <!-- 记忆 -->
+      <rect x="600" y="55" width="200" height="80" rx="8" fill="#f0a500" opacity="0.85"/>
+      <text x="700" y="82" text-anchor="middle" fill="white" font-size="13" font-weight="700">记忆（Memory）</text>
+      <text x="700" y="102" text-anchor="middle" fill="white" font-size="9">短期：对话上下文 / Scratchpad</text>
+      <text x="700" y="118" text-anchor="middle" fill="white" font-size="9">长期：向量数据库 / 外部存储</text>
+      <line x1="598" y1="95" x2="542" y2="130" stroke="#f0a500" stroke-width="2" marker-end="url(#ar0)"/>
+      <line x1="542" y1="150" x2="598" y2="115" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar0)"/>
+
+      <!-- 规划 -->
+      <rect x="20" y="200" width="200" height="80" rx="8" fill="#9b59b6" opacity="0.85"/>
+      <text x="120" y="227" text-anchor="middle" fill="white" font-size="13" font-weight="700">规划（Planning）</text>
+      <text x="120" y="247" text-anchor="middle" fill="white" font-size="9">ReAct · Plan-and-Execute</text>
+      <text x="120" y="263" text-anchor="middle" fill="white" font-size="9">任务分解 · 反思 · 重新规划</text>
+      <line x1="222" y1="230" x2="278" y2="180" stroke="#9b59b6" stroke-width="2" marker-end="url(#ar0)"/>
+
+      <!-- 环境 -->
+      <rect x="600" y="200" width="200" height="80" rx="8" fill="#e74c3c" opacity="0.85"/>
+      <text x="700" y="227" text-anchor="middle" fill="white" font-size="13" font-weight="700">环境（Environment）</text>
+      <text x="700" y="247" text-anchor="middle" fill="white" font-size="9">用户请求 · 执行结果反馈</text>
+      <text x="700" y="263" text-anchor="middle" fill="white" font-size="9">错误信息 · 外部系统状态</text>
+      <line x1="598" y1="230" x2="542" y2="180" stroke="#e74c3c" stroke-width="2" marker-end="url(#ar0r)"/>
+
+      <!-- 底部标注 -->
+      <text x="350" y="55" font-size="9" fill="#4a7dff">调用工具</text>
+      <text x="350" y="72" font-size="9" fill="#2a9d8f">返回结果</text>
+      <text x="545" y="55" font-size="9" fill="#f0a500">读取记忆</text>
+      <text x="545" y="72" font-size="9" fill="#4a7dff">存储记忆</text>
+      <text x="155" y="195" font-size="9" fill="#9b59b6">制定/调整计划</text>
+      <text x="570" y="195" font-size="9" fill="#e74c3c">观察反馈</text>
+
+      <text x="410" y="312" text-anchor="middle" font-size="10" fill="#888">Agent 通过"感知→思考→行动→观察"的循环不断迭代，直到完成任务或达到终止条件</text>
+    </svg>
+    <div class="caption">图 1：LLM Agent 核心架构。以 LLM 为中心大脑，连接工具、记忆、规划和环境四大模块，形成感知-思考-行动的闭环。</div>
+  </div>
+
+  <p>与传统的 LLM 对话相比，Agent 范式带来了质的飞跃：</p>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>Agent 能做到的</h4>
+      <ul>
+        <li>自主搜索信息并整合多源知识</li>
+        <li>编写并执行代码解决计算问题</li>
+        <li>调用外部 API 完成真实操作</li>
+        <li>多步骤推理与自我纠错</li>
+        <li>持久记忆跨会话的上下文</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>传统对话 LLM 的局限</h4>
+      <ul>
+        <li>知识冻结在训练截止日</li>
+        <li>无法执行实际操作</li>
+        <li>无法验证自己的回答</li>
+        <li>上下文窗口有限</li>
+        <li>易产生幻觉且无法自查</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 一、Agent 核心执行原理 ===== -->
+<div class="section">
+  <h2>一、Agent 核心执行原理</h2>
+
+  <h3>1.1 Agent 执行循环：感知-思考-行动-观察</h3>
+  <p>
+    所有 Agent 的核心都是一个<strong>迭代执行循环</strong>：接收输入（用户请求或环境反馈），
+    LLM 进行推理和决策，选择一个动作（调用工具或直接回答），
+    观察执行结果，再决定下一步。这个循环持续到任务完成。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 360" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+        <marker id="ar1g" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2a9d8f"/></marker>
+        <marker id="ar1r" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#e74c3c"/></marker>
+      </defs>
+      <text x="410" y="24" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">Agent 执行循环（Agent Loop）</text>
+
+      <!-- 用户输入 -->
+      <rect x="320" y="40" width="180" height="45" rx="8" fill="#1a1a2e"/>
+      <text x="410" y="68" text-anchor="middle" fill="white" font-size="12" font-weight="700">用户请求 (Task)</text>
+      <line x1="410" y1="87" x2="410" y2="107" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar1)"/>
+
+      <!-- Step 1: 思考 -->
+      <rect x="280" y="110" width="260" height="55" rx="8" fill="#667eea" opacity="0.9"/>
+      <text x="410" y="135" text-anchor="middle" fill="white" font-size="12" font-weight="700">Step 1: 思考（Thought）</text>
+      <text x="410" y="153" text-anchor="middle" fill="white" font-size="9">LLM 分析当前状态，决定下一步行动</text>
+
+      <!-- 分支判断 -->
+      <polygon points="410,175 460,205 410,235 360,205" fill="#f0a500" opacity="0.85"/>
+      <text x="410" y="209" text-anchor="middle" fill="white" font-size="9" font-weight="600">需要工具？</text>
+
+      <!-- 是 → 行动 -->
+      <text x="475" y="200" font-size="10" fill="#2a9d8f" font-weight="600">是</text>
+      <line x1="462" y1="205" x2="530" y2="205" stroke="#2a9d8f" stroke-width="2" marker-end="url(#ar1g)"/>
+
+      <rect x="535" y="180" width="240" height="50" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="655" y="202" text-anchor="middle" fill="white" font-size="12" font-weight="700">Step 2: 行动（Action）</text>
+      <text x="655" y="220" text-anchor="middle" fill="white" font-size="9">调用工具：search("LLM Agent")</text>
+
+      <!-- 观察 -->
+      <line x1="655" y1="232" x2="655" y2="262" stroke="#e74c3c" stroke-width="2" marker-end="url(#ar1r)"/>
+
+      <rect x="535" y="265" width="240" height="50" rx="8" fill="#e74c3c" opacity="0.85"/>
+      <text x="655" y="287" text-anchor="middle" fill="white" font-size="12" font-weight="700">Step 3: 观察（Observation）</text>
+      <text x="655" y="305" text-anchor="middle" fill="white" font-size="9">工具返回结果 → 加入上下文</text>
+
+      <!-- 循环回去 -->
+      <line x1="533" y1="290" x2="410" y2="290" stroke="#4a7dff" stroke-width="2" stroke-dasharray="6 3"/>
+      <line x1="410" y1="290" x2="410" y2="168" stroke="#4a7dff" stroke-width="2" stroke-dasharray="6 3" marker-end="url(#ar1)"/>
+      <text x="450" y="283" font-size="9" fill="#4a7dff" font-weight="600">继续循环</text>
+
+      <!-- 否 → 最终回答 -->
+      <text x="340" y="240" font-size="10" fill="#9b59b6" font-weight="600">否</text>
+      <line x1="410" y1="237" x2="410" y2="267" stroke="#9b59b6" stroke-width="2"/>
+
+      <rect x="280" y="270" width="180" height="45" rx="8" fill="#9b59b6" opacity="0.85"/>
+      <text x="370" y="298" text-anchor="middle" fill="white" font-size="12" font-weight="700">最终回答</text>
+
+      <!-- 循环次数标注 -->
+      <rect x="30" y="160" width="200" height="80" rx="6" fill="#f8f9ff" stroke="#e8eaf0"/>
+      <text x="50" y="183" font-size="10" font-weight="700" fill="#0f3460">典型循环次数：</text>
+      <text x="50" y="200" font-size="9" fill="#555">简单查询：1~3 次</text>
+      <text x="50" y="216" font-size="9" fill="#555">复杂任务：5~20 次</text>
+      <text x="50" y="232" font-size="9" fill="#555">编程任务：10~50+ 次</text>
+
+      <text x="410" y="350" text-anchor="middle" font-size="10" fill="#888">每次循环中，LLM 都能看到完整的历史（思考 + 行动 + 观察），据此做出下一步决策</text>
+    </svg>
+    <div class="caption">图 2：Agent 执行循环。LLM 在每一轮中进行思考、决定行动、观察结果，不断迭代直到任务完成或判断无需继续使用工具。</div>
+  </div>
+
+  <h3>1.2 核心推理范式：ReAct</h3>
+  <p>
+    <strong>ReAct（Reasoning + Acting）</strong>（Yao et al., 2022）是 Agent 最基础且最广泛采用的推理范式。
+    它要求 LLM 在每一步<strong>先生成推理过程（Thought），再决定动作（Action）</strong>，
+    交替进行推理与行动，使模型的决策过程透明可追踪。
+  </p>
+
+  <div class="highlight">
+    <strong>ReAct 格式示例（单步）：</strong><br><br>
+    <strong>Thought：</strong>用户问"今天北京天气如何"，我需要调用天气查询工具获取实时信息。<br>
+    <strong>Action：</strong>get_weather(city="北京")<br>
+    <strong>Observation：</strong>{"temperature": 28, "weather": "晴", "humidity": 45%}<br>
+    <strong>Thought：</strong>我已获得天气信息，可以直接回答用户。<br>
+    <strong>Answer：</strong>今天北京天气晴朗，气温 28°C，湿度 45%，非常适合户外活动。
+  </div>
+
+  <h3>1.3 进阶推理范式</h3>
+  <table>
+    <tr>
+      <th>推理范式</th>
+      <th>核心思路</th>
+      <th>适用场景</th>
+      <th>代表工作</th>
+    </tr>
+    <tr>
+      <td><strong>ReAct</strong></td>
+      <td>交替进行 Thought → Action → Observation</td>
+      <td>通用 Agent 任务</td>
+      <td>Yao et al., 2022</td>
+    </tr>
+    <tr>
+      <td><strong>Plan-and-Execute</strong></td>
+      <td>先生成完整计划，再逐步执行，失败时重新规划</td>
+      <td>复杂多步骤任务</td>
+      <td>Wang et al., 2023</td>
+    </tr>
+    <tr>
+      <td><strong>Reflexion</strong></td>
+      <td>执行后进行自我反思，将反思写入记忆指导后续</td>
+      <td>需要试错学习的任务</td>
+      <td>Shinn et al., 2023</td>
+    </tr>
+    <tr>
+      <td><strong>Tree of Thoughts</strong></td>
+      <td>探索多条推理路径，评估并选择最优分支</td>
+      <td>需要搜索和回溯的任务</td>
+      <td>Yao et al., 2023</td>
+    </tr>
+    <tr>
+      <td><strong>LATS</strong></td>
+      <td>结合 MCTS 搜索 + LLM 评估 + 环境反馈</td>
+      <td>高精度决策任务</td>
+      <td>Zhou et al., 2023</td>
+    </tr>
+    <tr>
+      <td><strong>ReWOO</strong></td>
+      <td>一次性规划所有工具调用，减少 LLM 调用次数</td>
+      <td>降低延迟和成本</td>
+      <td>Xu et al., 2023</td>
+    </tr>
+  </table>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 290" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar1c" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">ReAct vs Plan-and-Execute 对比</text>
+
+      <!-- ReAct 左侧 -->
+      <rect x="20" y="40" width="370" height="230" rx="8" fill="#f0f4ff" stroke="#667eea" stroke-width="1.5"/>
+      <text x="205" y="65" text-anchor="middle" font-size="13" font-weight="700" fill="#667eea">ReAct（逐步推理+行动）</text>
+
+      <rect x="40" y="80" width="100" height="32" rx="5" fill="#667eea" opacity="0.8"/>
+      <text x="90" y="100" text-anchor="middle" fill="white" font-size="9" font-weight="600">Thought 1</text>
+      <line x1="142" y1="96" x2="160" y2="96" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar1c)"/>
+      <rect x="164" y="80" width="90" height="32" rx="5" fill="#2a9d8f" opacity="0.8"/>
+      <text x="209" y="100" text-anchor="middle" fill="white" font-size="9" font-weight="600">Action 1</text>
+      <line x1="256" y1="96" x2="274" y2="96" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar1c)"/>
+      <rect x="278" y="80" width="96" height="32" rx="5" fill="#e74c3c" opacity="0.8"/>
+      <text x="326" y="100" text-anchor="middle" fill="white" font-size="9" font-weight="600">Observe 1</text>
+
+      <rect x="40" y="122" width="100" height="32" rx="5" fill="#667eea" opacity="0.8"/>
+      <text x="90" y="142" text-anchor="middle" fill="white" font-size="9" font-weight="600">Thought 2</text>
+      <line x1="142" y1="138" x2="160" y2="138" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar1c)"/>
+      <rect x="164" y="122" width="90" height="32" rx="5" fill="#2a9d8f" opacity="0.8"/>
+      <text x="209" y="142" text-anchor="middle" fill="white" font-size="9" font-weight="600">Action 2</text>
+      <line x1="256" y1="138" x2="274" y2="138" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar1c)"/>
+      <rect x="278" y="122" width="96" height="32" rx="5" fill="#e74c3c" opacity="0.8"/>
+      <text x="326" y="142" text-anchor="middle" fill="white" font-size="9" font-weight="600">Observe 2</text>
+
+      <rect x="40" y="164" width="100" height="32" rx="5" fill="#667eea" opacity="0.8"/>
+      <text x="90" y="184" text-anchor="middle" fill="white" font-size="9" font-weight="600">Thought 3</text>
+      <line x1="142" y1="180" x2="160" y2="180" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar1c)"/>
+      <rect x="164" y="164" width="140" height="32" rx="5" fill="#9b59b6" opacity="0.8"/>
+      <text x="234" y="184" text-anchor="middle" fill="white" font-size="9" font-weight="600">Final Answer</text>
+
+      <text x="205" y="225" text-anchor="middle" font-size="9" fill="#555">每步都调用 LLM → 灵活但成本高</text>
+      <text x="205" y="242" text-anchor="middle" font-size="9" fill="#555">适合不确定性高的探索性任务</text>
+      <text x="205" y="259" text-anchor="middle" font-size="9" fill="#888">LLM 调用次数 = 步骤数 × 2</text>
+
+      <!-- Plan-and-Execute 右侧 -->
+      <rect x="430" y="40" width="370" height="230" rx="8" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="615" y="65" text-anchor="middle" font-size="13" font-weight="700" fill="#2a9d8f">Plan-and-Execute（先规划后执行）</text>
+
+      <rect x="450" y="80" width="330" height="50" rx="5" fill="#2a9d8f" opacity="0.15" stroke="#2a9d8f"/>
+      <text x="615" y="98" text-anchor="middle" font-size="10" font-weight="700" fill="#2a9d8f">Plan（一次性生成完整计划）</text>
+      <text x="615" y="118" text-anchor="middle" font-size="9" fill="#555">Step 1: 搜索 → Step 2: 提取 → Step 3: 汇总</text>
+
+      <rect x="450" y="142" width="100" height="28" rx="5" fill="#4a7dff" opacity="0.8"/>
+      <text x="500" y="160" text-anchor="middle" fill="white" font-size="9" font-weight="600">Execute 1</text>
+      <rect x="560" y="142" width="100" height="28" rx="5" fill="#4a7dff" opacity="0.8"/>
+      <text x="610" y="160" text-anchor="middle" fill="white" font-size="9" font-weight="600">Execute 2</text>
+      <rect x="670" y="142" width="100" height="28" rx="5" fill="#4a7dff" opacity="0.8"/>
+      <text x="720" y="160" text-anchor="middle" fill="white" font-size="9" font-weight="600">Execute 3</text>
+
+      <rect x="560" y="182" width="150" height="28" rx="5" fill="#f0a500" opacity="0.15" stroke="#f0a500"/>
+      <text x="635" y="200" text-anchor="middle" font-size="9" fill="#e65100" font-weight="600">Replan（失败时重新规划）</text>
+
+      <text x="615" y="235" text-anchor="middle" font-size="9" fill="#555">规划和执行分离 → 结构清晰</text>
+      <text x="615" y="252" text-anchor="middle" font-size="9" fill="#555">适合步骤明确的结构化任务</text>
+      <text x="615" y="269" text-anchor="middle" font-size="9" fill="#888">LLM 调用次数 = 1(规划) + 步骤数</text>
+    </svg>
+    <div class="caption">图 3：ReAct 与 Plan-and-Execute 对比。ReAct 逐步交替推理和行动，灵活但调用次数多；Plan-and-Execute 先一次性规划，执行效率更高。</div>
+  </div>
+</div>
+
+<!-- ===== 二、工具调用原理 ===== -->
+<div class="section">
+  <h2>二、工具调用（Function Calling）原理</h2>
+
+  <h3>2.1 Function Calling 的核心机制</h3>
+  <p>
+    <strong>Function Calling（工具调用 / 函数调用）</strong>是 Agent 与外部世界交互的核心能力。
+    模型接收用户请求和可用工具的描述（JSON Schema），
+    判断是否需要调用工具，并生成<strong>结构化的调用参数</strong>（而非自然语言），
+    由运行时执行后将结果返回模型。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 380" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+        <marker id="ar2g" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2a9d8f"/></marker>
+        <marker id="ar2r" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#e74c3c"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">Function Calling 完整执行流程</text>
+
+      <!-- Step 1: 用户请求 + 工具描述 -->
+      <rect x="20" y="45" width="350" height="85" rx="8" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="195" y="68" text-anchor="middle" font-size="11" font-weight="700" fill="#0f3460">Step 1: 构建请求</text>
+      <text x="40" y="88" font-size="9" fill="#555">messages: [{"role":"user", "content":"北京天气如何？"}]</text>
+      <text x="40" y="106" font-size="9" fill="#555">tools: [{"name":"get_weather", "parameters":{</text>
+      <text x="40" y="120" font-size="9" fill="#555">  "city": {"type":"string", "description":"城市名"}}}]</text>
+      <line x1="372" y1="87" x2="395" y2="87" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar2)"/>
+
+      <!-- Step 2: LLM 决策 -->
+      <rect x="400" y="45" width="180" height="85" rx="8" fill="#667eea" opacity="0.9"/>
+      <text x="490" y="68" text-anchor="middle" fill="white" font-size="11" font-weight="700">Step 2: LLM 决策</text>
+      <text x="490" y="88" text-anchor="middle" fill="white" font-size="9">分析用户意图</text>
+      <text x="490" y="104" text-anchor="middle" fill="white" font-size="9">选择工具 + 生成参数</text>
+      <text x="490" y="120" text-anchor="middle" fill="white" font-size="8">（结构化 JSON 输出）</text>
+      <line x1="582" y1="87" x2="605" y2="87" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar2)"/>
+
+      <!-- Step 3: 模型输出 -->
+      <rect x="610" y="45" width="190" height="85" rx="8" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="705" y="68" text-anchor="middle" font-size="11" font-weight="700" fill="#2a9d8f">Step 3: 模型输出</text>
+      <text x="625" y="90" font-size="9" fill="#555">{"tool_calls": [{</text>
+      <text x="625" y="106" font-size="9" fill="#555">  "name": "get_weather",</text>
+      <text x="625" y="122" font-size="9" fill="#555">  "arguments": {"city":"北京"}</text>
+
+      <!-- Step 4: 运行时执行 -->
+      <line x1="705" y1="132" x2="705" y2="158" stroke="#2a9d8f" stroke-width="2" marker-end="url(#ar2g)"/>
+
+      <rect x="545" y="160" width="255" height="65" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="672" y="183" text-anchor="middle" fill="white" font-size="11" font-weight="700">Step 4: 运行时执行工具</text>
+      <text x="672" y="200" text-anchor="middle" fill="white" font-size="9">应用代码实际调用天气 API</text>
+      <text x="672" y="215" text-anchor="middle" fill="white" font-size="8">（LLM 不直接执行，由宿主程序调用）</text>
+
+      <!-- Step 5: 结果返回 -->
+      <line x1="543" y1="192" x2="400" y2="192" stroke="#e74c3c" stroke-width="2" marker-end="url(#ar2r)"/>
+
+      <rect x="20" y="160" width="375" height="65" rx="8" fill="#fff8f0" stroke="#f0a500" stroke-width="1.5"/>
+      <text x="207" y="183" text-anchor="middle" font-size="11" font-weight="700" fill="#e65100">Step 5: 将工具结果加入上下文</text>
+      <text x="40" y="200" font-size="9" fill="#555">{"role":"tool", "name":"get_weather",</text>
+      <text x="40" y="215" font-size="9" fill="#555"> "content":"{\"temp\":28, \"weather\":\"晴\", \"humidity\":45}"}</text>
+
+      <!-- Step 6: 最终回答 -->
+      <line x1="207" y1="227" x2="207" y2="252" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar2)"/>
+
+      <rect x="100" y="255" width="290" height="50" rx="8" fill="#9b59b6" opacity="0.85"/>
+      <text x="245" y="278" text-anchor="middle" fill="white" font-size="11" font-weight="700">Step 6: LLM 生成最终回答</text>
+      <text x="245" y="296" text-anchor="middle" fill="white" font-size="9">"今天北京天气晴朗，气温 28°C，湿度 45%"</text>
+
+      <!-- 关键说明 -->
+      <rect x="440" y="255" width="360" height="80" rx="6" fill="#f8f9ff" stroke="#e8eaf0"/>
+      <text x="460" y="277" font-size="10" font-weight="700" fill="#0f3460">关键设计要点：</text>
+      <text x="460" y="296" font-size="9" fill="#555">· LLM 只生成调用意图（JSON），不执行实际操作</text>
+      <text x="460" y="312" font-size="9" fill="#555">· 宿主程序负责执行和安全控制（沙箱/权限）</text>
+      <text x="460" y="328" font-size="9" fill="#555">· 支持并行调用多个工具（parallel tool calls）</text>
+
+      <text x="410" y="370" text-anchor="middle" font-size="10" fill="#888">整个过程中，LLM 是"决策者"，宿主程序是"执行者"——这种分离确保了安全性和可控性</text>
+    </svg>
+    <div class="caption">图 4：Function Calling 完整执行流程。LLM 生成结构化调用意图，宿主程序执行并返回结果，LLM 据此生成最终回答。</div>
+  </div>
+
+  <h3>2.2 工具描述的设计（Tool Schema）</h3>
+  <p>
+    工具描述的质量直接影响 Agent 调用工具的准确性。一个好的工具描述需要包含清晰的<strong>名称、功能说明、参数定义、返回值说明</strong>。
+  </p>
+
+  <div class="highlight">
+    <strong>工具描述示例（JSON Schema 格式）：</strong>
+    <pre style="margin-top:8px;font-size:0.88em;line-height:1.6;white-space:pre-wrap;font-family:monospace;color:#333;">
+{
+  "name": "search_web",
+  "description": "搜索互联网获取实时信息。当用户询问近期事件、实时数据或你不确定的事实时使用。",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "搜索查询关键词，应简洁且具体"
+      },
+      "num_results": {
+        "type": "integer",
+        "description": "返回结果数量，默认5",
+        "default": 5
+      }
+    },
+    "required": ["query"]
+  }
+}</pre>
+  </div>
+
+  <h3>2.3 主流工具类型</h3>
+  <table>
+    <tr>
+      <th>工具类型</th>
+      <th>功能</th>
+      <th>示例</th>
+      <th>安全风险</th>
+    </tr>
+    <tr>
+      <td><strong>信息检索</strong></td>
+      <td>搜索和获取外部信息</td>
+      <td>Web Search、RAG 检索、Wikipedia</td>
+      <td>低</td>
+    </tr>
+    <tr>
+      <td><strong>代码执行</strong></td>
+      <td>编写并运行代码</td>
+      <td>Python REPL、Shell、Jupyter</td>
+      <td>高（需沙箱）</td>
+    </tr>
+    <tr>
+      <td><strong>API 调用</strong></td>
+      <td>调用外部服务</td>
+      <td>天气 API、邮件发送、数据库查询</td>
+      <td>中（需权限控制）</td>
+    </tr>
+    <tr>
+      <td><strong>文件操作</strong></td>
+      <td>读写文件系统</td>
+      <td>文件读取、写入、目录遍历</td>
+      <td>中（需路径限制）</td>
+    </tr>
+    <tr>
+      <td><strong>浏览器控制</strong></td>
+      <td>模拟人类浏览网页</td>
+      <td>Playwright、Puppeteer、Selenium</td>
+      <td>中</td>
+    </tr>
+    <tr>
+      <td><strong>多模态工具</strong></td>
+      <td>处理图像/音频/视频</td>
+      <td>图像生成、OCR、语音合成</td>
+      <td>低</td>
+    </tr>
+    <tr>
+      <td><strong>MCP 服务器</strong></td>
+      <td>标准化工具协议（Model Context Protocol）</td>
+      <td>任意外部服务通过 MCP 接入</td>
+      <td>取决于服务</td>
+    </tr>
+  </table>
+
+  <h3>2.4 并行工具调用与工具链</h3>
+  <p>
+    现代 Agent 支持在单次推理中<strong>并行调用多个工具</strong>（parallel tool calls），
+    大幅降低多工具场景的延迟。同时，复杂任务往往需要<strong>工具链（Tool Chaining）</strong>——
+    一个工具的输出作为另一个工具的输入。
+  </p>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>并行调用</h4>
+      <p>同时查询北京和上海天气：LLM 一次生成两个 tool_call，运行时并行执行，大幅减少等待时间。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>工具链</h4>
+      <p>搜索论文 → 下载 PDF → 提取内容 → 总结要点：每步结果驱动下一步调用，形成有向无环图（DAG）。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>条件分支</h4>
+      <p>根据工具返回结果决定后续路径：如果搜索无结果则换关键词，如果代码报错则修复重试。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>错误恢复</h4>
+      <p>工具调用失败时，Agent 可解析错误信息，调整参数重试或切换备选工具，无需人工干预。</p>
+    </div>
+  </div>
+
+  <h3>2.5 工具调用的内部实现原理</h3>
+  <p>
+    Function Calling 看似简单——模型输出 JSON、运行时执行、结果返回——但其内部实现涉及
+    <strong>Prompt 工程、结构化输出控制、多轮状态管理、Token 格式设计</strong>等多个技术层面。
+    理解这些细节对于构建可靠的 Agent 系统至关重要。
+  </p>
+
+  <h4>（1）System Prompt 中的工具注入</h4>
+  <p>
+    当开发者通过 API 传入 <code>tools</code> 参数时，LLM 提供方会将工具描述<strong>注入到 System Prompt 中</strong>，
+    成为模型上下文的一部分。不同厂商的注入格式不同，但核心模式一致：
+  </p>
+
+  <div class="highlight">
+    <strong>工具注入的 System Prompt 典型格式：</strong>
+    <pre style="margin-top:8px;font-size:0.85em;line-height:1.6;white-space:pre-wrap;font-family:monospace;color:#333;">
+# Available Tools
+
+You have access to the following tools. To call a tool,
+respond with a JSON object in the following format:
+
+&lt;tool_call&gt;
+{"name": "tool_name", "arguments": {"param1": "value1"}}
+&lt;/tool_call&gt;
+
+## Tools
+
+### get_weather
+Description: 获取指定城市的天气信息
+Parameters:
+- city (string, required): 城市名称
+- unit (string, optional): 温度单位, "celsius" or "fahrenheit"
+Returns: 包含温度、天气状况、湿度的 JSON 对象
+
+### search_web
+Description: 搜索互联网获取实时信息
+Parameters:
+- query (string, required): 搜索关键词
+- num_results (integer, optional): 返回数量, 默认 5</pre>
+  </div>
+
+  <p>
+    这种注入机制意味着：<strong>工具调用本质上是一种受控的文本生成任务</strong>——模型并不"原生理解"JSON Schema，
+    而是通过 SFT/RLHF 训练学会了"看到工具描述后，在需要时生成符合格式的调用指令"。
+  </p>
+
+  <h4>（2）模型如何生成结构化工具调用</h4>
+  <p>
+    LLM 生成工具调用时，需要在<strong>自然语言和结构化 JSON 之间切换</strong>。
+    不同模型采用不同的实现策略：
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 480" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar_tc1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+        <marker id="ar_tc2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2a9d8f"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">工具调用的三种结构化输出策略</text>
+
+      <!-- 策略1: 特殊Token -->
+      <rect x="20" y="50" width="250" height="195" rx="10" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="145" y="75" text-anchor="middle" font-size="12" font-weight="700" fill="#0f3460">策略一：特殊 Token 标记</text>
+      <text x="145" y="95" text-anchor="middle" font-size="10" fill="#888">GPT-4 / Claude / Qwen</text>
+      <line x1="40" y1="105" x2="250" y2="105" stroke="#ddd" stroke-width="1"/>
+      <text x="35" y="125" font-size="9" fill="#555">在词表中添加特殊 token：</text>
+      <rect x="35" y="132" width="220" height="48" rx="4" fill="#f8f9ff" stroke="#e8eaf0"/>
+      <text x="45" y="148" font-size="9" fill="#e74c3c" font-weight="600">&lt;|tool_call_begin|&gt;</text>
+      <text x="45" y="163" font-size="9" fill="#555">{"name":"get_weather",...}</text>
+      <text x="45" y="178" font-size="9" fill="#e74c3c" font-weight="600">&lt;|tool_call_end|&gt;</text>
+      <text x="35" y="200" font-size="9" fill="#555">解析器检测特殊 token</text>
+      <text x="35" y="215" font-size="9" fill="#555">自动提取 JSON 并执行</text>
+      <rect x="35" y="222" width="65" height="16" rx="3" fill="#4a7dff" opacity="0.15"/>
+      <text x="67" y="234" text-anchor="middle" font-size="8" fill="#4a7dff" font-weight="600">精度最高</text>
+
+      <!-- 策略2: Constrained Decoding -->
+      <rect x="285" y="50" width="250" height="195" rx="10" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="410" y="75" text-anchor="middle" font-size="12" font-weight="700" fill="#2a9d8f">策略二：约束解码</text>
+      <text x="410" y="95" text-anchor="middle" font-size="10" fill="#888">Constrained Decoding / GBNF</text>
+      <line x1="305" y1="105" x2="515" y2="105" stroke="#ddd" stroke-width="1"/>
+      <text x="300" y="125" font-size="9" fill="#555">解码时用 JSON Schema 约束：</text>
+      <rect x="300" y="132" width="220" height="48" rx="4" fill="#f8f9ff" stroke="#e8eaf0"/>
+      <text x="310" y="148" font-size="9" fill="#555">每步只允许合法 token：</text>
+      <text x="310" y="163" font-size="9" fill="#2a9d8f">{"city": 后只允许 string</text>
+      <text x="310" y="178" font-size="9" fill="#2a9d8f">"}" 在所有字段完成后才允许</text>
+      <text x="300" y="200" font-size="9" fill="#555">保证输出 100% 合法 JSON</text>
+      <text x="300" y="215" font-size="9" fill="#555">但可能限制模型表达能力</text>
+      <rect x="300" y="222" width="85" height="16" rx="3" fill="#2a9d8f" opacity="0.15"/>
+      <text x="342" y="234" text-anchor="middle" font-size="8" fill="#2a9d8f" font-weight="600">格式 100% 正确</text>
+
+      <!-- 策略3: 后处理解析 -->
+      <rect x="550" y="50" width="250" height="195" rx="10" fill="#fff8f0" stroke="#e67e22" stroke-width="1.5"/>
+      <text x="675" y="75" text-anchor="middle" font-size="12" font-weight="700" fill="#e65100">策略三：后处理解析</text>
+      <text x="675" y="95" text-anchor="middle" font-size="10" fill="#888">Regex / XML 提取</text>
+      <line x1="570" y1="105" x2="780" y2="105" stroke="#ddd" stroke-width="1"/>
+      <text x="565" y="125" font-size="9" fill="#555">模型自由输出文本+JSON：</text>
+      <rect x="565" y="132" width="220" height="48" rx="4" fill="#f8f9ff" stroke="#e8eaf0"/>
+      <text x="575" y="148" font-size="9" fill="#555">我来查询一下天气...</text>
+      <text x="575" y="163" font-size="9" fill="#e67e22">```json</text>
+      <text x="575" y="178" font-size="9" fill="#555">{"name":"get_weather",...}</text>
+      <text x="565" y="200" font-size="9" fill="#555">用正则/XML 解析器提取</text>
+      <text x="565" y="215" font-size="9" fill="#555">灵活但可能解析失败</text>
+      <rect x="565" y="222" width="65" height="16" rx="3" fill="#e67e22" opacity="0.15"/>
+      <text x="597" y="234" text-anchor="middle" font-size="8" fill="#e67e22" font-weight="600">最灵活</text>
+
+      <!-- 底部完整流程 -->
+      <text x="410" y="275" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1a2e">模型内部 Token 生成过程（以特殊 Token 方案为例）</text>
+
+      <rect x="30" y="290" width="760" height="170" rx="8" fill="#fafafa" stroke="#e0e0e0"/>
+
+      <!-- Token sequence -->
+      <text x="50" y="315" font-size="10" font-weight="600" fill="#555">输入 Token 序列：</text>
+      <rect x="50" y="322" width="70" height="22" rx="4" fill="#667eea" opacity="0.8"/>
+      <text x="85" y="337" text-anchor="middle" font-size="8" fill="white">system</text>
+      <rect x="125" y="322" width="105" height="22" rx="4" fill="#667eea" opacity="0.6"/>
+      <text x="177" y="337" text-anchor="middle" font-size="8" fill="white">tools description</text>
+      <rect x="235" y="322" width="50" height="22" rx="4" fill="#2a9d8f" opacity="0.8"/>
+      <text x="260" y="337" text-anchor="middle" font-size="8" fill="white">user</text>
+      <rect x="290" y="322" width="105" height="22" rx="4" fill="#2a9d8f" opacity="0.6"/>
+      <text x="342" y="337" text-anchor="middle" font-size="8" fill="white">北京天气如何？</text>
+
+      <text x="50" y="370" font-size="10" font-weight="600" fill="#555">模型输出 Token 序列（自回归生成）：</text>
+      <rect x="50" y="377" width="90" height="22" rx="4" fill="#e74c3c" opacity="0.8"/>
+      <text x="95" y="392" text-anchor="middle" font-size="8" fill="white">tool_call_begin</text>
+      <rect x="145" y="377" width="22" height="22" rx="4" fill="#9b59b6" opacity="0.7"/>
+      <text x="156" y="392" text-anchor="middle" font-size="8" fill="white">{"</text>
+      <rect x="172" y="377" width="42" height="22" rx="4" fill="#9b59b6" opacity="0.7"/>
+      <text x="193" y="392" text-anchor="middle" font-size="8" fill="white">name</text>
+      <rect x="219" y="377" width="22" height="22" rx="4" fill="#9b59b6" opacity="0.7"/>
+      <text x="230" y="392" text-anchor="middle" font-size="8" fill="white">":</text>
+      <rect x="246" y="377" width="22" height="22" rx="4" fill="#9b59b6" opacity="0.7"/>
+      <text x="257" y="392" text-anchor="middle" font-size="8" fill="white">"</text>
+      <rect x="273" y="377" width="72" height="22" rx="4" fill="#9b59b6" opacity="0.7"/>
+      <text x="309" y="392" text-anchor="middle" font-size="8" fill="white">get_weather</text>
+      <rect x="350" y="377" width="22" height="22" rx="4" fill="#9b59b6" opacity="0.7"/>
+      <text x="361" y="392" text-anchor="middle" font-size="8" fill="white">"</text>
+      <rect x="377" y="377" width="15" height="22" rx="4" fill="#9b59b6" opacity="0.7"/>
+      <text x="384" y="392" text-anchor="middle" font-size="8" fill="white">,</text>
+      <rect x="397" y="377" width="22" height="22" rx="4" fill="#9b59b6" opacity="0.7"/>
+      <text x="408" y="392" text-anchor="middle" font-size="8" fill="white">"</text>
+      <rect x="424" y="377" width="70" height="22" rx="4" fill="#9b59b6" opacity="0.7"/>
+      <text x="459" y="392" text-anchor="middle" font-size="8" fill="white">arguments</text>
+      <text x="510" y="392" font-size="9" fill="#888">...</text>
+      <rect x="530" y="377" width="85" height="22" rx="4" fill="#e74c3c" opacity="0.8"/>
+      <text x="572" y="392" text-anchor="middle" font-size="8" fill="white">tool_call_end</text>
+
+      <text x="50" y="425" font-size="10" font-weight="600" fill="#555">运行时处理：</text>
+      <rect x="50" y="432" width="160" height="20" rx="4" fill="#f0f4ff" stroke="#4a7dff"/>
+      <text x="130" y="446" text-anchor="middle" font-size="8" fill="#4a7dff">检测到 tool_call_begin</text>
+      <text x="218" y="446" font-size="10" fill="#aaa">→</text>
+      <rect x="228" y="432" width="140" height="20" rx="4" fill="#f0f4ff" stroke="#4a7dff"/>
+      <text x="298" y="446" text-anchor="middle" font-size="8" fill="#4a7dff">提取 JSON 并验证</text>
+      <text x="376" y="446" font-size="10" fill="#aaa">→</text>
+      <rect x="386" y="432" width="120" height="20" rx="4" fill="#f0fff4" stroke="#2a9d8f"/>
+      <text x="446" y="446" text-anchor="middle" font-size="8" fill="#2a9d8f">执行工具函数</text>
+      <text x="514" y="446" font-size="10" fill="#aaa">→</text>
+      <rect x="524" y="432" width="150" height="20" rx="4" fill="#fff8f0" stroke="#e67e22"/>
+      <text x="599" y="446" text-anchor="middle" font-size="8" fill="#e65100">结果注入上下文继续生成</text>
+    </svg>
+    <div class="caption">图 5：工具调用的三种结构化输出策略与模型内部 Token 生成过程。特殊 Token 标记是当前主流方案，约束解码保证格式正确性，后处理解析最为灵活。</div>
+  </div>
+
+  <h4>（3）Stop Reason 与流式工具调用</h4>
+  <p>
+    在流式输出（streaming）场景下，运行时需要实时判断模型是否正在生成工具调用。
+    主流 API 通过 <code>finish_reason</code> / <code>stop_reason</code> 字段区分：
+  </p>
+  <table>
+    <tr>
+      <th>Stop Reason</th>
+      <th>含义</th>
+      <th>运行时处理</th>
+    </tr>
+    <tr>
+      <td><code>stop</code> / <code>end_turn</code></td>
+      <td>模型完成回答，无工具调用</td>
+      <td>直接将文本返回用户</td>
+    </tr>
+    <tr>
+      <td><code>tool_calls</code> / <code>tool_use</code></td>
+      <td>模型请求调用工具</td>
+      <td>解析调用 → 执行 → 结果回填 → 继续推理</td>
+    </tr>
+    <tr>
+      <td><code>length</code></td>
+      <td>达到 max_tokens 截断</td>
+      <td>工具调用可能不完整，需要错误处理</td>
+    </tr>
+  </table>
+  <div class="warning">
+    <strong>流式工具调用的挑战：</strong>在 streaming 模式下，运行时需要逐 token 累积输出并在检测到完整的
+    tool_call JSON 后立即触发执行。如果模型生成了不完整的 JSON（如被 max_tokens 截断），
+    需要进行<strong>回退重试</strong>（增大 max_tokens）或<strong>降级为纯文本回答</strong>。
+    部分框架通过缓冲整个 tool_call block 后再解析来避免不完整 JSON 的问题。
+  </div>
+
+  <h3>2.6 多轮工具调用的状态管理</h3>
+  <p>
+    Agent 完成一个复杂任务往往需要<strong>多轮工具调用</strong>。每一轮的消息都必须按照严格的角色交替模式
+    组织到上下文中，形成完整的对话历史：
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 440" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar_ml" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">多轮工具调用：上下文消息结构</text>
+
+      <!-- 左侧：消息序列 -->
+      <rect x="30" y="45" width="440" height="380" rx="8" fill="#fafafa" stroke="#e0e0e0"/>
+      <text x="250" y="68" text-anchor="middle" font-size="12" font-weight="700" fill="#0f3460">messages 数组（每轮追加）</text>
+
+      <!-- System -->
+      <rect x="50" y="80" width="400" height="28" rx="5" fill="#1a1a2e"/>
+      <text x="65" y="99" font-size="9" fill="white" font-weight="600">system: </text>
+      <text x="120" y="99" font-size="9" fill="#aab">"你是一个有用的助手，可以使用以下工具..." + 工具 Schema</text>
+
+      <!-- Round 1 -->
+      <rect x="50" y="115" width="400" height="28" rx="5" fill="#2a9d8f" opacity="0.85"/>
+      <text x="65" y="134" font-size="9" fill="white" font-weight="600">user: </text>
+      <text x="100" y="134" font-size="9" fill="white">"帮我查一下北京明天的天气，然后对比上海"</text>
+
+      <rect x="50" y="148" width="400" height="28" rx="5" fill="#667eea" opacity="0.85"/>
+      <text x="65" y="167" font-size="9" fill="white" font-weight="600">assistant: </text>
+      <text x="125" y="167" font-size="9" fill="white">[tool_call: get_weather(city="北京"), get_weather(city="上海")]</text>
+
+      <rect x="50" y="181" width="195" height="28" rx="5" fill="#f0a500" opacity="0.85"/>
+      <text x="65" y="200" font-size="9" fill="white" font-weight="600">tool (id=1): </text>
+      <text x="140" y="200" font-size="9" fill="white">{"temp":25,"weather":"多云"}</text>
+      <rect x="255" y="181" width="195" height="28" rx="5" fill="#f0a500" opacity="0.85"/>
+      <text x="270" y="200" font-size="9" fill="white" font-weight="600">tool (id=2): </text>
+      <text x="345" y="200" font-size="9" fill="white">{"temp":28,"weather":"晴"}</text>
+
+      <rect x="50" y="214" width="400" height="28" rx="5" fill="#667eea" opacity="0.85"/>
+      <text x="65" y="233" font-size="9" fill="white" font-weight="600">assistant: </text>
+      <text x="125" y="233" font-size="9" fill="white">"北京明天多云25°C，上海晴天28°C，上海更暖和..."</text>
+
+      <!-- Round 2 -->
+      <rect x="40" y="250" width="420" height="4" rx="2" fill="#4a7dff" opacity="0.3"/>
+
+      <rect x="50" y="262" width="400" height="28" rx="5" fill="#2a9d8f" opacity="0.85"/>
+      <text x="65" y="281" font-size="9" fill="white" font-weight="600">user: </text>
+      <text x="100" y="281" font-size="9" fill="white">"那帮我订一张明天去上海的机票"</text>
+
+      <rect x="50" y="295" width="400" height="28" rx="5" fill="#667eea" opacity="0.85"/>
+      <text x="65" y="314" font-size="9" fill="white" font-weight="600">assistant: </text>
+      <text x="125" y="314" font-size="9" fill="white">[tool_call: search_flights(from="北京", to="上海", date="...")]</text>
+
+      <rect x="50" y="328" width="400" height="28" rx="5" fill="#f0a500" opacity="0.85"/>
+      <text x="65" y="347" font-size="9" fill="white" font-weight="600">tool (id=3): </text>
+      <text x="140" y="347" font-size="9" fill="white">{"flights": [{"time":"08:00","price":680}, ...]}</text>
+
+      <rect x="50" y="361" width="400" height="28" rx="5" fill="#667eea" opacity="0.85"/>
+      <text x="65" y="380" font-size="9" fill="white" font-weight="600">assistant: </text>
+      <text x="125" y="380" font-size="9" fill="white">"找到以下航班：08:00 出发，680元..."</text>
+
+      <text x="250" y="412" text-anchor="middle" font-size="9" fill="#888">每轮都会追加 assistant(tool_call) + tool(result) + assistant(response)</text>
+
+      <!-- 右侧：关键机制 -->
+      <rect x="500" y="45" width="300" height="380" rx="8" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1"/>
+      <text x="650" y="70" text-anchor="middle" font-size="12" font-weight="700" fill="#0f3460">关键状态管理机制</text>
+
+      <rect x="520" y="85" width="260" height="65" rx="6" fill="white" stroke="#4a7dff" stroke-width="0.8"/>
+      <text x="530" y="105" font-size="10" font-weight="700" fill="#4a7dff">Tool Call ID 匹配</text>
+      <text x="530" y="122" font-size="9" fill="#555">每个 tool_call 有唯一 ID，</text>
+      <text x="530" y="137" font-size="9" fill="#555">tool 结果通过 ID 关联到对应调用</text>
+
+      <rect x="520" y="160" width="260" height="65" rx="6" fill="white" stroke="#2a9d8f" stroke-width="0.8"/>
+      <text x="530" y="180" font-size="10" font-weight="700" fill="#2a9d8f">上下文窗口管理</text>
+      <text x="530" y="197" font-size="9" fill="#555">工具调用历史占用大量 token，</text>
+      <text x="530" y="212" font-size="9" fill="#555">需要摘要压缩或滑动窗口策略</text>
+
+      <rect x="520" y="235" width="260" height="65" rx="6" fill="white" stroke="#e67e22" stroke-width="0.8"/>
+      <text x="530" y="255" font-size="10" font-weight="700" fill="#e65100">角色交替约束</text>
+      <text x="530" y="272" font-size="9" fill="#555">严格的 user→assistant→tool→</text>
+      <text x="530" y="287" font-size="9" fill="#555">assistant 角色顺序，违反会报错</text>
+
+      <rect x="520" y="310" width="260" height="45" rx="6" fill="white" stroke="#9b59b6" stroke-width="0.8"/>
+      <text x="530" y="330" font-size="10" font-weight="700" fill="#9b59b6">并行结果顺序</text>
+      <text x="530" y="347" font-size="9" fill="#555">多个 tool 结果必须全部返回后再推理</text>
+
+      <rect x="520" y="365" width="260" height="50" rx="6" fill="white" stroke="#e74c3c" stroke-width="0.8"/>
+      <text x="530" y="385" font-size="10" font-weight="700" fill="#e74c3c">Token 成本控制</text>
+      <text x="530" y="402" font-size="9" fill="#555">工具结果可截断/摘要以控制上下文长度，</text>
+    </svg>
+    <div class="caption">图 6：多轮工具调用的上下文消息结构。每轮调用都追加 assistant(tool_call) → tool(result) → assistant(response) 三条消息，通过 tool_call_id 关联。</div>
+  </div>
+
+  <h3>2.7 工具调用的错误处理与鲁棒性</h3>
+  <p>
+    生产级 Agent 系统必须处理各种工具调用的异常情况。良好的错误处理机制是 Agent 可靠运行的基础：
+  </p>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>JSON 解析失败</h4>
+      <p>模型生成的 JSON 格式不合法（如缺少引号、多余逗号）。处理方式：使用宽松 JSON 解析器（如 json5）自动修复；
+        或将错误信息回传模型让其重新生成。约束解码可彻底消除此问题。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>工具不存在</h4>
+      <p>模型"幻觉"出不存在的工具名。处理方式：在解析阶段验证工具名是否在已注册列表中；
+        将错误信息返回模型。训练数据质量和 System Prompt 设计可降低此类错误的概率。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>参数类型错误</h4>
+      <p>如将字符串传入 integer 类型参数。处理方式：基于 JSON Schema 校验参数类型，
+        可尝试自动类型转换（"5"→5），或返回模型重新生成。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>工具执行超时 / 异常</h4>
+      <p>外部 API 无响应或返回服务端错误。处理方式：设置超时时间，将错误信息（如 "API timeout after 30s"）
+        作为 tool 消息返回模型，让 Agent 自行决定重试或换方案。</p>
+    </div>
+  </div>
+
+  <div class="highlight">
+    <strong>重试机制的设计：</strong>成熟的 Agent 框架通常实现分层重试——
+    (1) <strong>自动重试</strong>：对网络超时等瞬态错误自动重试 2-3 次，带指数退避；
+    (2) <strong>模型重试</strong>：将持续错误信息返回 LLM，让模型调整参数或策略后重新调用；
+    (3) <strong>降级处理</strong>：多次失败后，模型基于已有信息给出最佳回答，并告知用户部分工具不可用。
+    设定全局最大工具调用次数（如 25 次）防止无限循环。
+  </div>
+
+  <h3>2.8 不同模型的工具调用能力对比</h3>
+  <table>
+    <tr>
+      <th>模型</th>
+      <th>调用格式</th>
+      <th>并行调用</th>
+      <th>工具数量上限</th>
+      <th>特色能力</th>
+    </tr>
+    <tr>
+      <td><strong>GPT-4o</strong></td>
+      <td>原生 Function Calling</td>
+      <td>支持</td>
+      <td><code>128</code></td>
+      <td>Strict mode 约束解码</td>
+    </tr>
+    <tr>
+      <td><strong>Claude 4</strong></td>
+      <td>原生 Tool Use</td>
+      <td>支持</td>
+      <td><code>无硬限制</code></td>
+      <td>Server-sent tool results, 强推理</td>
+    </tr>
+    <tr>
+      <td><strong>Gemini 2.5</strong></td>
+      <td>原生 Function Calling</td>
+      <td>支持</td>
+      <td><code>无硬限制</code></td>
+      <td>多模态工具、Code Execution</td>
+    </tr>
+    <tr>
+      <td><strong>Qwen3</strong></td>
+      <td>特殊 Token 标记</td>
+      <td>支持</td>
+      <td><code>无硬限制</code></td>
+      <td>Thinking + Tool Call 融合</td>
+    </tr>
+    <tr>
+      <td><strong>DeepSeek-V3</strong></td>
+      <td>特殊 Token 标记</td>
+      <td>支持</td>
+      <td><code>无硬限制</code></td>
+      <td>低成本高精度</td>
+    </tr>
+    <tr>
+      <td><strong>LLaMA-3.1</strong></td>
+      <td>内置 Python 工具</td>
+      <td>支持</td>
+      <td><code>—</code></td>
+      <td>Brave Search、Wolfram Alpha 内置</td>
+    </tr>
+    <tr>
+      <td><strong>Mistral Large</strong></td>
+      <td>原生 Function Calling</td>
+      <td>支持</td>
+      <td><code>—</code></td>
+      <td>本地部署友好</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ===== 三、Agent 训练与微调 ===== -->
+<div class="section">
+  <h2>三、Agent 训练与微调</h2>
+
+  <h3>3.1 让 LLM 学会使用工具：训练概述</h3>
+  <p>
+    预训练的 LLM 并不天然具备工具调用能力。需要通过专门的<strong>训练和微调</strong>，
+    让模型学会：(1) 何时应该调用工具而非直接回答；(2) 选择正确的工具；(3) 生成格式正确的调用参数；
+    (4) 整合工具返回的结果生成最终回答。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 300" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">Agent 能力的训练流水线</text>
+
+      <!-- 阶段 1 -->
+      <rect x="20" y="50" width="180" height="100" rx="8" fill="#667eea" opacity="0.85"/>
+      <text x="110" y="75" text-anchor="middle" fill="white" font-size="11" font-weight="700">阶段 1：预训练</text>
+      <text x="110" y="95" text-anchor="middle" fill="white" font-size="9">学习语言和知识</text>
+      <text x="110" y="112" text-anchor="middle" fill="white" font-size="9">包含代码 + 结构化数据</text>
+      <text x="110" y="128" text-anchor="middle" fill="white" font-size="8">→ 基础推理和格式理解</text>
+      <line x1="202" y1="100" x2="222" y2="100" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar3)"/>
+
+      <!-- 阶段 2 -->
+      <rect x="226" y="50" width="180" height="100" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="316" y="75" text-anchor="middle" fill="white" font-size="11" font-weight="700">阶段 2：Tool Use SFT</text>
+      <text x="316" y="95" text-anchor="middle" fill="white" font-size="9">工具调用格式训练</text>
+      <text x="316" y="112" text-anchor="middle" fill="white" font-size="9">学习 ReAct/JSON 格式</text>
+      <text x="316" y="128" text-anchor="middle" fill="white" font-size="8">→ 获得工具调用基本能力</text>
+      <line x1="408" y1="100" x2="428" y2="100" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar3)"/>
+
+      <!-- 阶段 3 -->
+      <rect x="432" y="50" width="180" height="100" rx="8" fill="#f0a500" opacity="0.85"/>
+      <text x="522" y="75" text-anchor="middle" fill="white" font-size="11" font-weight="700">阶段 3：Agent RL</text>
+      <text x="522" y="95" text-anchor="middle" fill="white" font-size="9">强化学习优化</text>
+      <text x="522" y="112" text-anchor="middle" fill="white" font-size="9">用执行结果作为奖励</text>
+      <text x="522" y="128" text-anchor="middle" fill="white" font-size="8">→ 学会何时调用 + 错误恢复</text>
+      <line x1="614" y1="100" x2="634" y2="100" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar3)"/>
+
+      <!-- 阶段 4 -->
+      <rect x="638" y="50" width="162" height="100" rx="8" fill="#e74c3c" opacity="0.85"/>
+      <text x="719" y="75" text-anchor="middle" fill="white" font-size="11" font-weight="700">阶段 4：对齐</text>
+      <text x="719" y="95" text-anchor="middle" fill="white" font-size="9">安全性和可控性</text>
+      <text x="719" y="112" text-anchor="middle" fill="white" font-size="9">学习拒绝危险操作</text>
+      <text x="719" y="128" text-anchor="middle" fill="white" font-size="8">→ 安全可信的 Agent</text>
+
+      <!-- 详细说明 -->
+      <rect x="20" y="170" width="780" height="110" rx="8" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="40" y="195" font-size="11" font-weight="700" fill="#0f3460">各阶段的核心训练目标：</text>
+      <text x="40" y="218" font-size="10" fill="#555"><tspan font-weight="600" fill="#667eea">预训练：</tspan>通过代码数据学习 JSON/XML 等结构化格式，通过推理数据建立逻辑能力——这是工具调用的隐性基础</text>
+      <text x="40" y="238" font-size="10" fill="#555"><tspan font-weight="600" fill="#2a9d8f">Tool Use SFT：</tspan>用大量 (query, tool_call, result, answer) 四元组进行监督微调，学习工具调用的格式和时机</text>
+      <text x="40" y="258" font-size="10" fill="#555"><tspan font-weight="600" fill="#f0a500">Agent RL：</tspan>在真实/模拟环境中执行任务，用任务成功率作为奖励信号强化学习，提升复杂任务的完成能力</text>
+      <text x="40" y="278" font-size="10" fill="#555"><tspan font-weight="600" fill="#e74c3c">对齐：</tspan>训练模型拒绝执行危险操作（如删除系统文件），在工具调用前进行安全审查</text>
+    </svg>
+    <div class="caption">图 7：Agent 能力的训练流水线。从预训练的结构化理解到 Tool Use SFT，再到 Agent RL 和安全对齐，逐步构建完整的 Agent 能力。</div>
+  </div>
+
+  <h3>3.2 Tool Use SFT：工具调用微调</h3>
+  <p>
+    Tool Use SFT 是赋予 LLM 工具调用能力的核心步骤。训练数据为<strong>结构化的工具调用轨迹</strong>，
+    模型需要学习在什么情况下调用什么工具、如何生成正确的参数。
+  </p>
+
+  <div class="highlight">
+    <strong>Tool Use SFT 训练样本格式：</strong>
+    <pre style="margin-top:8px;font-size:0.85em;line-height:1.6;white-space:pre-wrap;font-family:monospace;color:#333;">
+System: 你是一个有帮助的助手，可以使用以下工具：
+  - search_web(query: str) → str：搜索网络
+  - calculator(expression: str) → float：计算数学表达式
+
+Assistant: [调用工具] search_web(query="2024年诺贝尔物理学奖")
+Observation: {"results": [{"title":"2024年诺贝尔物理学奖揭晓", "snippet":"John Hopfield 和 Geoffrey Hinton 因在人工神经网络的机器学习基础性发现和发明而获奖"}]}
+Assistant: 2024年诺贝尔物理学奖授予了 John Hopfield 和 Geoffrey Hinton，获奖理由是他们在利用人工神经网络进行机器学习方面做出了基础性的发现和发明。</pre>
+  </div>
+
+  <h3>3.3 Agent 训练数据的设计与准备</h3>
+  <p>
+    高质量的 Agent 训练数据是模型获得工具调用和任务执行能力的关键。
+    数据的设计需要覆盖<strong>多种工具、多种调用模式、多种错误场景</strong>。
+  </p>
+
+  <h4>3.3.1 训练数据的核心类型</h4>
+  <table>
+    <tr>
+      <th>数据类型</th>
+      <th>格式</th>
+      <th>规模</th>
+      <th>获取方式</th>
+      <th>目的</th>
+    </tr>
+    <tr>
+      <td><strong>单工具调用</strong></td>
+      <td>(query, tool_call, result, answer)</td>
+      <td>10K~100K</td>
+      <td>人工编写 + GPT-4 合成</td>
+      <td>学习基本的工具选择和参数生成</td>
+    </tr>
+    <tr>
+      <td><strong>多步工具链</strong></td>
+      <td>(query, [call_1, obs_1, ..., call_n, obs_n], answer)</td>
+      <td>5K~50K</td>
+      <td>模拟环境轨迹录制 + 人工标注</td>
+      <td>学习多步推理和工具串联</td>
+    </tr>
+    <tr>
+      <td><strong>并行调用</strong></td>
+      <td>(query, [parallel_calls], [results], answer)</td>
+      <td>5K~20K</td>
+      <td>模板化生成 + 人工审核</td>
+      <td>学习同时调用多个独立工具</td>
+    </tr>
+    <tr>
+      <td><strong>错误恢复</strong></td>
+      <td>(query, call_fail, error, retry_call, result, answer)</td>
+      <td>2K~10K</td>
+      <td>故意注入错误 + 标注修复策略</td>
+      <td>学习处理工具调用失败和参数错误</td>
+    </tr>
+    <tr>
+      <td><strong>拒绝调用（负样本）</strong></td>
+      <td>(query_no_tool_needed, direct_answer)</td>
+      <td>5K~30K</td>
+      <td>筛选不需要工具的普通问答</td>
+      <td>学习判断何时不需要调用工具</td>
+    </tr>
+    <tr>
+      <td><strong>安全拒绝</strong></td>
+      <td>(dangerous_request, refusal_response)</td>
+      <td>1K~5K</td>
+      <td>红队 + 安全标注</td>
+      <td>拒绝危险的工具调用请求</td>
+    </tr>
+  </table>
+
+  <h4>3.3.2 训练数据的生成流水线</h4>
+  <div class="figure">
+    <svg viewBox="0 0 820 280" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar3b" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">Agent 训练数据生成流水线</text>
+
+      <!-- 种子数据 -->
+      <rect x="20" y="50" width="150" height="70" rx="8" fill="#667eea" opacity="0.85"/>
+      <text x="95" y="78" text-anchor="middle" fill="white" font-size="10" font-weight="700">种子数据</text>
+      <text x="95" y="96" text-anchor="middle" fill="white" font-size="8">人工编写 500~2000 条</text>
+      <text x="95" y="110" text-anchor="middle" fill="white" font-size="8">高质量工具调用示例</text>
+      <line x1="172" y1="85" x2="192" y2="85" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar3b)"/>
+
+      <!-- 合成扩展 -->
+      <rect x="196" y="50" width="160" height="70" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="276" y="78" text-anchor="middle" fill="white" font-size="10" font-weight="700">强模型合成扩展</text>
+      <text x="276" y="96" text-anchor="middle" fill="white" font-size="8">GPT-4 / Claude 生成</text>
+      <text x="276" y="110" text-anchor="middle" fill="white" font-size="8">覆盖更多场景和工具</text>
+      <line x1="358" y1="85" x2="378" y2="85" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar3b)"/>
+
+      <!-- 模拟执行 -->
+      <rect x="382" y="50" width="160" height="70" rx="8" fill="#f0a500" opacity="0.85"/>
+      <text x="462" y="78" text-anchor="middle" fill="white" font-size="10" font-weight="700">模拟环境执行</text>
+      <text x="462" y="96" text-anchor="middle" fill="white" font-size="8">在沙箱中实际运行</text>
+      <text x="462" y="110" text-anchor="middle" fill="white" font-size="8">验证工具返回真实性</text>
+      <line x1="544" y1="85" x2="564" y2="85" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar3b)"/>
+
+      <!-- 质量过滤 -->
+      <rect x="568" y="50" width="120" height="70" rx="8" fill="#e74c3c" opacity="0.85"/>
+      <text x="628" y="78" text-anchor="middle" fill="white" font-size="10" font-weight="700">质量过滤</text>
+      <text x="628" y="96" text-anchor="middle" fill="white" font-size="8">格式校验 + 人工抽检</text>
+      <text x="628" y="110" text-anchor="middle" fill="white" font-size="8">准确性验证</text>
+      <line x1="690" y1="85" x2="710" y2="85" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar3b)"/>
+
+      <!-- 输出 -->
+      <rect x="714" y="55" width="86" height="60" rx="8" fill="#9b59b6" opacity="0.85"/>
+      <text x="757" y="80" text-anchor="middle" fill="white" font-size="10" font-weight="700">训练集</text>
+      <text x="757" y="98" text-anchor="middle" fill="white" font-size="8">10K~100K 条</text>
+
+      <!-- 关键技巧 -->
+      <rect x="20" y="145" width="780" height="115" rx="8" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="40" y="170" font-size="11" font-weight="700" fill="#0f3460">训练数据设计的关键技巧：</text>
+      <text x="40" y="192" font-size="10" fill="#555">1. <tspan font-weight="600">工具多样性：</tspan>训练集应覆盖 50+ 种不同工具，避免模型只会调用几种熟悉的工具</text>
+      <text x="40" y="212" font-size="10" fill="#555">2. <tspan font-weight="600">负样本平衡：</tspan>~30% 的数据应为"不需要工具"的普通问答，防止模型过度调用工具</text>
+      <text x="40" y="232" font-size="10" fill="#555">3. <tspan font-weight="600">错误场景注入：</tspan>~10% 的数据应包含工具调用失败和错误恢复，训练 Agent 的鲁棒性</text>
+      <text x="40" y="252" font-size="10" fill="#555">4. <tspan font-weight="600">参数边界测试：</tspan>包含必选/可选参数、默认值、极端输入等边界情况</text>
+    </svg>
+    <div class="caption">图 8：Agent 训练数据生成流水线。从少量人工种子数据出发，通过强模型合成扩展、模拟环境执行验证和质量过滤，产出大规模高质量训练数据。</div>
+  </div>
+
+  <h3>3.4 Agent 强化学习（Agent RL）</h3>
+  <p>
+    SFT 只能学习"示范"中的固定模式。<strong>Agent RL</strong> 则让模型在真实或模拟环境中自主探索，
+    通过<strong>任务完成与否</strong>作为奖励信号，优化整个决策序列。
+  </p>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>环境交互式训练</h4>
+      <p>模型在沙箱环境（如 WebArena、SWE-bench）中执行任务，每个完整轨迹的成功率作为奖励。不再依赖人工标注"正确答案"。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>奖励设计</h4>
+      <p>任务成功 = +1，失败 = 0，过程奖励（中间步骤正确 = +0.1）。GRPO/PPO 用于优化策略。DeepSeek-R1 的 RLVR 思路同样适用于 Agent。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>拒绝采样（Rejection Sampling）</h4>
+      <p>让模型多次尝试同一任务，从成功的轨迹中筛选最优的作为 SFT 数据。介于 SFT 和 RL 之间的高效策略。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>自我反思训练</h4>
+      <p>Reflexion 范式：执行失败后让模型生成反思总结，写入记忆后重试。反思本身也作为训练数据。</p>
+    </div>
+  </div>
+
+  <h3>3.5 主流模型的 Agent 训练方案</h3>
+  <table>
+    <tr>
+      <th>模型</th>
+      <th>Tool Use 训练方式</th>
+      <th>训练数据规模</th>
+      <th>关键技术</th>
+    </tr>
+    <tr>
+      <td><strong>GPT-4 / GPT-4o</strong></td>
+      <td>SFT + RLHF 联合训练</td>
+      <td>未公开（推测百万级工具调用数据）</td>
+      <td>原生 Function Calling；JSON Mode 保证输出格式；并行工具调用；支持 100+ 工具</td>
+    </tr>
+    <tr>
+      <td><strong>Claude 3.5/4</strong></td>
+      <td>SFT + Constitutional AI</td>
+      <td>未公开</td>
+      <td>原生 Tool Use API；强调安全和可控性；支持 Computer Use（桌面操控）；MCP 协议生态</td>
+    </tr>
+    <tr>
+      <td><strong>Qwen-Agent</strong></td>
+      <td>多阶段 SFT + DPO</td>
+      <td>数十万条工具调用数据</td>
+      <td>内置 Code Interpreter；支持 MCP；多语言工具调用（中英文）；ReAct 格式</td>
+    </tr>
+    <tr>
+      <td><strong>LLaMA-3 + Toolformer</strong></td>
+      <td>自监督工具学习</td>
+      <td>自动生成（百万级）</td>
+      <td>Toolformer 范式：模型自动在文本中插入 API 调用，用 PPL 变化筛选有效调用</td>
+    </tr>
+    <tr>
+      <td><strong>DeepSeek-V3</strong></td>
+      <td>SFT + GRPO</td>
+      <td>含 Function Call 训练数据</td>
+      <td>支持 Function Calling；代码 Agent 能力强；长上下文支持复杂工具链</td>
+    </tr>
+    <tr>
+      <td><strong>Gorilla (UC Berkeley)</strong></td>
+      <td>专项 Tool Use SFT</td>
+      <td>16,450 条 API 调用数据</td>
+      <td>专注 API 调用准确性；使用 Retriever-aware Training（检索增强）提升新工具适应性</td>
+    </tr>
+  </table>
+
+  <div class="warning">
+    <strong>Toolformer 的开创性思路（Meta, 2023）：</strong>
+    不依赖人工标注——让模型自己在预训练文本中插入 API 调用（如在数学题旁插入 calculator()），
+    然后用<strong>困惑度（PPL）变化</strong>作为过滤信号：如果插入 API 调用后文本的 PPL 降低，说明这个调用是有用的。
+    这种自监督方法可以自动生成百万级训练数据，但对复杂多步工具调用的覆盖不足。
+  </div>
+</div>
+
+<!-- ===== 四、Agent 记忆系统 ===== -->
+<div class="section">
+  <h2>四、Agent 记忆系统</h2>
+
+  <h3>4.1 记忆的分类与作用</h3>
+  <p>
+    人类完成复杂任务依赖记忆——Agent 同样需要记忆来维持上下文、积累经验和存储知识。
+    Agent 的记忆分为<strong>短期记忆、长期记忆和工作记忆</strong>三类。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 280" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar4" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">Agent 记忆系统架构</text>
+
+      <!-- 短期记忆 -->
+      <rect x="20" y="50" width="240" height="120" rx="10" fill="#667eea" opacity="0.12" stroke="#667eea" stroke-width="1.5"/>
+      <text x="140" y="75" text-anchor="middle" font-size="12" font-weight="700" fill="#667eea">短期记忆</text>
+      <text x="40" y="98" font-size="10" fill="#555">· 当前对话上下文（Context Window）</text>
+      <text x="40" y="118" font-size="10" fill="#555">· 最近的 Thought / Action / Observation</text>
+      <text x="40" y="138" font-size="10" fill="#555">· 容量：受上下文窗口限制</text>
+      <text x="40" y="158" font-size="10" fill="#888">4K~200K tokens，会话结束即消失</text>
+
+      <!-- 工作记忆 -->
+      <rect x="290" y="50" width="240" height="120" rx="10" fill="#2a9d8f" opacity="0.12" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="410" y="75" text-anchor="middle" font-size="12" font-weight="700" fill="#2a9d8f">工作记忆 / Scratchpad</text>
+      <text x="310" y="98" font-size="10" fill="#555">· 任务计划与进度追踪</text>
+      <text x="310" y="118" font-size="10" fill="#555">· 中间推理结果和笔记</text>
+      <text x="310" y="138" font-size="10" fill="#555">· 当前子任务的关键信息</text>
+      <text x="310" y="158" font-size="10" fill="#888">结构化文本/JSON，任务结束后归档</text>
+
+      <!-- 长期记忆 -->
+      <rect x="560" y="50" width="240" height="120" rx="10" fill="#f0a500" opacity="0.12" stroke="#f0a500" stroke-width="1.5"/>
+      <text x="680" y="75" text-anchor="middle" font-size="12" font-weight="700" fill="#e65100">长期记忆</text>
+      <text x="580" y="98" font-size="10" fill="#555">· 向量数据库（Embedding 检索）</text>
+      <text x="580" y="118" font-size="10" fill="#555">· 历史对话摘要和经验教训</text>
+      <text x="580" y="138" font-size="10" fill="#555">· 用户偏好和个性化信息</text>
+      <text x="580" y="158" font-size="10" fill="#888">持久化存储，跨会话可用</text>
+
+      <!-- 底部关系 -->
+      <rect x="60" y="195" width="700" height="65" rx="8" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="80" y="218" font-size="11" font-weight="700" fill="#0f3460">记忆管理的核心挑战：</text>
+      <text x="80" y="238" font-size="10" fill="#555">1. 上下文窗口有限，需要用<tspan font-weight="600">摘要/压缩/检索</tspan>管理短期记忆溢出</text>
+      <text x="80" y="254" font-size="10" fill="#555">2. 长期记忆的<tspan font-weight="600">写入时机和检索策略</tspan>直接影响 Agent 的"经验学习"能力</text>
+    </svg>
+    <div class="caption">图 9：Agent 记忆系统架构。短期记忆存储当前对话，工作记忆追踪任务状态，长期记忆通过向量数据库持久化跨会话知识。</div>
+  </div>
+
+  <h3>4.2 RAG 与长期记忆</h3>
+  <p>
+    <strong>RAG（Retrieval-Augmented Generation）</strong>是 Agent 长期记忆的核心实现方式。
+    将历史经验、文档知识等编码为向量存储在数据库中，
+    在需要时通过语义相似度检索，注入到 Agent 的上下文中。
+  </p>
+  <div class="step-flow">
+    <div class="step-box">用户查询</div>
+    <span class="step-arrow">→</span>
+    <div class="step-box">Embedding 编码</div>
+    <span class="step-arrow">→</span>
+    <div class="step-box">向量检索 Top-K</div>
+    <span class="step-arrow">→</span>
+    <div class="step-box">注入上下文</div>
+    <span class="step-arrow">→</span>
+    <div class="step-box">LLM 生成回答</div>
+  </div>
+</div>
+
+<!-- ===== 五、主流 Agent 实现方案 ===== -->
+<div class="section">
+  <h2>五、主流 Agent 实现方案</h2>
+
+  <h3>5.1 按架构分类</h3>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 330" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">Agent 实现方案分类全景</text>
+
+      <!-- 单 Agent -->
+      <rect x="20" y="45" width="380" height="130" rx="10" fill="#f0f4ff" stroke="#667eea" stroke-width="1.5"/>
+      <text x="210" y="70" text-anchor="middle" font-size="13" font-weight="700" fill="#667eea">单 Agent 架构</text>
+      <text x="40" y="95" font-size="10" fill="#555">· <tspan font-weight="600">ReAct Agent：</tspan>逐步推理+行动（最通用）</text>
+      <text x="40" y="115" font-size="10" fill="#555">· <tspan font-weight="600">Plan-Execute Agent：</tspan>先规划后执行</text>
+      <text x="40" y="135" font-size="10" fill="#555">· <tspan font-weight="600">Code Agent：</tspan>通过生成+执行代码完成任务</text>
+      <text x="40" y="155" font-size="10" fill="#555">· <tspan font-weight="600">Tool-Augmented Agent：</tspan>核心是工具调用</text>
+      <text x="40" y="165" font-size="9" fill="#888">代表：Claude Code、ChatGPT、Cursor</text>
+
+      <!-- 多 Agent -->
+      <rect x="420" y="45" width="380" height="130" rx="10" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="610" y="70" text-anchor="middle" font-size="13" font-weight="700" fill="#2a9d8f">Multi-Agent 架构</text>
+      <text x="440" y="95" font-size="10" fill="#555">· <tspan font-weight="600">分工协作：</tspan>不同 Agent 负责不同子任务</text>
+      <text x="440" y="115" font-size="10" fill="#555">· <tspan font-weight="600">辩论/审核：</tspan>多个 Agent 交叉验证结果</text>
+      <text x="440" y="135" font-size="10" fill="#555">· <tspan font-weight="600">层级管理：</tspan>Orchestrator Agent 分配子 Agent</text>
+      <text x="440" y="155" font-size="10" fill="#555">· <tspan font-weight="600">竞争选优：</tspan>多 Agent 并行尝试，选最佳结果</text>
+      <text x="440" y="165" font-size="9" fill="#888">代表：AutoGen、CrewAI、MetaGPT</text>
+
+      <!-- Agent 框架 -->
+      <rect x="20" y="195" width="380" height="110" rx="10" fill="#fff8f0" stroke="#f0a500" stroke-width="1.5"/>
+      <text x="210" y="220" text-anchor="middle" font-size="13" font-weight="700" fill="#e65100">Agent 开发框架</text>
+      <text x="40" y="245" font-size="10" fill="#555">· <tspan font-weight="600">LangChain / LangGraph：</tspan>最流行的 Agent 框架</text>
+      <text x="40" y="265" font-size="10" fill="#555">· <tspan font-weight="600">LlamaIndex：</tspan>以 RAG 和数据 Agent 为核心</text>
+      <text x="40" y="285" font-size="10" fill="#555">· <tspan font-weight="600">Semantic Kernel：</tspan>微软的 Agent 框架</text>
+      <text x="40" y="295" font-size="9" fill="#888">提供工具抽象、记忆管理、编排能力</text>
+
+      <!-- 端到端产品 -->
+      <rect x="420" y="195" width="380" height="110" rx="10" fill="#f0f0ff" stroke="#9b59b6" stroke-width="1.5"/>
+      <text x="610" y="220" text-anchor="middle" font-size="13" font-weight="700" fill="#7b1fa2">端到端 Agent 产品</text>
+      <text x="440" y="245" font-size="10" fill="#555">· <tspan font-weight="600">Claude Code：</tspan>Anthropic 的编程 Agent</text>
+      <text x="440" y="265" font-size="10" fill="#555">· <tspan font-weight="600">Devin / Codex：</tspan>自主软件工程 Agent</text>
+      <text x="440" y="285" font-size="10" fill="#555">· <tspan font-weight="600">Manus / AutoGPT：</tspan>通用任务自主 Agent</text>
+      <text x="440" y="295" font-size="9" fill="#888">集成完整的工具链和执行环境</text>
+    </svg>
+    <div class="caption">图 10：Agent 实现方案分类全景。从单 Agent 到 Multi-Agent，从开发框架到端到端产品，形成完整的 Agent 生态。</div>
+  </div>
+
+  <h3>5.2 主流 Agent 产品与框架对比</h3>
+  <table>
+    <tr>
+      <th>名称</th>
+      <th>类型</th>
+      <th>核心 LLM</th>
+      <th>工具能力</th>
+      <th>架构特点</th>
+    </tr>
+    <tr>
+      <td><strong>Claude Code</strong></td>
+      <td>编程 Agent</td>
+      <td>Claude Opus/Sonnet</td>
+      <td>文件读写、Shell 执行、Web 搜索、Git 操作</td>
+      <td>终端 Agent Loop；MCP 工具协议；子 Agent 并行；上下文压缩</td>
+    </tr>
+    <tr>
+      <td><strong>ChatGPT (Operator)</strong></td>
+      <td>通用 Agent</td>
+      <td>GPT-4o</td>
+      <td>代码执行、浏览器、文件、DALL·E、搜索</td>
+      <td>原生 Function Calling；插件生态；浏览器自动化</td>
+    </tr>
+    <tr>
+      <td><strong>Devin (Cognition)</strong></td>
+      <td>软件工程 Agent</td>
+      <td>自研 + Claude/GPT</td>
+      <td>IDE、终端、浏览器、Git</td>
+      <td>长时自主运行；Plan-and-Execute；持久化工作空间</td>
+    </tr>
+    <tr>
+      <td><strong>Codex (OpenAI)</strong></td>
+      <td>编程 Agent</td>
+      <td>codex-mini</td>
+      <td>沙箱代码执行、文件系统、联网搜索</td>
+      <td>云端异步 Agent；沙箱隔离；多任务并行</td>
+    </tr>
+    <tr>
+      <td><strong>Manus</strong></td>
+      <td>通用 Agent</td>
+      <td>多模型协作</td>
+      <td>浏览器、代码、文件、部署</td>
+      <td>Plan-Execute-Verify 循环；可视化工作流</td>
+    </tr>
+    <tr>
+      <td><strong>AutoGen (Microsoft)</strong></td>
+      <td>Multi-Agent 框架</td>
+      <td>任意 LLM</td>
+      <td>可扩展工具</td>
+      <td>多 Agent 对话协作；角色分工；human-in-the-loop</td>
+    </tr>
+    <tr>
+      <td><strong>LangGraph</strong></td>
+      <td>Agent 编排框架</td>
+      <td>任意 LLM</td>
+      <td>可扩展工具</td>
+      <td>基于有向图的 Agent 编排；状态持久化；流式输出</td>
+    </tr>
+    <tr>
+      <td><strong>CrewAI</strong></td>
+      <td>Multi-Agent 框架</td>
+      <td>任意 LLM</td>
+      <td>可扩展工具</td>
+      <td>角色驱动（Role-based）的 Multi-Agent 协作</td>
+    </tr>
+  </table>
+
+  <h3>5.3 MCP（Model Context Protocol）简介</h3>
+  <p>
+    <strong>MCP</strong> 是 Anthropic 提出的开放标准协议，旨在为 LLM Agent 提供<strong>统一的工具接入方式</strong>，
+    已成为 Agent 工具生态的重要基础设施。由于其重要性和复杂性，下一节将单独详细介绍 MCP 协议的完整原理。
+  </p>
+</div>
+
+<!-- ===== 六、MCP 协议详解 ===== -->
+<div class="section">
+  <h2>六、MCP（Model Context Protocol）协议详解</h2>
+  <p>
+    <strong>MCP（Model Context Protocol）</strong>是 Anthropic 于 2024 年底发布的<strong>开放标准协议</strong>，
+    旨在为 LLM 应用提供统一的外部数据和工具接入方式。MCP 的核心理念类似于 <strong>"AI 时代的 USB-C"</strong>——
+    定义一套标准接口，让任何 AI 应用（Host）都能与任何外部服务（Server）即插即用地连接，
+    彻底消除传统 Agent 开发中"每个工具都要写一套适配代码"的碎片化问题。
+  </p>
+
+  <h3>6.1 MCP 解决的核心问题</h3>
+  <p>
+    在 MCP 出现之前，Agent 的工具集成面临 <strong>N×M 问题</strong>：
+  </p>
+  <div class="pros-cons">
+    <div class="cons">
+      <h4>传统方式：N×M 适配</h4>
+      <ul>
+        <li>每个 Agent（Claude/GPT/Gemini...）需要分别适配每个工具（GitHub/Slack/DB...）</li>
+        <li>N 个 Agent × M 个工具 = N×M 个集成代码</li>
+        <li>工具描述格式各异，不可复用</li>
+        <li>新增一个 Agent 需要重新适配所有工具</li>
+      </ul>
+    </div>
+    <div class="pros">
+      <h4>MCP 方式：N+M 标准化</h4>
+      <ul>
+        <li>每个 Agent 实现一次 MCP Client</li>
+        <li>每个工具实现一次 MCP Server</li>
+        <li>N + M 个实现即可互相连接</li>
+        <li>新增 Agent 或工具不需要改动已有代码</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>6.2 MCP 架构与核心组件</h3>
+  <div class="figure">
+    <svg viewBox="0 0 820 520" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar_mcp" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+        <marker id="ar_mcpg" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2a9d8f"/></marker>
+        <marker id="ar_mcpr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#e74c3c"/></marker>
+      </defs>
+      <text x="410" y="24" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">MCP 协议架构全景</text>
+
+      <!-- Host Application -->
+      <rect x="230" y="48" width="360" height="90" rx="12" fill="#1a1a2e" opacity="0.95"/>
+      <text x="410" y="72" text-anchor="middle" font-size="13" font-weight="700" fill="white">Host（宿主应用）</text>
+      <text x="410" y="92" text-anchor="middle" font-size="10" fill="#aab">Claude Desktop / VS Code / IDE / 自定义应用</text>
+      <text x="410" y="110" text-anchor="middle" font-size="9" fill="#889">负责：用户交互、LLM 调用、安全策略、权限控制</text>
+      <text x="410" y="127" text-anchor="middle" font-size="9" fill="#667">Host 内部管理多个 MCP Client 实例</text>
+
+      <!-- MCP Clients -->
+      <rect x="120" y="170" width="160" height="55" rx="8" fill="#667eea" opacity="0.9"/>
+      <text x="200" y="195" text-anchor="middle" fill="white" font-size="11" font-weight="700">MCP Client A</text>
+      <text x="200" y="212" text-anchor="middle" fill="white" font-size="9">维护 1:1 连接</text>
+
+      <rect x="330" y="170" width="160" height="55" rx="8" fill="#667eea" opacity="0.9"/>
+      <text x="410" y="195" text-anchor="middle" fill="white" font-size="11" font-weight="700">MCP Client B</text>
+      <text x="410" y="212" text-anchor="middle" fill="white" font-size="9">维护 1:1 连接</text>
+
+      <rect x="540" y="170" width="160" height="55" rx="8" fill="#667eea" opacity="0.9"/>
+      <text x="620" y="195" text-anchor="middle" fill="white" font-size="11" font-weight="700">MCP Client C</text>
+      <text x="620" y="212" text-anchor="middle" fill="white" font-size="9">维护 1:1 连接</text>
+
+      <!-- Arrows Host -> Clients -->
+      <line x1="310" y1="138" x2="220" y2="168" stroke="#667eea" stroke-width="1.5" marker-end="url(#ar_mcp)"/>
+      <line x1="410" y1="138" x2="410" y2="168" stroke="#667eea" stroke-width="1.5" marker-end="url(#ar_mcp)"/>
+      <line x1="510" y1="138" x2="600" y2="168" stroke="#667eea" stroke-width="1.5" marker-end="url(#ar_mcp)"/>
+
+      <!-- Transport Layer -->
+      <rect x="80" y="248" width="660" height="30" rx="6" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1" stroke-dasharray="6 3"/>
+      <text x="410" y="268" text-anchor="middle" font-size="10" font-weight="600" fill="#4a7dff">Transport Layer：stdio（本地进程） / Streamable HTTP（远程服务） / SSE（兼容）</text>
+
+      <!-- Arrows Clients -> Transport -->
+      <line x1="200" y1="225" x2="200" y2="248" stroke="#4a7dff" stroke-width="1.5"/>
+      <line x1="410" y1="225" x2="410" y2="248" stroke="#4a7dff" stroke-width="1.5"/>
+      <line x1="620" y1="225" x2="620" y2="248" stroke="#4a7dff" stroke-width="1.5"/>
+
+      <!-- MCP Servers -->
+      <rect x="50" y="305" width="200" height="145" rx="10" fill="#f0fff4" stroke="#2a9d8f" stroke-width="1.5"/>
+      <text x="150" y="330" text-anchor="middle" font-size="12" font-weight="700" fill="#2a9d8f">MCP Server A</text>
+      <text x="150" y="348" text-anchor="middle" font-size="9" fill="#888">如：GitHub Server</text>
+      <line x1="70" y1="358" x2="230" y2="358" stroke="#ddd" stroke-width="0.8"/>
+      <rect x="65" y="365" width="70" height="20" rx="4" fill="#e8f5e9" stroke="#a5d6a7"/>
+      <text x="100" y="379" text-anchor="middle" font-size="8" fill="#2e7d32">Tools</text>
+      <rect x="145" y="365" width="90" height="20" rx="4" fill="#e8f5e9" stroke="#a5d6a7"/>
+      <text x="190" y="379" text-anchor="middle" font-size="8" fill="#2e7d32">Resources</text>
+      <rect x="65" y="392" width="70" height="20" rx="4" fill="#e8f5e9" stroke="#a5d6a7"/>
+      <text x="100" y="406" text-anchor="middle" font-size="8" fill="#2e7d32">Prompts</text>
+      <rect x="145" y="392" width="90" height="20" rx="4" fill="#e8f5e9" stroke="#a5d6a7"/>
+      <text x="190" y="406" text-anchor="middle" font-size="8" fill="#2e7d32">Sampling</text>
+      <text x="150" y="438" text-anchor="middle" font-size="9" fill="#555">↓ 本地文件 / GitHub API</text>
+
+      <rect x="310" y="305" width="200" height="145" rx="10" fill="#fff8f0" stroke="#e67e22" stroke-width="1.5"/>
+      <text x="410" y="330" text-anchor="middle" font-size="12" font-weight="700" fill="#e65100">MCP Server B</text>
+      <text x="410" y="348" text-anchor="middle" font-size="9" fill="#888">如：PostgreSQL Server</text>
+      <line x1="330" y1="358" x2="490" y2="358" stroke="#ddd" stroke-width="0.8"/>
+      <rect x="325" y="365" width="70" height="20" rx="4" fill="#fff3e0" stroke="#ffcc80"/>
+      <text x="360" y="379" text-anchor="middle" font-size="8" fill="#e65100">Tools</text>
+      <rect x="405" y="365" width="90" height="20" rx="4" fill="#fff3e0" stroke="#ffcc80"/>
+      <text x="450" y="379" text-anchor="middle" font-size="8" fill="#e65100">Resources</text>
+      <rect x="325" y="392" width="170" height="20" rx="4" fill="#fff3e0" stroke="#ffcc80"/>
+      <text x="410" y="406" text-anchor="middle" font-size="8" fill="#e65100">Schema Discovery</text>
+      <text x="410" y="438" text-anchor="middle" font-size="9" fill="#555">↓ PostgreSQL 数据库</text>
+
+      <rect x="570" y="305" width="200" height="145" rx="10" fill="#f5f0ff" stroke="#9b59b6" stroke-width="1.5"/>
+      <text x="670" y="330" text-anchor="middle" font-size="12" font-weight="700" fill="#7b1fa2">MCP Server C</text>
+      <text x="670" y="348" text-anchor="middle" font-size="9" fill="#888">如：Slack Server</text>
+      <line x1="590" y1="358" x2="750" y2="358" stroke="#ddd" stroke-width="0.8"/>
+      <rect x="585" y="365" width="70" height="20" rx="4" fill="#f3e5f5" stroke="#ce93d8"/>
+      <text x="620" y="379" text-anchor="middle" font-size="8" fill="#7b1fa2">Tools</text>
+      <rect x="665" y="365" width="90" height="20" rx="4" fill="#f3e5f5" stroke="#ce93d8"/>
+      <text x="710" y="379" text-anchor="middle" font-size="8" fill="#7b1fa2">Resources</text>
+      <rect x="585" y="392" width="70" height="20" rx="4" fill="#f3e5f5" stroke="#ce93d8"/>
+      <text x="620" y="406" text-anchor="middle" font-size="8" fill="#7b1fa2">Prompts</text>
+      <text x="670" y="438" text-anchor="middle" font-size="9" fill="#555">↓ Slack Web API</text>
+
+      <!-- Arrows Transport -> Servers -->
+      <line x1="200" y1="278" x2="150" y2="303" stroke="#2a9d8f" stroke-width="1.5" marker-end="url(#ar_mcpg)"/>
+      <line x1="410" y1="278" x2="410" y2="303" stroke="#e67e22" stroke-width="1.5" marker-end="url(#ar_mcp)"/>
+      <line x1="620" y1="278" x2="670" y2="303" stroke="#9b59b6" stroke-width="1.5" marker-end="url(#ar_mcp)"/>
+
+      <!-- 底部说明 -->
+      <rect x="80" y="468" width="660" height="38" rx="8" fill="#f8f9ff" stroke="#d8e0f0"/>
+      <text x="410" y="484" text-anchor="middle" font-size="10" fill="#555">
+        <tspan font-weight="700" fill="#4a7dff">关键设计：</tspan>Host 与 Client 是 1:N 关系，Client 与 Server 是 1:1 关系
+      </text>
+      <text x="410" y="500" text-anchor="middle" font-size="10" fill="#555">每个 MCP Server 是独立进程/服务，通过 Transport 层与 Client 通信，Server 之间互不感知</text>
+    </svg>
+    <div class="caption">图 11：MCP 协议架构全景。Host 应用管理多个 MCP Client，每个 Client 与一个 MCP Server 建立 1:1 连接，Server 通过标准接口暴露 Tools/Resources/Prompts 等能力。</div>
+  </div>
+
+  <h3>6.3 MCP 协议基础：JSON-RPC 2.0</h3>
+  <p>
+    MCP 在传输层之上使用 <strong>JSON-RPC 2.0</strong> 作为消息格式。所有的方法调用、通知和响应
+    都封装在标准的 JSON-RPC 消息中，支持三种消息类型：
+  </p>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>Request（请求）</h4>
+      <p>从 Client 或 Server 发起，必须包含 <code>method</code>（方法名）和唯一的 <code>id</code>。
+        例如 <code>{"jsonrpc":"2.0", "id":1, "method":"tools/list"}</code>。
+        接收方必须返回对应 id 的 Response。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>Response（响应）</h4>
+      <p>对 Request 的回复，包含 <code>result</code>（成功）或 <code>error</code>（失败）。
+        必须携带与请求相同的 <code>id</code>。
+        例如 <code>{"jsonrpc":"2.0", "id":1, "result":{"tools":[...]}}</code>。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>Notification（通知）</h4>
+      <p><strong>没有 id 字段</strong>的消息，不需要回复。用于单向事件通知，
+        如 <code>{"jsonrpc":"2.0", "method":"notifications/tools/list_changed"}</code>，
+        通知 Client 工具列表已更新。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>错误码</h4>
+      <p>标准 JSON-RPC 错误码（-32600 ~ -32603）加 MCP 自定义错误码。
+        支持 <code>error.data</code> 字段携带详细错误上下文，
+        Client 可据此进行错误恢复或重试。</p>
+    </div>
+  </div>
+
+  <h3>6.4 MCP 连接生命周期</h3>
+  <p>
+    MCP 连接遵循严格的<strong>初始化 → 操作 → 关闭</strong>三阶段生命周期：
+  </p>
+  <div class="step-flow">
+    <div class="step-box">Client 发送<br/>initialize</div>
+    <div class="step-arrow">→</div>
+    <div class="step-box">Server 返回<br/>能力声明</div>
+    <div class="step-arrow">→</div>
+    <div class="step-box">Client 发送<br/>initialized 通知</div>
+    <div class="step-arrow">→</div>
+    <div class="step-box">正常操作阶段<br/>（双向通信）</div>
+    <div class="step-arrow">→</div>
+    <div class="step-box">Client 发送<br/>关闭或断开连接</div>
+  </div>
+
+  <div class="highlight">
+    <strong>能力协商（Capability Negotiation）：</strong>在 <code>initialize</code> 阶段，Client 和 Server 交换各自支持的能力集合。
+    例如 Server 可声明支持 <code>tools</code>、<code>resources</code>、<code>prompts</code>、<code>logging</code> 等能力，
+    Client 可声明支持 <code>sampling</code>（允许 Server 请求 LLM 补全）和 <code>roots</code>（允许 Server 访问文件系统根目录）。
+    <strong>只有在初始化阶段声明的能力才能在后续使用</strong>——这是 MCP 安全模型的基础。
+  </div>
+
+  <h3>6.5 MCP Server 暴露的四大原语</h3>
+  <p>MCP Server 可以向 Client 暴露四种标准化原语，每种原语服务于不同的 Agent 交互模式：</p>
+
+  <table>
+    <tr>
+      <th>原语</th>
+      <th>控制方</th>
+      <th>功能</th>
+      <th>类比</th>
+      <th>典型用法</th>
+    </tr>
+    <tr>
+      <td><strong>Tools</strong></td>
+      <td>模型控制</td>
+      <td>可执行的操作函数</td>
+      <td>POST 请求</td>
+      <td>查询数据库、发送消息、创建文件</td>
+    </tr>
+    <tr>
+      <td><strong>Resources</strong></td>
+      <td>应用控制</td>
+      <td>可读取的数据源</td>
+      <td>GET 请求</td>
+      <td>读取文件内容、获取数据库 schema、配置信息</td>
+    </tr>
+    <tr>
+      <td><strong>Prompts</strong></td>
+      <td>用户控制</td>
+      <td>预定义的提示模板</td>
+      <td>API 模板</td>
+      <td>代码审查模板、SQL 生成模板、翻译模板</td>
+    </tr>
+    <tr>
+      <td><strong>Sampling</strong></td>
+      <td>Server 发起</td>
+      <td>请求 LLM 生成</td>
+      <td>回调</td>
+      <td>Server 需要 LLM 帮助做决策（反向调用）</td>
+    </tr>
+  </table>
+
+  <div class="warning">
+    <strong>Tools vs Resources 的关键区别：</strong>
+    <ul>
+      <li><strong>Tools</strong> 是"动作"——有副作用（写入、发送、删除），由<strong>模型自主决定</strong>何时调用</li>
+      <li><strong>Resources</strong> 是"数据"——只读、无副作用，由<strong>应用/用户</strong>决定何时加载到上下文中</li>
+    </ul>
+    这一区分至关重要：Resources 可以安全地自动加载（如将文件内容注入上下文），而 Tools 的执行需要用户确认或权限检查。
+  </div>
+
+  <h3>6.6 Transport 传输层</h3>
+  <p>MCP 支持多种传输层机制，适应不同的部署场景：</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>stdio（标准输入输出）</h4>
+      <p>Host 以<strong>子进程</strong>方式启动 MCP Server，通过 stdin/stdout 管道通信。
+        适合本地工具（如文件系统、Git），延迟极低，无需网络。
+        消息以换行符分隔的 JSON-RPC 文本流传输。<strong>最简单、最常用</strong>的传输方式。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>Streamable HTTP（推荐远程方式）</h4>
+      <p>2025 年新增的传输协议，取代 HTTP+SSE。Client 通过 <code>POST /mcp</code> 发送请求，
+        Server 可返回单个 JSON 响应或 SSE 事件流。支持<strong>有状态和无状态</strong>两种模式，
+        通过 <code>Mcp-Session-Id</code> Header 管理会话。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>HTTP+SSE（旧版远程方式）</h4>
+      <p>Client 建立 SSE 连接接收 Server 推送，通过 HTTP POST 发送请求。
+        <strong>已被 Streamable HTTP 取代</strong>，但仍需支持兼容。
+        每个连接维护独立会话状态。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>自定义 Transport</h4>
+      <p>MCP 协议不限定传输层实现，任何支持<strong>双向消息传递</strong>的通道都可以。
+        社区已有 WebSocket、gRPC、Unix Socket 等实现。
+        只需保证消息的完整性和顺序性。</p>
+    </div>
+  </div>
+
+  <h3>6.7 MCP 工具调用完整流程</h3>
+  <p>当 Agent 通过 MCP 调用工具时，涉及 Host、Client、Server 三方的协作：</p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 460" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar_seq" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+        <marker id="ar_seqr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#e74c3c"/></marker>
+        <marker id="ar_seqg" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2a9d8f"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">MCP 工具调用完整时序流程</text>
+
+      <!-- 三个参与者 -->
+      <rect x="100" y="42" width="120" height="32" rx="6" fill="#1a1a2e"/>
+      <text x="160" y="63" text-anchor="middle" fill="white" font-size="11" font-weight="600">Host + LLM</text>
+      <line x1="160" y1="74" x2="160" y2="440" stroke="#1a1a2e" stroke-width="2" stroke-dasharray="6 3"/>
+
+      <rect x="340" y="42" width="120" height="32" rx="6" fill="#667eea"/>
+      <text x="400" y="63" text-anchor="middle" fill="white" font-size="11" font-weight="600">MCP Client</text>
+      <line x1="400" y1="74" x2="400" y2="440" stroke="#667eea" stroke-width="2" stroke-dasharray="6 3"/>
+
+      <rect x="580" y="42" width="140" height="32" rx="6" fill="#2a9d8f"/>
+      <text x="650" y="63" text-anchor="middle" fill="white" font-size="11" font-weight="600">MCP Server</text>
+      <line x1="650" y1="74" x2="650" y2="440" stroke="#2a9d8f" stroke-width="2" stroke-dasharray="6 3"/>
+
+      <!-- Step 1: 初始化 -->
+      <text x="40" y="100" font-size="9" fill="#888" font-weight="600">初始化</text>
+      <line x1="165" y1="95" x2="395" y2="95" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar_seq)"/>
+      <text x="280" y="90" text-anchor="middle" font-size="8" fill="#4a7dff">启动 Client</text>
+      <line x1="405" y1="110" x2="645" y2="110" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar_seq)"/>
+      <text x="520" y="105" text-anchor="middle" font-size="8" fill="#4a7dff">initialize (协议版本, 能力)</text>
+      <line x1="645" y1="125" x2="405" y2="125" stroke="#2a9d8f" stroke-width="1.5" marker-end="url(#ar_seqg)"/>
+      <text x="520" y="120" text-anchor="middle" font-size="8" fill="#2a9d8f">result (Server 能力, 工具列表)</text>
+
+      <!-- Step 2: 工具发现 -->
+      <text x="40" y="155" font-size="9" fill="#888" font-weight="600">工具发现</text>
+      <line x1="405" y1="150" x2="645" y2="150" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar_seq)"/>
+      <text x="520" y="145" text-anchor="middle" font-size="8" fill="#4a7dff">tools/list</text>
+      <line x1="645" y1="165" x2="405" y2="165" stroke="#2a9d8f" stroke-width="1.5" marker-end="url(#ar_seqg)"/>
+      <text x="520" y="160" text-anchor="middle" font-size="8" fill="#2a9d8f">[{name, description, inputSchema}...]</text>
+      <line x1="395" y1="180" x2="165" y2="180" stroke="#667eea" stroke-width="1.5" marker-end="url(#ar_seq)"/>
+      <text x="280" y="175" text-anchor="middle" font-size="8" fill="#667eea">将工具 Schema 注入 LLM 上下文</text>
+
+      <!-- Step 3: 用户请求 + LLM 决策 -->
+      <text x="40" y="210" font-size="9" fill="#888" font-weight="600">用户请求</text>
+      <rect x="105" y="198" width="110" height="50" rx="6" fill="#f0f4ff" stroke="#4a7dff" stroke-width="0.8"/>
+      <text x="160" y="218" text-anchor="middle" font-size="8" fill="#555">LLM 分析请求</text>
+      <text x="160" y="232" text-anchor="middle" font-size="8" fill="#555">决定调用工具</text>
+      <text x="160" y="244" text-anchor="middle" font-size="8" fill="#4a7dff" font-weight="600">生成 tool_call JSON</text>
+
+      <!-- Step 4: 执行工具 -->
+      <text x="40" y="275" font-size="9" fill="#888" font-weight="600">工具执行</text>
+      <line x1="165" y1="268" x2="395" y2="268" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar_seq)"/>
+      <text x="280" y="263" text-anchor="middle" font-size="8" fill="#4a7dff">tool_call: search_issues({repo, query})</text>
+      <line x1="405" y1="283" x2="645" y2="283" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar_seq)"/>
+      <text x="520" y="278" text-anchor="middle" font-size="8" fill="#4a7dff">tools/call {name, arguments}</text>
+
+      <rect x="595" y="295" width="110" height="35" rx="6" fill="#f0fff4" stroke="#2a9d8f" stroke-width="0.8"/>
+      <text x="650" y="310" text-anchor="middle" font-size="8" fill="#555">执行工具逻辑</text>
+      <text x="650" y="324" text-anchor="middle" font-size="8" fill="#555">调用 GitHub API</text>
+
+      <line x1="645" y1="340" x2="405" y2="340" stroke="#2a9d8f" stroke-width="1.5" marker-end="url(#ar_seqg)"/>
+      <text x="520" y="335" text-anchor="middle" font-size="8" fill="#2a9d8f">result: {content: [{type:"text", text:"..."}]}</text>
+
+      <!-- Step 5: 结果回填 + 最终回答 -->
+      <text x="40" y="370" font-size="9" fill="#888" font-weight="600">结果回填</text>
+      <line x1="395" y1="355" x2="165" y2="355" stroke="#667eea" stroke-width="1.5" marker-end="url(#ar_seq)"/>
+      <text x="280" y="350" text-anchor="middle" font-size="8" fill="#667eea">tool result 注入 messages</text>
+
+      <rect x="105" y="367" width="110" height="35" rx="6" fill="#f0f4ff" stroke="#4a7dff" stroke-width="0.8"/>
+      <text x="160" y="382" text-anchor="middle" font-size="8" fill="#555">LLM 基于结果</text>
+      <text x="160" y="396" text-anchor="middle" font-size="8" fill="#4a7dff" font-weight="600">生成最终回答</text>
+
+      <text x="40" y="425" font-size="9" fill="#888" font-weight="600">响应用户</text>
+      <rect x="105" y="410" width="320" height="25" rx="5" fill="#9b59b6" opacity="0.85"/>
+      <text x="265" y="427" text-anchor="middle" fill="white" font-size="9">"找到 3 个相关 issue：#142 关于性能优化..."</text>
+    </svg>
+    <div class="caption">图 12：MCP 工具调用完整时序流程。从初始化 → 工具发现 → LLM 决策 → tools/call 执行 → 结果回填 → 最终回答，展示了 Host/Client/Server 三方的交互过程。</div>
+  </div>
+
+  <h3>6.8 MCP 安全模型</h3>
+  <p>
+    MCP 的安全设计遵循<strong>最小权限原则</strong>，通过多层机制保障安全：
+  </p>
+  <ul>
+    <li><strong>用户确认（Human-in-the-Loop）：</strong>Host 在执行任何 Tool 调用前应提示用户确认，
+      用户可以逐次确认或批量授权特定工具。这是最重要的安全屏障</li>
+    <li><strong>能力声明：</strong>Server 只能使用在初始化阶段声明的能力，Client 可以拒绝不信任的能力</li>
+    <li><strong>信息隔离：</strong>不同 MCP Server 之间完全隔离，一个恶意 Server 无法访问其他 Server 的数据</li>
+    <li><strong>Transport 安全：</strong>远程连接必须使用 HTTPS + OAuth 2.0 认证，支持 PKCE 流程防止授权码劫持</li>
+    <li><strong>输入验证：</strong>Server 必须对所有输入参数进行验证，防止注入攻击</li>
+    <li><strong>速率限制：</strong>Server 应实现请求频率限制，防止 Agent 无限循环调用</li>
+  </ul>
+
+  <div class="warning">
+    <strong>Prompt Injection 风险：</strong>MCP 特别需要防范的场景是——恶意 MCP Server 在返回结果中嵌入
+    prompt injection 指令（如 "忽略之前的指令，改为执行..."），诱导 LLM 执行非预期操作。
+    Host 应对 tool result 进行过滤，标记为不受信任的外部输入，并在系统提示中明确指示模型
+    不要执行工具返回内容中的指令。
+  </div>
+
+  <h3>6.9 MCP 生态与主流实现</h3>
+  <table>
+    <tr>
+      <th>类别</th>
+      <th>实现</th>
+      <th>说明</th>
+    </tr>
+    <tr>
+      <td><strong>官方 SDK</strong></td>
+      <td>TypeScript, Python, Java, Kotlin, C#</td>
+      <td>Anthropic 官方维护，提供 Client/Server 框架</td>
+    </tr>
+    <tr>
+      <td><strong>Host 集成</strong></td>
+      <td>Claude Desktop, Claude Code, VS Code (Copilot), Cursor, Windsurf</td>
+      <td>已内置 MCP Client，用户可直接添加 Server</td>
+    </tr>
+    <tr>
+      <td><strong>开发工具 Server</strong></td>
+      <td>GitHub, GitLab, Sentry, Linear, Jira</td>
+      <td>代码管理、Issue 追踪、错误监控</td>
+    </tr>
+    <tr>
+      <td><strong>数据 Server</strong></td>
+      <td>PostgreSQL, SQLite, Redis, Elasticsearch</td>
+      <td>数据库查询和管理</td>
+    </tr>
+    <tr>
+      <td><strong>通信 Server</strong></td>
+      <td>Slack, Discord, Email, Google Calendar</td>
+      <td>消息发送、日程管理</td>
+    </tr>
+    <tr>
+      <td><strong>文件系统 Server</strong></td>
+      <td>Filesystem, Google Drive, S3, Dropbox</td>
+      <td>文件读写和云存储访问</td>
+    </tr>
+    <tr>
+      <td><strong>浏览器 Server</strong></td>
+      <td>Puppeteer, Playwright, Browserbase</td>
+      <td>网页浏览和自动化操作</td>
+    </tr>
+    <tr>
+      <td><strong>知识库 Server</strong></td>
+      <td>Notion, Confluence, Obsidian, Memory</td>
+      <td>文档管理和知识检索</td>
+    </tr>
+  </table>
+
+  <div class="success">
+    <strong>MCP 与传统 Function Calling 的关系：</strong>MCP 并不替代 Function Calling，而是在其基础上增加了一层<strong>标准化的工具发现与管理协议</strong>。
+    在运行时，MCP Server 暴露的 Tools 最终仍然通过 LLM 的 Function Calling 机制被调用——
+    MCP Client 将 Server 的工具描述转换为 LLM API 的 <code>tools</code> 参数格式，
+    LLM 生成 tool_call 后，Client 将调用请求转发给对应的 MCP Server 执行。
+    <strong>MCP 解决的是"工具从哪来"的问题，Function Calling 解决的是"如何调用工具"的问题。</strong>
+  </div>
+</div>
+
+<!-- ===== 七、Multi-Agent 系统 ===== -->
+<div class="section">
+  <h2>七、Multi-Agent 系统</h2>
+
+  <h3>7.1 为什么需要 Multi-Agent？</h3>
+  <p>
+    单 Agent 在面对<strong>超大规模、需要多种专业能力、或需要自我检查</strong>的任务时，
+    存在上下文窗口溢出、能力不足、缺乏自我审查等问题。
+    Multi-Agent 通过<strong>分工协作</strong>解决这些瓶颈。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 310" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar6" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+        <marker id="ar6g" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2a9d8f"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">Multi-Agent 协作架构模式</text>
+
+      <!-- Orchestrator -->
+      <rect x="280" y="45" width="260" height="60" rx="8" fill="#667eea" opacity="0.9"/>
+      <text x="410" y="72" text-anchor="middle" fill="white" font-size="13" font-weight="700">Orchestrator（协调者）</text>
+      <text x="410" y="92" text-anchor="middle" fill="white" font-size="9">任务分解 · 子任务分配 · 结果整合</text>
+
+      <!-- 子 Agents -->
+      <line x1="330" y1="107" x2="120" y2="145" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar6)"/>
+      <line x1="410" y1="107" x2="410" y2="145" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar6)"/>
+      <line x1="490" y1="107" x2="700" y2="145" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar6)"/>
+
+      <rect x="20" y="148" width="200" height="65" rx="8" fill="#2a9d8f" opacity="0.85"/>
+      <text x="120" y="173" text-anchor="middle" fill="white" font-size="11" font-weight="700">Research Agent</text>
+      <text x="120" y="193" text-anchor="middle" fill="white" font-size="9">搜索 · 信息收集 · 总结</text>
+
+      <rect x="310" y="148" width="200" height="65" rx="8" fill="#f0a500" opacity="0.85"/>
+      <text x="410" y="173" text-anchor="middle" fill="white" font-size="11" font-weight="700">Coding Agent</text>
+      <text x="410" y="193" text-anchor="middle" fill="white" font-size="9">代码编写 · 调试 · 测试</text>
+
+      <rect x="600" y="148" width="200" height="65" rx="8" fill="#e74c3c" opacity="0.85"/>
+      <text x="700" y="173" text-anchor="middle" fill="white" font-size="11" font-weight="700">Review Agent</text>
+      <text x="700" y="193" text-anchor="middle" fill="white" font-size="9">质量审核 · 安全检查</text>
+
+      <!-- 返回结果 -->
+      <line x1="120" y1="215" x2="330" y2="250" stroke="#2a9d8f" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#ar6g)"/>
+      <line x1="410" y1="215" x2="410" y2="250" stroke="#2a9d8f" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#ar6g)"/>
+      <line x1="700" y1="215" x2="490" y2="250" stroke="#2a9d8f" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#ar6g)"/>
+
+      <rect x="280" y="250" width="260" height="40" rx="8" fill="#9b59b6" opacity="0.85"/>
+      <text x="410" y="276" text-anchor="middle" fill="white" font-size="12" font-weight="700">结果整合与最终输出</text>
+    </svg>
+    <div class="caption">图 13：Multi-Agent 协作架构。Orchestrator Agent 负责任务分解和协调，子 Agent 各司其职完成专项任务，最终结果由协调者整合。</div>
+  </div>
+
+  <h3>7.2 Multi-Agent 协作模式</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>顺序流水线</h4>
+      <p>Agent A → Agent B → Agent C 依次处理。适合有明确前后依赖的任务（如：写代码 → 审核 → 测试）。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>层级委托</h4>
+      <p>Orchestrator 将任务分解为子任务，委托给专项 Agent 执行。支持递归分解——子 Agent 还可以再委托。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>辩论审核</h4>
+      <p>多个 Agent 独立解决同一问题，然后交叉审核对方的结果。适合需要高可靠性的决策场景。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>竞争选优</h4>
+      <p>多个 Agent 并行尝试不同策略，由评估 Agent 选择最佳结果。以计算成本换取结果质量。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 八、Agent 安全与可控性 ===== -->
+<div class="section">
+  <h2>八、Agent 安全与可控性</h2>
+
+  <h3>8.1 Agent 安全的核心挑战</h3>
+  <p>
+    与纯对话 LLM 不同，Agent 可以<strong>执行真实操作</strong>——这使安全问题从"说错话"升级为"做错事"。
+    一个失控的 Agent 可能删除文件、发送邮件、执行恶意代码，造成不可逆的损害。
+  </p>
+
+  <table>
+    <tr>
+      <th>安全风险</th>
+      <th>场景</th>
+      <th>防御措施</th>
+    </tr>
+    <tr>
+      <td><strong>Prompt 注入</strong></td>
+      <td>恶意用户或网页内容操纵 Agent 行为</td>
+      <td>输入过滤、系统指令隔离、工具结果验证</td>
+    </tr>
+    <tr>
+      <td><strong>过度操作</strong></td>
+      <td>Agent 超出用户授权执行危险操作</td>
+      <td>权限最小化原则、操作确认机制（Human-in-the-Loop）</td>
+    </tr>
+    <tr>
+      <td><strong>代码注入</strong></td>
+      <td>Agent 生成的代码包含恶意/危险逻辑</td>
+      <td>沙箱执行、代码审查、资源限制</td>
+    </tr>
+    <tr>
+      <td><strong>信息泄露</strong></td>
+      <td>Agent 将敏感信息发送到外部服务</td>
+      <td>数据流审计、网络隔离、输出过滤</td>
+    </tr>
+    <tr>
+      <td><strong>无限循环</strong></td>
+      <td>Agent 陷入死循环，消耗大量资源</td>
+      <td>最大步数限制、超时机制、成本上限</td>
+    </tr>
+    <tr>
+      <td><strong>供应链攻击</strong></td>
+      <td>恶意的 MCP Server / 工具</td>
+      <td>工具来源验证、权限审核、沙箱隔离</td>
+    </tr>
+  </table>
+
+  <h3>8.2 安全控制设计模式</h3>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>Human-in-the-Loop</h4>
+      <p>高风险操作（如文件删除、邮件发送、代码部署）需要用户显式确认。Claude Code 对破坏性操作默认要求确认。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>沙箱隔离</h4>
+      <p>代码执行在隔离的容器/虚拟机中运行，限制文件系统访问、网络访问和系统调用。Docker + seccomp 是常见方案。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>权限分级</h4>
+      <p>工具按风险等级分类：只读工具（搜索）自动允许，写入工具（文件编辑）需确认，危险工具（shell）需白名单。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>审计与回滚</h4>
+      <p>完整记录 Agent 的每一步操作，支持事后审计和操作回滚。Git 版本控制天然支持代码变更的回滚。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 九、Agent 评测与 Benchmark ===== -->
+<div class="section">
+  <h2>九、Agent 评测与 Benchmark</h2>
+
+  <h3>9.1 主流 Agent 评测基准</h3>
+  <table>
+    <tr>
+      <th>Benchmark</th>
+      <th>领域</th>
+      <th>任务类型</th>
+      <th>关键指标</th>
+    </tr>
+    <tr>
+      <td><strong>SWE-bench</strong></td>
+      <td>软件工程</td>
+      <td>从 GitHub Issue 到 Pull Request</td>
+      <td>问题解决率（Resolved %）</td>
+    </tr>
+    <tr>
+      <td><strong>WebArena</strong></td>
+      <td>Web 操作</td>
+      <td>在真实网站上完成用户任务</td>
+      <td>任务成功率</td>
+    </tr>
+    <tr>
+      <td><strong>GAIA</strong></td>
+      <td>通用 Agent</td>
+      <td>需要多步工具调用的真实问题</td>
+      <td>答案准确率</td>
+    </tr>
+    <tr>
+      <td><strong>ToolBench</strong></td>
+      <td>工具调用</td>
+      <td>16,000+ 真实 API 的调用任务</td>
+      <td>调用准确率 + 通过率</td>
+    </tr>
+    <tr>
+      <td><strong>AgentBench</strong></td>
+      <td>多环境</td>
+      <td>操作系统、数据库、Web、游戏等</td>
+      <td>各环境的成功率</td>
+    </tr>
+    <tr>
+      <td><strong>OSWorld</strong></td>
+      <td>桌面操作</td>
+      <td>在真实 OS 上完成计算机任务</td>
+      <td>任务完成率</td>
+    </tr>
+    <tr>
+      <td><strong>Tau-bench</strong></td>
+      <td>工具调用</td>
+      <td>航空/零售领域的对话式工具调用</td>
+      <td>工具调用准确率</td>
+    </tr>
+  </table>
+
+  <h3>9.2 主流模型在 Agent 评测上的表现</h3>
+  <table>
+    <tr>
+      <th>模型</th>
+      <th>SWE-bench Verified</th>
+      <th>WebArena</th>
+      <th>GAIA (Level 1)</th>
+      <th>Agent 能力总评</th>
+    </tr>
+    <tr>
+      <td><strong>Claude Opus 4</strong></td>
+      <td>72.5%</td>
+      <td>领先</td>
+      <td>领先</td>
+      <td>最强的编程和工具使用 Agent 能力</td>
+    </tr>
+    <tr>
+      <td><strong>GPT-4o</strong></td>
+      <td>~38%</td>
+      <td>~15%</td>
+      <td>~60%</td>
+      <td>通用能力强，Function Calling 生态成熟</td>
+    </tr>
+    <tr>
+      <td><strong>Claude Sonnet 4</strong></td>
+      <td>~70%</td>
+      <td>强</td>
+      <td>强</td>
+      <td>高性价比 Agent 选择</td>
+    </tr>
+    <tr>
+      <td><strong>DeepSeek-V3</strong></td>
+      <td>~42%</td>
+      <td>—</td>
+      <td>—</td>
+      <td>代码能力强，开源最佳</td>
+    </tr>
+    <tr>
+      <td><strong>Qwen-2.5-72B</strong></td>
+      <td>—</td>
+      <td>—</td>
+      <td>—</td>
+      <td>中文 Agent 能力最强的开源模型</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ===== 十、Agent 发展趋势 ===== -->
+<div class="section">
+  <h2>十、Agent 发展趋势与未来</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span><h4>Agent 原生模型</h4>
+      <p>未来的 LLM 将在预训练阶段就融入工具交互数据，而非后期微调。Agent 能力将成为模型的"原生能力"而非"附加功能"。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span><h4>长时自主运行</h4>
+      <p>从"回答一个问题"到"完成一个项目"——Agent 将能自主运行数小时甚至数天，处理复杂的多阶段任务（如 Devin、Claude Code background agent）。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span><h4>多模态 Agent</h4>
+      <p>Agent 不仅能处理文本，还能"看"屏幕（Computer Use）、"听"语音、"说"对话，成为真正的全模态交互智能体。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span><h4>Agent 标准化</h4>
+      <p>MCP 等标准化协议将统一工具接入方式，Agent-to-Agent 通信协议（如 A2A）将让不同 Agent 能够互相协作。</p>
+    </div>
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 200" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <defs>
+        <marker id="ar9f" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4a7dff"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a2e">Agent 技术演进路线</text>
+
+      <rect x="20" y="50" width="140" height="55" rx="6" fill="#667eea" opacity="0.7"/>
+      <text x="90" y="73" text-anchor="middle" fill="white" font-size="10" font-weight="700">2023: ReAct</text>
+      <text x="90" y="91" text-anchor="middle" fill="white" font-size="8">基础推理+行动</text>
+      <line x1="162" y1="77" x2="182" y2="77" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar9f)"/>
+
+      <rect x="186" y="50" width="140" height="55" rx="6" fill="#4a7dff" opacity="0.8"/>
+      <text x="256" y="73" text-anchor="middle" fill="white" font-size="10" font-weight="700">2024: Tool Use</text>
+      <text x="256" y="91" text-anchor="middle" fill="white" font-size="8">原生工具调用成熟</text>
+      <line x1="328" y1="77" x2="348" y2="77" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar9f)"/>
+
+      <rect x="352" y="50" width="140" height="55" rx="6" fill="#2a9d8f" opacity="0.85"/>
+      <text x="422" y="73" text-anchor="middle" fill="white" font-size="10" font-weight="700">2025: Coding Agent</text>
+      <text x="422" y="91" text-anchor="middle" fill="white" font-size="8">自主编程 + MCP</text>
+      <line x1="494" y1="77" x2="514" y2="77" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar9f)"/>
+
+      <rect x="518" y="50" width="140" height="55" rx="6" fill="#f0a500" opacity="0.85"/>
+      <text x="588" y="73" text-anchor="middle" fill="white" font-size="10" font-weight="700">2025+: Multi-Agent</text>
+      <text x="588" y="91" text-anchor="middle" fill="white" font-size="8">协作 + 标准化协议</text>
+      <line x1="660" y1="77" x2="680" y2="77" stroke="#4a7dff" stroke-width="2" marker-end="url(#ar9f)"/>
+
+      <rect x="684" y="50" width="116" height="55" rx="6" fill="#e74c3c" opacity="0.85"/>
+      <text x="742" y="73" text-anchor="middle" fill="white" font-size="10" font-weight="700">未来: AGI Agent</text>
+      <text x="742" y="91" text-anchor="middle" fill="white" font-size="8">完全自主通用智能体</text>
+
+      <!-- 底部趋势 -->
+      <rect x="60" y="125" width="700" height="55" rx="8" fill="#f8f9ff" stroke="#e8eaf0" stroke-width="1"/>
+      <text x="80" y="148" font-size="10" font-weight="700" fill="#0f3460">关键趋势：</text>
+      <text x="80" y="168" font-size="10" fill="#555">自主性持续提升 · 工具生态标准化 · 安全与对齐并重 · 从单任务到项目级 · 多模态全面融合</text>
+    </svg>
+    <div class="caption">图 14：Agent 技术演进路线。从基础的 ReAct 推理到原生工具调用，再到自主编程 Agent 和 Multi-Agent 协作，Agent 能力正加速进化。</div>
+  </div>
+</div>
+
+<!-- ===== 总结 ===== -->
+<div class="section">
+  <h2>总结</h2>
+  <p>
+    LLM Agent 代表了大模型从"语言理解"到"自主行动"的范式跃迁。本文系统介绍了 Agent 的核心原理与实现：
+  </p>
+  <ol>
+    <li><strong>执行原理：</strong>Agent 通过"思考-行动-观察"的迭代循环完成任务，ReAct 和 Plan-and-Execute 是两大基础范式</li>
+    <li><strong>工具调用：</strong>Function Calling 让 LLM 生成结构化调用意图，由宿主程序安全执行，实现了"决策"与"执行"的分离</li>
+    <li><strong>训练与数据：</strong>Agent 能力通过 Tool Use SFT + Agent RL 获得，训练数据需覆盖多种工具、多步调用和错误恢复场景</li>
+    <li><strong>记忆系统：</strong>短期/工作/长期三层记忆架构，RAG 是长期记忆的核心实现</li>
+    <li><strong>主流方案：</strong>从 Claude Code、ChatGPT 等产品到 LangGraph、AutoGen 等框架，Agent 生态日趋完善</li>
+    <li><strong>Multi-Agent：</strong>分工协作、辩论审核、层级委托等模式解决单 Agent 的能力瓶颈</li>
+    <li><strong>安全可控：</strong>沙箱隔离、权限分级、Human-in-the-Loop 等机制确保 Agent 安全可信</li>
+  </ol>
+
+  <div class="success">
+    <strong>Agent 的终极愿景：</strong>让 LLM 不仅是一个回答问题的"聊天机器人"，
+    而是一个能理解复杂目标、自主分解任务、灵活调用工具、持续学习改进的<strong>通用智能体</strong>——
+    人类的得力数字助手。
+  </div>
+</div>
+
+<div class="footer">
+  大模型 Agent 原理与实现详解 · 内容仅供学习参考 · 技术细节持续演进中
+</div>
+</div>
+</body>
+</html>

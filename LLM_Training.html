@@ -1339,16 +1339,621 @@
   </div>
 </div>
 
-<!-- ===== 五、分布式训练 ===== -->
+<!-- ===== 五、优化器详解 ===== -->
 <div class="section">
-  <h2>五、分布式训练技术</h2>
+  <h2>五、优化器详解</h2>
+  <p>
+    优化器是深度学习训练的核心引擎——它决定了<strong>模型参数在每一步如何更新</strong>。
+    对于大模型训练而言，优化器的选择直接影响收敛速度、训练稳定性和显存占用。
+    本节从基础原理出发，系统介绍优化器的演进路线、主流算法的数学原理，以及大模型训练中的实际选择与工程优化。
+  </p>
+
+  <h3>5.1 优化器基础原理</h3>
+  <p>
+    神经网络训练的本质是一个<strong>最优化问题</strong>：寻找一组参数 θ*，使得损失函数 L(θ) 最小化。
+    由于现代神经网络的参数空间高达数十亿至万亿维，无法求解析解，只能依赖<strong>迭代优化</strong>——
+    在每一步沿着损失函数下降最快的方向移动一小步。
+  </p>
+
+  <div class="formula">
+    梯度下降基本公式：θ<sub>t+1</sub> = θ<sub>t</sub> − η · ∇<sub>θ</sub>L(θ<sub>t</sub>)
+  </div>
+
+  <p>
+    其中 η 是学习率（learning rate），∇<sub>θ</sub>L 是损失函数关于参数的梯度。
+    然而，朴素的梯度下降存在诸多问题：
+  </p>
+  <ul>
+    <li><strong>全量计算代价高：</strong>在万亿 token 数据集上每步计算所有样本的梯度不可行</li>
+    <li><strong>学习率难以选择：</strong>不同参数的最优学习率可能相差数个数量级</li>
+    <li><strong>容易陷入鞍点：</strong>高维空间中鞍点远多于局部极小值，朴素梯度下降会在鞍点附近震荡</li>
+    <li><strong>收敛速度慢：</strong>在"窄谷"形状的损失曲面上，梯度方向与最优方向不一致，导致震荡</li>
+  </ul>
+
+  <p>
+    为解决这些问题，优化器经历了从 SGD 到自适应学习率方法的演进：
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 340" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="24" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">优化器演进路线：从 SGD 到现代自适应优化器</text>
+
+      <!-- Timeline line -->
+      <line x1="60" y1="80" x2="760" y2="80" stroke="#ddd" stroke-width="2"/>
+
+      <!-- SGD -->
+      <circle cx="100" cy="80" r="8" fill="#e74c3c"/>
+      <text x="100" y="60" text-anchor="middle" font-size="11" font-weight="700" fill="#e74c3c">SGD</text>
+      <rect x="45" y="95" width="110" height="48" rx="6" fill="#fff5f5" stroke="#e74c3c" stroke-width="1"/>
+      <text x="100" y="112" text-anchor="middle" font-size="9" fill="#555">最基础的优化器</text>
+      <text x="100" y="126" text-anchor="middle" font-size="9" fill="#555">θ = θ − η·g</text>
+      <text x="100" y="140" text-anchor="middle" font-size="8" fill="#999">~1951</text>
+
+      <!-- Momentum -->
+      <circle cx="220" cy="80" r="8" fill="#e67e22"/>
+      <text x="220" y="60" text-anchor="middle" font-size="11" font-weight="700" fill="#e67e22">Momentum</text>
+      <rect x="160" y="95" width="120" height="48" rx="6" fill="#fff8f0" stroke="#e67e22" stroke-width="1"/>
+      <text x="220" y="112" text-anchor="middle" font-size="9" fill="#555">引入动量加速收敛</text>
+      <text x="220" y="126" text-anchor="middle" font-size="9" fill="#555">v = βv + g</text>
+      <text x="220" y="140" text-anchor="middle" font-size="8" fill="#999">~1964</text>
+
+      <!-- Adagrad -->
+      <circle cx="340" cy="80" r="8" fill="#f39c12"/>
+      <text x="340" y="60" text-anchor="middle" font-size="11" font-weight="700" fill="#b7950b">AdaGrad</text>
+      <rect x="280" y="95" width="120" height="48" rx="6" fill="#fefce8" stroke="#f39c12" stroke-width="1"/>
+      <text x="340" y="112" text-anchor="middle" font-size="9" fill="#555">自适应学习率</text>
+      <text x="340" y="126" text-anchor="middle" font-size="9" fill="#555">累积历史梯度平方</text>
+      <text x="340" y="140" text-anchor="middle" font-size="8" fill="#999">2011</text>
+
+      <!-- RMSProp -->
+      <circle cx="460" cy="80" r="8" fill="#27ae60"/>
+      <text x="460" y="60" text-anchor="middle" font-size="11" font-weight="700" fill="#27ae60">RMSProp</text>
+      <rect x="400" y="95" width="120" height="48" rx="6" fill="#f0fff4" stroke="#27ae60" stroke-width="1"/>
+      <text x="460" y="112" text-anchor="middle" font-size="9" fill="#555">指数滑动平均修正</text>
+      <text x="460" y="126" text-anchor="middle" font-size="9" fill="#555">解决 AdaGrad 衰减</text>
+      <text x="460" y="140" text-anchor="middle" font-size="8" fill="#999">2012</text>
+
+      <!-- Adam -->
+      <circle cx="580" cy="80" r="8" fill="#4a7dff"/>
+      <text x="580" y="60" text-anchor="middle" font-size="11" font-weight="700" fill="#4a7dff">Adam</text>
+      <rect x="520" y="95" width="120" height="48" rx="6" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1"/>
+      <text x="580" y="112" text-anchor="middle" font-size="9" fill="#555">动量 + 自适应 LR</text>
+      <text x="580" y="126" text-anchor="middle" font-size="9" fill="#555">一阶矩 + 二阶矩</text>
+      <text x="580" y="140" text-anchor="middle" font-size="8" fill="#999">2014</text>
+
+      <!-- AdamW -->
+      <circle cx="700" cy="80" r="8" fill="#6c3483"/>
+      <text x="700" y="60" text-anchor="middle" font-size="11" font-weight="700" fill="#6c3483">AdamW</text>
+      <rect x="640" y="95" width="120" height="48" rx="6" fill="#f5f0ff" stroke="#6c3483" stroke-width="1"/>
+      <text x="700" y="112" text-anchor="middle" font-size="9" fill="#555">解耦权重衰减</text>
+      <text x="700" y="126" text-anchor="middle" font-size="9" fill="#555">LLM 训练标配</text>
+      <text x="700" y="140" text-anchor="middle" font-size="8" fill="#999">2017</text>
+
+      <!-- 演进箭头 -->
+      <line x1="110" y1="80" x2="210" y2="80" stroke="#ddd" stroke-width="2" marker-end="url(#ar0)"/>
+      <line x1="230" y1="80" x2="330" y2="80" stroke="#ddd" stroke-width="2" marker-end="url(#ar0)"/>
+      <line x1="350" y1="80" x2="450" y2="80" stroke="#ddd" stroke-width="2" marker-end="url(#ar0)"/>
+      <line x1="470" y1="80" x2="570" y2="80" stroke="#ddd" stroke-width="2" marker-end="url(#ar0)"/>
+      <line x1="590" y1="80" x2="690" y2="80" stroke="#ddd" stroke-width="2" marker-end="url(#ar0)"/>
+
+      <!-- 下方新一代优化器 -->
+      <text x="410" y="185" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1a2e">新一代优化器（2023—）</text>
+      <line x1="120" y1="195" x2="700" y2="195" stroke="#eee" stroke-width="1.5"/>
+
+      <rect x="60" y="210" width="150" height="55" rx="8" fill="#e8f5e9" stroke="#4caf50" stroke-width="1.2"/>
+      <text x="135" y="230" text-anchor="middle" font-size="11" font-weight="700" fill="#2e7d32">LION</text>
+      <text x="135" y="246" text-anchor="middle" font-size="9" fill="#555">sign-based 更新</text>
+      <text x="135" y="260" text-anchor="middle" font-size="9" fill="#555">显存减半 · Google 2023</text>
+
+      <rect x="240" y="210" width="150" height="55" rx="8" fill="#e3f2fd" stroke="#2196f3" stroke-width="1.2"/>
+      <text x="315" y="230" text-anchor="middle" font-size="11" font-weight="700" fill="#1565c0">Adafactor</text>
+      <text x="315" y="246" text-anchor="middle" font-size="9" fill="#555">矩阵分解降显存</text>
+      <text x="315" y="260" text-anchor="middle" font-size="9" fill="#555">T5/PaLM 使用 · Google</text>
+
+      <rect x="420" y="210" width="150" height="55" rx="8" fill="#fce4ec" stroke="#e91e63" stroke-width="1.2"/>
+      <text x="495" y="230" text-anchor="middle" font-size="11" font-weight="700" fill="#c2185b">Muon</text>
+      <text x="495" y="246" text-anchor="middle" font-size="9" fill="#555">正交约束更新</text>
+      <text x="495" y="260" text-anchor="middle" font-size="9" fill="#555">Keller Jordan 2024</text>
+
+      <rect x="600" y="210" width="150" height="55" rx="8" fill="#fff3e0" stroke="#ff9800" stroke-width="1.2"/>
+      <text x="675" y="230" text-anchor="middle" font-size="11" font-weight="700" fill="#e65100">SOAP</text>
+      <text x="675" y="246" text-anchor="middle" font-size="9" fill="#555">Shampoo 高效近似</text>
+      <text x="675" y="260" text-anchor="middle" font-size="9" fill="#555">二阶预条件 · 2024</text>
+
+      <!-- 底部总结 -->
+      <rect x="120" y="290" width="560" height="36" rx="8" fill="#f8f9ff" stroke="#d8e0f0" stroke-width="1"/>
+      <text x="400" y="313" text-anchor="middle" font-size="11" fill="#555">核心趋势：<tspan font-weight="700" fill="#4a7dff">自适应 + 低显存 + 更快收敛</tspan> · AdamW 仍是当前主流 LLM 训练的默认选择</text>
+    </svg>
+    <div class="caption">图 12：优化器演进路线。从朴素 SGD 到 Adam/AdamW 的自适应学习率方法，再到新一代低显存高效优化器。AdamW 是当前 LLM 训练的事实标准。</div>
+  </div>
+
+  <div class="highlight">
+    <strong>一阶 vs 二阶优化器：</strong>一阶优化器（SGD、Adam 等）仅使用梯度信息（一阶导数），计算高效但收敛较慢；
+    二阶优化器（Newton、K-FAC、Shampoo 等）利用 Hessian 矩阵（二阶导数）捕捉曲率信息，收敛更快但计算和存储代价极高。
+    大模型训练中，由于参数量巨大（Hessian 矩阵为 N² 规模），实际几乎全部采用一阶优化器，二阶方法仅以近似形式（如 SOAP）出现。
+  </div>
+
+  <h3>5.2 主流优化器详解</h3>
+
+  <h4>SGD with Momentum</h4>
+  <p>
+    随机梯度下降（SGD）是最基础的优化器，使用随机采样的 mini-batch 计算梯度近似。
+    引入<strong>动量（Momentum）</strong>后，优化器会"记住"之前的更新方向，在一致方向上加速，在震荡方向上抑制：
+  </p>
+  <div class="formula">
+    v<sub>t</sub> = β · v<sub>t-1</sub> + ∇<sub>θ</sub>L(θ<sub>t</sub>)<br/>
+    θ<sub>t+1</sub> = θ<sub>t</sub> − η · v<sub>t</sub>
+  </div>
+  <p>
+    动量系数 β 通常取 0.9。Momentum 可以理解为给梯度加上了"惯性"，使优化轨迹更平滑。
+    SGD+Momentum 在 CV 领域仍广泛使用，但在 LLM 训练中因<strong>对学习率极为敏感</strong>且不同参数需要不同的学习率而较少使用。
+  </p>
+
+  <h4>Adam（Adaptive Moment Estimation）</h4>
+  <p>
+    Adam 是深度学习中最重要的优化器之一，它结合了<strong>Momentum（一阶矩）</strong>和 <strong>RMSProp（二阶矩）</strong>的思想，
+    为每个参数自动调整学习率：
+  </p>
+  <div class="formula">
+    一阶矩（均值）：m<sub>t</sub> = β₁ · m<sub>t-1</sub> + (1 − β₁) · g<sub>t</sub><br/>
+    二阶矩（方差）：v<sub>t</sub> = β₂ · v<sub>t-1</sub> + (1 − β₂) · g<sub>t</sub>²<br/>
+    偏差修正：m̂<sub>t</sub> = m<sub>t</sub> / (1 − β₁ᵗ), &nbsp; v̂<sub>t</sub> = v<sub>t</sub> / (1 − β₂ᵗ)<br/>
+    参数更新：θ<sub>t+1</sub> = θ<sub>t</sub> − η · m̂<sub>t</sub> / (√v̂<sub>t</sub> + ε)
+  </div>
+  <ul>
+    <li><strong>一阶矩 m<sub>t</sub></strong>：梯度的指数移动平均，提供更新方向（类似 Momentum）</li>
+    <li><strong>二阶矩 v<sub>t</sub></strong>：梯度平方的指数移动平均，衡量梯度的"波动性"</li>
+    <li><strong>偏差修正</strong>：消除初始化时 m₀=0, v₀=0 带来的偏差</li>
+    <li><strong>自适应学习率</strong>：梯度波动大的参数（√v̂ 大）学习率自动降低，反之升高</li>
+  </ul>
+
+  <div class="success">
+    <strong>Adam 的核心优势：</strong>每个参数有独立的自适应学习率，对超参数选择更鲁棒。
+    默认参数 β₁=0.9, β₂=0.999, ε=1e-8 在很多任务上开箱即用，大幅降低了调参成本。
+  </div>
+
+  <h4>AdamW（Adam with Decoupled Weight Decay）</h4>
+  <p>
+    AdamW 是 Loshchilov &amp; Hutter（2017）提出的 Adam 改进版本，也是当前<strong>大模型训练的事实标准</strong>。
+    它解决了 Adam 中<strong>权重衰减与 L2 正则化不等价</strong>的问题。
+  </p>
+
+  <div class="warning">
+    <strong>Adam + L2 正则化的问题：</strong>在原始 Adam 中，如果将 L2 正则化项加入损失函数 L' = L + λ||θ||²，
+    则梯度变为 g' = g + 2λθ。这个正则化梯度会被 Adam 的二阶矩 v<sub>t</sub> 缩放，导致权重衰减的实际强度
+    与学习率和二阶矩耦合，<strong>不同参数受到的正则化强度不一致</strong>。
+  </div>
+
+  <p>AdamW 的解决方案是将权重衰减从梯度计算中<strong>解耦</strong>出来，直接作用于参数：</p>
+  <div class="formula">
+    Adam（L2 正则化）：θ<sub>t+1</sub> = θ<sub>t</sub> − η · (m̂<sub>t</sub> + λθ<sub>t</sub>) / (√v̂<sub>t</sub> + ε)<br/><br/>
+    AdamW（解耦权重衰减）：θ<sub>t+1</sub> = θ<sub>t</sub> − η · m̂<sub>t</sub> / (√v̂<sub>t</sub> + ε) − η · λ · θ<sub>t</sub>
+  </div>
+  <p>
+    AdamW 中的权重衰减 λ·θ 不经过自适应缩放，<strong>所有参数受到相同强度的正则化</strong>，行为与 SGD 中的权重衰减一致。
+    实验表明，AdamW 在大模型训练中的泛化性能显著优于 Adam + L2。
+  </p>
+
+  <h4>Adafactor</h4>
+  <p>
+    Adafactor 是 Google 为<strong>超大模型训练</strong>设计的低显存优化器（Shazeer &amp; Stern, 2018），
+    被用于 T5、PaLM 等模型的训练。其核心思想是：
+  </p>
+  <ul>
+    <li><strong>矩阵分解二阶矩：</strong>对于形状为 (m, n) 的参数矩阵，Adam 需要存储同样大小的二阶矩 v∈ℝ<sup>m×n</sup>，
+      而 Adafactor 将其分解为行统计量 r∈ℝ<sup>m</sup> 和列统计量 c∈ℝ<sup>n</sup>，
+      二阶矩近似为 v ≈ r·cᵀ / mean(r)，显存从 O(mn) 降至 O(m+n)</li>
+    <li><strong>无需存储一阶矩：</strong>可选不使用动量，进一步节省显存</li>
+    <li><strong>自适应学习率：</strong>根据参数的 RMS（均方根）自动缩放学习率，无需手动调 LR</li>
+  </ul>
+  <div class="highlight">
+    <strong>显存对比：</strong>对于一个 70B 参数模型，Adam/AdamW 的优化器状态需要约 560 GB（2 个 FP32 状态 × 4 bytes × 70B × 2），
+    而 Adafactor 仅需约 280-350 GB，节省 30-50% 的优化器显存。但 Adafactor 的训练稳定性不如 AdamW，需要更精细的调参。
+  </div>
+
+  <h4>LION（EvoLved Sign Momentum）</h4>
+  <p>
+    LION 是 Google Brain 团队通过<strong>进化搜索</strong>自动发现的优化器（Chen et al., 2023）。
+    其核心特点是<strong>只使用梯度的符号（sign）</strong>进行更新，不使用梯度的幅值：
+  </p>
+  <div class="formula">
+    更新方向：u<sub>t</sub> = sign(β₁ · m<sub>t-1</sub> + (1 − β₁) · g<sub>t</sub>)<br/>
+    参数更新：θ<sub>t+1</sub> = θ<sub>t</sub> − η · (u<sub>t</sub> + λ · θ<sub>t</sub>)<br/>
+    动量更新：m<sub>t</sub> = β₂ · m<sub>t-1</sub> + (1 − β₂) · g<sub>t</sub>
+  </div>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>LION 的优势</h4>
+      <ul>
+        <li>不需要二阶矩 v<sub>t</sub>，<strong>显存减半</strong></li>
+        <li>sign 操作使所有参数更新幅度相同，天然具有正则化效果</li>
+        <li>在部分视觉和语言任务上超越 AdamW</li>
+        <li>更新值为 {-η, +η}，适合量化训练</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>LION 的局限</h4>
+      <ul>
+        <li>对学习率极其敏感，通常需要比 AdamW 小 3-10 倍</li>
+        <li>需要更大的 batch size 才能稳定训练</li>
+        <li>在超大模型（>100B）上的验证较少</li>
+        <li>sign 操作丢弃梯度幅度信息，某些场景收敛不稳定</li>
+      </ul>
+    </div>
+  </div>
+
+  <h4>Muon（Momentum + Orthogonalization）</h4>
+  <p>
+    Muon 是 Keller Jordan（2024）提出的新优化器，核心思想是在动量更新后施加<strong>正交化约束</strong>，
+    通过 Newton-Schulz 迭代近似计算动量矩阵的正交极分解：
+  </p>
+  <div class="formula">
+    动量：m<sub>t</sub> = β · m<sub>t-1</sub> + (1 − β) · g<sub>t</sub><br/>
+    正交化：u<sub>t</sub> = NewtonSchulz(m<sub>t</sub>) ≈ m<sub>t</sub> · (m<sub>t</sub>ᵀm<sub>t</sub>)<sup>-1/2</sup><br/>
+    参数更新：θ<sub>t+1</sub> = θ<sub>t</sub> − η · u<sub>t</sub>
+  </div>
+  <p>
+    正交化使得更新矩阵的奇异值全部为 1，避免了某些方向更新过大或过小的问题。
+    Muon 在小到中等规模模型上展现出比 AdamW 更快的收敛速度，
+    但在超大规模模型上的效果仍在验证中。其主要适用于<strong>矩阵形参数</strong>（如线性层权重），
+    Embedding 和 LayerNorm 等非矩阵参数通常仍用 AdamW。
+  </p>
+
+  <h4>SOAP（Shampoo-like Adaptive Preconditioner）</h4>
+  <p>
+    SOAP 是对二阶优化器 Shampoo 的高效近似（Vyas et al., 2024）。Shampoo 为每个参数矩阵维护
+    左右两个预条件矩阵 L<sub>t</sub>∈ℝ<sup>m×m</sup> 和 R<sub>t</sub>∈ℝ<sup>n×n</sup>，
+    通过 Kronecker 积近似完整的预条件矩阵。SOAP 的改进在于：
+  </p>
+  <ul>
+    <li><strong>更新频率降低：</strong>预条件矩阵不在每步更新，而是每 K 步（如 K=10）更新一次，减少计算开销</li>
+    <li><strong>在特征空间中运行 Adam：</strong>将 Adam 的一阶矩和二阶矩放在预条件化的特征空间中计算，结合了 Adam 的稳定性和 Shampoo 的二阶信息</li>
+    <li><strong>显存友好：</strong>通过矩阵分解和低秩近似，将额外显存开销控制在可接受范围内</li>
+  </ul>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 380" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="24" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">AdamW 优化器内部计算流程</text>
+
+      <!-- 输入 -->
+      <rect x="30" y="55" width="120" height="40" rx="8" fill="#e74c3c" opacity="0.9"/>
+      <text x="90" y="80" text-anchor="middle" fill="white" font-size="12" font-weight="600">梯度 g<tspan font-size="9" dy="3">t</tspan></text>
+
+      <rect x="30" y="110" width="120" height="40" rx="8" fill="#e67e22" opacity="0.9"/>
+      <text x="90" y="135" text-anchor="middle" fill="white" font-size="12" font-weight="600">参数 θ<tspan font-size="9" dy="3">t</tspan></text>
+
+      <!-- 一阶矩 -->
+      <rect x="210" y="45" width="180" height="60" rx="8" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.5"/>
+      <text x="300" y="68" text-anchor="middle" font-size="11" font-weight="700" fill="#4a7dff">一阶矩更新（动量）</text>
+      <text x="300" y="86" text-anchor="middle" font-size="10" fill="#555">m = β₁·m + (1−β₁)·g</text>
+
+      <!-- 二阶矩 -->
+      <rect x="210" y="120" width="180" height="60" rx="8" fill="#f0fff4" stroke="#27ae60" stroke-width="1.5"/>
+      <text x="300" y="143" text-anchor="middle" font-size="11" font-weight="700" fill="#27ae60">二阶矩更新（方差）</text>
+      <text x="300" y="161" text-anchor="middle" font-size="10" fill="#555">v = β₂·v + (1−β₂)·g²</text>
+
+      <!-- 偏差修正 -->
+      <rect x="440" y="45" width="160" height="60" rx="8" fill="#fff8f0" stroke="#e67e22" stroke-width="1.5"/>
+      <text x="520" y="68" text-anchor="middle" font-size="11" font-weight="700" fill="#e67e22">偏差修正</text>
+      <text x="520" y="86" text-anchor="middle" font-size="10" fill="#555">m̂ = m/(1−β₁ᵗ)</text>
+
+      <rect x="440" y="120" width="160" height="60" rx="8" fill="#fff8f0" stroke="#e67e22" stroke-width="1.5"/>
+      <text x="520" y="143" text-anchor="middle" font-size="11" font-weight="700" fill="#e67e22">偏差修正</text>
+      <text x="520" y="161" text-anchor="middle" font-size="10" fill="#555">v̂ = v/(1−β₂ᵗ)</text>
+
+      <!-- 自适应更新 -->
+      <rect x="650" y="50" width="150" height="130" rx="10" fill="#f5f0ff" stroke="#6c3483" stroke-width="1.5"/>
+      <text x="725" y="78" text-anchor="middle" font-size="11" font-weight="700" fill="#6c3483">参数更新</text>
+      <text x="725" y="100" text-anchor="middle" font-size="10" fill="#555">Δθ = η·m̂/(√v̂+ε)</text>
+      <line x1="665" y1="115" x2="785" y2="115" stroke="#ddd" stroke-width="1"/>
+      <text x="725" y="135" text-anchor="middle" font-size="11" font-weight="700" fill="#e74c3c">权重衰减</text>
+      <text x="725" y="155" text-anchor="middle" font-size="10" fill="#555">θ = θ − η·λ·θ</text>
+      <text x="725" y="172" text-anchor="middle" font-size="9" fill="#888">（解耦，不经过 v̂）</text>
+
+      <!-- 连接箭头 -->
+      <line x1="150" y1="75" x2="208" y2="75" stroke="#4a7dff" stroke-width="1.5" marker-end="url(#ar0)"/>
+      <line x1="150" y1="130" x2="208" y2="150" stroke="#27ae60" stroke-width="1.5" marker-end="url(#ar0g)"/>
+      <line x1="392" y1="75" x2="438" y2="75" stroke="#e67e22" stroke-width="1.5" marker-end="url(#ar0)"/>
+      <line x1="392" y1="150" x2="438" y2="150" stroke="#e67e22" stroke-width="1.5" marker-end="url(#ar0)"/>
+      <line x1="602" y1="75" x2="648" y2="95" stroke="#6c3483" stroke-width="1.5" marker-end="url(#ar0)"/>
+      <line x1="602" y1="150" x2="648" y2="130" stroke="#6c3483" stroke-width="1.5" marker-end="url(#ar0)"/>
+
+      <!-- 显存分析 -->
+      <text x="410" y="225" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1a2e">优化器状态显存占用分析（以 70B 模型为例）</text>
+
+      <rect x="50" y="245" width="200" height="95" rx="8" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1.2"/>
+      <text x="150" y="268" text-anchor="middle" font-size="12" font-weight="700" fill="#4a7dff">AdamW</text>
+      <text x="150" y="290" text-anchor="middle" font-size="10" fill="#555">参数 FP32 副本：280 GB</text>
+      <text x="150" y="306" text-anchor="middle" font-size="10" fill="#555">一阶矩 m：280 GB</text>
+      <text x="150" y="322" text-anchor="middle" font-size="10" fill="#555">二阶矩 v：280 GB</text>
+      <text x="150" y="338" text-anchor="middle" font-size="10" font-weight="700" fill="#e74c3c">总计：~840 GB</text>
+
+      <rect x="310" y="245" width="200" height="95" rx="8" fill="#e8f5e9" stroke="#4caf50" stroke-width="1.2"/>
+      <text x="410" y="268" text-anchor="middle" font-size="12" font-weight="700" fill="#2e7d32">LION</text>
+      <text x="410" y="290" text-anchor="middle" font-size="10" fill="#555">参数 FP32 副本：280 GB</text>
+      <text x="410" y="306" text-anchor="middle" font-size="10" fill="#555">一阶矩 m：280 GB</text>
+      <text x="410" y="322" text-anchor="middle" font-size="10" fill="#555">无二阶矩</text>
+      <text x="410" y="338" text-anchor="middle" font-size="10" font-weight="700" fill="#2e7d32">总计：~560 GB</text>
+
+      <rect x="570" y="245" width="200" height="95" rx="8" fill="#fff3e0" stroke="#ff9800" stroke-width="1.2"/>
+      <text x="670" y="268" text-anchor="middle" font-size="12" font-weight="700" fill="#e65100">Adafactor</text>
+      <text x="670" y="290" text-anchor="middle" font-size="10" fill="#555">无 FP32 参数副本</text>
+      <text x="670" y="306" text-anchor="middle" font-size="10" fill="#555">行/列统计量：~35 GB</text>
+      <text x="670" y="322" text-anchor="middle" font-size="10" fill="#555">无一阶矩（可选）</text>
+      <text x="670" y="338" text-anchor="middle" font-size="10" font-weight="700" fill="#e65100">总计：~315 GB</text>
+
+      <rect x="200" y="355" width="400" height="22" rx="6" fill="#f8f9ff" stroke="#d8e0f0"/>
+      <text x="400" y="371" text-anchor="middle" font-size="10" fill="#555">注：BF16 训练需额外 FP32 master weight 以保证数值精度</text>
+    </svg>
+    <div class="caption">图 13：AdamW 优化器内部计算流程及各优化器显存占用对比。AdamW 需要维护一阶矩、二阶矩和 FP32 参数副本，约占模型参数量 12 倍的显存。</div>
+  </div>
+
+  <h4>主流优化器对比总结</h4>
+  <table>
+    <tr>
+      <th>优化器</th>
+      <th>核心机制</th>
+      <th>优化器显存<br/>(per param)</th>
+      <th>收敛性</th>
+      <th>适用场景</th>
+    </tr>
+    <tr>
+      <td><strong>SGD+Momentum</strong></td>
+      <td>动量加速</td>
+      <td><code>4 bytes</code> (动量)</td>
+      <td>稳定但慢</td>
+      <td>CV、小模型微调</td>
+    </tr>
+    <tr>
+      <td><strong>Adam</strong></td>
+      <td>自适应学习率</td>
+      <td><code>8 bytes</code> (m+v)</td>
+      <td>快速，泛化稍差</td>
+      <td>通用深度学习</td>
+    </tr>
+    <tr>
+      <td><strong>AdamW</strong></td>
+      <td>解耦权重衰减</td>
+      <td><code>8 bytes</code> (m+v)</td>
+      <td>快速，泛化好</td>
+      <td><strong>LLM 训练标配</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Adafactor</strong></td>
+      <td>矩阵分解二阶矩</td>
+      <td><code>~2 bytes</code> (行列)</td>
+      <td>较好，需调参</td>
+      <td>显存受限的超大模型</td>
+    </tr>
+    <tr>
+      <td><strong>LION</strong></td>
+      <td>sign-based 更新</td>
+      <td><code>4 bytes</code> (m)</td>
+      <td>快速，需大 batch</td>
+      <td>显存敏感场景</td>
+    </tr>
+    <tr>
+      <td><strong>Muon</strong></td>
+      <td>正交化动量</td>
+      <td><code>4 bytes</code> (m)</td>
+      <td>快速收敛</td>
+      <td>中等规模模型</td>
+    </tr>
+    <tr>
+      <td><strong>SOAP</strong></td>
+      <td>二阶预条件近似</td>
+      <td><code>~12 bytes</code></td>
+      <td>最快收敛</td>
+      <td>追求收敛效率</td>
+    </tr>
+  </table>
+
+  <h3>5.3 大模型训练中的优化器选择与设计</h3>
+  <p>
+    尽管新型优化器层出不穷，<strong>AdamW 仍然是当前几乎所有主流大模型的标配选择</strong>。
+    其原因在于：成熟的工程实践积累、与混合精度训练和分布式训练框架的深度兼容、
+    在超大规模训练中经过充分验证的稳定性。
+  </p>
+
+  <h4>AdamW 超参数的设计考量</h4>
+  <p>大模型训练中 AdamW 的超参数选择已形成一套经验共识：</p>
+  <ul>
+    <li><strong>β₁ = 0.9：</strong>一阶矩的衰减率。0.9 意味着动量的"记忆窗口"约 10 步，
+      在大 batch 训练中提供足够平滑的梯度估计，同时保持对新梯度信息的响应速度</li>
+    <li><strong>β₂ = 0.95（而非默认 0.999）：</strong>这是 LLM 训练中的关键发现。
+      β₂=0.999 的二阶矩窗口约 1000 步，在训练初期数据分布变化较大时会导致学习率自适应过慢；
+      β₂=0.95 将窗口缩短到约 20 步，使优化器更快适应梯度统计量的变化，显著提升训练稳定性</li>
+    <li><strong>ε = 1e-8：</strong>防止除零的小常数。部分实现使用 1e-6 以增强数值稳定性</li>
+    <li><strong>Weight Decay λ = 0.1：</strong>权重衰减系数。过大会抑制模型容量，过小则正则化不足。
+      通常仅对权重矩阵（非 bias、非 LayerNorm）应用衰减</li>
+  </ul>
+
+  <div class="warning">
+    <strong>β₂ 的微妙影响：</strong>DeepSeek-V3 技术报告指出，当训练后期出现 loss spike 时，
+    将 β₂ 从 0.95 调整为 0.99 可以有效抑制。这是因为更大的 β₂ 使二阶矩的估计更平滑，
+    降低了个别异常梯度对学习率调整的影响。但过大的 β₂ 在训练早期可能导致收敛缓慢。
+  </div>
+
+  <h4>混合精度训练中的优化器状态管理</h4>
+  <p>
+    现代大模型使用 BF16 或 FP16 进行前向和反向传播以节省显存和加速计算，
+    但优化器状态必须以<strong> FP32 精度</strong>维护，这涉及到精妙的精度管理：
+  </p>
+  <ol>
+    <li><strong>前向/反向传播：</strong>使用 BF16 参数和 BF16 梯度，速度快、显存低</li>
+    <li><strong>梯度聚合：</strong>将 BF16 梯度转换为 FP32 后累积到优化器</li>
+    <li><strong>优化器更新：</strong>在 FP32 精度下更新 m、v 和 master weight（FP32 参数副本）</li>
+    <li><strong>参数广播：</strong>将更新后的 FP32 master weight 截断为 BF16，用于下一步的前向传播</li>
+  </ol>
+  <div class="highlight">
+    <strong>为何优化器必须用 FP32？</strong>Adam 的参数更新量 Δθ 通常远小于参数值 θ 本身（如 Δθ ~1e-7 而 θ ~1e-1）。
+    BF16 仅有 7 位有效精度（~1e-2 的相对精度），直接在 BF16 上执行 θ + Δθ 会导致更新量被舍入为零（"梯度消失"），
+    模型完全无法学习。FP32 有 23 位有效精度（~1e-7），足以保留微小更新。
+  </div>
+
+  <h4>8-bit Adam 与显存优化</h4>
+  <p>
+    为降低优化器的显存占用，研究者提出了多种压缩方案：
+  </p>
+  <ul>
+    <li><strong>8-bit Adam（bitsandbytes）：</strong>将 m 和 v 以 INT8 存储（带动态量化），
+      显存降低约 75%。通过分块量化和动态指数映射保持精度，在大多数任务上对训练效果无影响</li>
+    <li><strong>分页 Adam（Paged Adam）：</strong>利用 CUDA Unified Memory 将部分优化器状态
+      自动页面交换到 CPU 内存。当 GPU 显存不足时自动触发，对用户透明，但会增加延迟</li>
+    <li><strong>CPU Offloading：</strong>将完整的优化器状态放在 CPU 内存，
+      每步将必要的参数分片传输到 GPU 执行更新，再传回。ZeRO-Offload 和 FSDP 支持此模式</li>
+  </ul>
+
+  <h4>主流大模型优化器配置实践</h4>
+
+  <div class="figure">
+    <svg viewBox="0 0 820 440" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+      <text x="410" y="24" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a2e">主流大模型优化器配置对比</text>
+
+      <!-- Header -->
+      <rect x="30" y="45" width="760" height="35" rx="6" fill="#1a1a2e"/>
+      <text x="115" y="68" text-anchor="middle" fill="white" font-size="11" font-weight="600">模型</text>
+      <text x="245" y="68" text-anchor="middle" fill="white" font-size="11" font-weight="600">优化器</text>
+      <text x="370" y="68" text-anchor="middle" fill="white" font-size="11" font-weight="600">β₁, β₂</text>
+      <text x="490" y="68" text-anchor="middle" fill="white" font-size="11" font-weight="600">Weight Decay</text>
+      <text x="620" y="68" text-anchor="middle" fill="white" font-size="11" font-weight="600">Peak LR</text>
+      <text x="730" y="68" text-anchor="middle" fill="white" font-size="11" font-weight="600">特殊设计</text>
+
+      <!-- GPT-4 -->
+      <rect x="30" y="85" width="760" height="35" rx="0" fill="#f8f9ff"/>
+      <text x="115" y="107" text-anchor="middle" font-size="11" font-weight="600" fill="#333">GPT-4</text>
+      <text x="245" y="107" text-anchor="middle" font-size="10" fill="#555">AdamW</text>
+      <text x="370" y="107" text-anchor="middle" font-size="10" fill="#555">0.9, 0.95</text>
+      <text x="490" y="107" text-anchor="middle" font-size="10" fill="#555">0.1</text>
+      <text x="620" y="107" text-anchor="middle" font-size="10" fill="#555">未公开</text>
+      <text x="730" y="107" text-anchor="middle" font-size="9" fill="#888">—</text>
+
+      <!-- LLaMA-2 -->
+      <rect x="30" y="122" width="760" height="35" rx="0" fill="white"/>
+      <text x="115" y="144" text-anchor="middle" font-size="11" font-weight="600" fill="#333">LLaMA-2 70B</text>
+      <text x="245" y="144" text-anchor="middle" font-size="10" fill="#555">AdamW</text>
+      <text x="370" y="144" text-anchor="middle" font-size="10" fill="#555">0.9, 0.95</text>
+      <text x="490" y="144" text-anchor="middle" font-size="10" fill="#555">0.1</text>
+      <text x="620" y="144" text-anchor="middle" font-size="10" fill="#555">1.5e-4</text>
+      <text x="730" y="144" text-anchor="middle" font-size="9" fill="#888">Cosine LR</text>
+
+      <!-- LLaMA-3 -->
+      <rect x="30" y="159" width="760" height="35" rx="0" fill="#f8f9ff"/>
+      <text x="115" y="181" text-anchor="middle" font-size="11" font-weight="600" fill="#333">LLaMA-3 405B</text>
+      <text x="245" y="181" text-anchor="middle" font-size="10" fill="#555">AdamW</text>
+      <text x="370" y="181" text-anchor="middle" font-size="10" fill="#555">0.9, 0.95</text>
+      <text x="490" y="181" text-anchor="middle" font-size="10" fill="#555">0.1</text>
+      <text x="620" y="181" text-anchor="middle" font-size="10" fill="#555">8e-5</text>
+      <text x="730" y="181" text-anchor="middle" font-size="9" fill="#888">4D 并行</text>
+
+      <!-- DeepSeek-V3 -->
+      <rect x="30" y="196" width="760" height="35" rx="0" fill="white"/>
+      <text x="115" y="218" text-anchor="middle" font-size="11" font-weight="600" fill="#333">DeepSeek-V3</text>
+      <text x="245" y="218" text-anchor="middle" font-size="10" fill="#555">AdamW</text>
+      <text x="370" y="218" text-anchor="middle" font-size="10" fill="#555">0.9, 0.95</text>
+      <text x="490" y="218" text-anchor="middle" font-size="10" fill="#555">0.1</text>
+      <text x="620" y="218" text-anchor="middle" font-size="10" fill="#555">2.2e-4</text>
+      <text x="730" y="218" text-anchor="middle" font-size="9" fill="#4a7dff">FP8 混合精度</text>
+
+      <!-- Qwen-2.5 -->
+      <rect x="30" y="233" width="760" height="35" rx="0" fill="#f8f9ff"/>
+      <text x="115" y="255" text-anchor="middle" font-size="11" font-weight="600" fill="#333">Qwen-2.5 72B</text>
+      <text x="245" y="255" text-anchor="middle" font-size="10" fill="#555">AdamW</text>
+      <text x="370" y="255" text-anchor="middle" font-size="10" fill="#555">0.9, 0.95</text>
+      <text x="490" y="255" text-anchor="middle" font-size="10" fill="#555">0.1</text>
+      <text x="620" y="255" text-anchor="middle" font-size="10" fill="#555">3e-4</text>
+      <text x="730" y="255" text-anchor="middle" font-size="9" fill="#888">多阶段预训练</text>
+
+      <!-- Gemma-2 -->
+      <rect x="30" y="270" width="760" height="35" rx="0" fill="white"/>
+      <text x="115" y="292" text-anchor="middle" font-size="11" font-weight="600" fill="#333">Gemma-2 27B</text>
+      <text x="245" y="292" text-anchor="middle" font-size="10" fill="#555">AdamW</text>
+      <text x="370" y="292" text-anchor="middle" font-size="10" fill="#555">0.9, 0.95</text>
+      <text x="490" y="292" text-anchor="middle" font-size="10" fill="#555">0.1</text>
+      <text x="620" y="292" text-anchor="middle" font-size="10" fill="#555">3e-4</text>
+      <text x="730" y="292" text-anchor="middle" font-size="9" fill="#888">知识蒸馏训练</text>
+
+      <!-- PaLM-2 -->
+      <rect x="30" y="307" width="760" height="35" rx="0" fill="#f8f9ff"/>
+      <text x="115" y="329" text-anchor="middle" font-size="11" font-weight="600" fill="#333">PaLM / PaLM-2</text>
+      <text x="245" y="329" text-anchor="middle" font-size="10" fill="#4caf50" font-weight="600">Adafactor</text>
+      <text x="370" y="329" text-anchor="middle" font-size="10" fill="#555">—</text>
+      <text x="490" y="329" text-anchor="middle" font-size="10" fill="#555">自适应</text>
+      <text x="620" y="329" text-anchor="middle" font-size="10" fill="#555">自适应</text>
+      <text x="730" y="329" text-anchor="middle" font-size="9" fill="#4caf50">无需 FP32 副本</text>
+
+      <!-- T5 / Flan -->
+      <rect x="30" y="344" width="760" height="35" rx="0" fill="white"/>
+      <text x="115" y="366" text-anchor="middle" font-size="11" font-weight="600" fill="#333">T5 / Flan-T5</text>
+      <text x="245" y="366" text-anchor="middle" font-size="10" fill="#4caf50" font-weight="600">Adafactor</text>
+      <text x="370" y="366" text-anchor="middle" font-size="10" fill="#555">—</text>
+      <text x="490" y="366" text-anchor="middle" font-size="10" fill="#555">自适应</text>
+      <text x="620" y="366" text-anchor="middle" font-size="10" fill="#555">自适应</text>
+      <text x="730" y="366" text-anchor="middle" font-size="9" fill="#4caf50">矩阵分解省显存</text>
+
+      <!-- 底部总结 -->
+      <rect x="50" y="395" width="720" height="38" rx="8" fill="#f0f4ff" stroke="#4a7dff" stroke-width="1"/>
+      <text x="410" y="410" text-anchor="middle" font-size="10" fill="#555">
+        <tspan font-weight="700" fill="#4a7dff">结论：</tspan>AdamW (β₁=0.9, β₂=0.95, wd=0.1) 是 LLM 训练的事实标准配置
+      </text>
+      <text x="410" y="426" text-anchor="middle" font-size="10" fill="#555">Google 系模型（PaLM/T5）偏好 Adafactor 以降低显存，其余主流模型统一使用 AdamW</text>
+    </svg>
+    <div class="caption">图 14：主流大模型优化器配置对比。几乎所有主流 LLM 均采用 AdamW (β₁=0.9, β₂=0.95, wd=0.1)，仅 Google 的部分模型使用 Adafactor 以节省显存。</div>
+  </div>
+
+  <h4>不同训练阶段的优化器策略差异</h4>
+  <div class="card-grid">
+    <div class="card">
+      <span class="num">1</span>
+      <h4>预训练阶段</h4>
+      <p>使用 AdamW + Cosine LR 调度 + Gradient Clipping (max_norm=1.0)。
+        学习率从 0 线性 warmup 到 peak LR，再余弦衰减到 peak 的 10%。
+        Batch size 逐步增大（4M → 32M tokens）。这一阶段优化器显存占用最大，
+        通常需要 ZeRO-3 或 FSDP 分片到多个 GPU 上。</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h4>SFT 微调阶段</h4>
+      <p>继续使用 AdamW，但学习率大幅降低（1e-5 ~ 5e-5，约预训练的 1/10）。
+        β₂ 通常恢复到 0.999（数据分布较稳定）。LoRA 等参数高效方法下可使用 8-bit Adam
+        或分页 Adam 大幅降低显存占用。训练轮数通常仅 2-5 epoch。</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h4>RLHF / RL 阶段</h4>
+      <p>PPO 训练中，Actor 和 Critic 各自使用独立的 AdamW 优化器。
+        Actor 的学习率极低（~1e-6）防止过度偏离 SFT 策略。
+        GRPO 等方法简化为单一优化器。DPO 阶段的优化器配置与 SFT 类似，
+        学习率通常在 1e-6 ~ 5e-6 范围。</p>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h4>持续预训练 / 退火阶段</h4>
+      <p>继承原有训练的优化器状态（m、v、LR schedule），从上次 checkpoint 恢复训练。
+        学习率调度可能重新 warmup 后按新的 schedule 衰减（Re-warmup）。
+        注意优化器状态的加载格式必须与分片方式兼容。</p>
+    </div>
+  </div>
+
+  <div class="success">
+    <strong>工程实践要点：</strong>
+    (1) 优化器状态是 checkpoint 的核心组成部分，其大小通常是模型参数的 2-3 倍；
+    (2) 分布式训练中优化器状态的分片策略（ZeRO Stage 1/2/3）直接决定了每张卡的显存占用；
+    (3) 从 checkpoint 恢复训练时，必须同时恢复优化器状态（m、v）和 LR scheduler 状态，否则会导致训练不稳定；
+    (4) 不同参数组可以使用不同的优化器配置——如 Embedding 层通常不使用权重衰减。
+  </div>
+</div>
+
+<!-- ===== 六、分布式训练 ===== -->
+<div class="section">
+  <h2>六、分布式训练技术</h2>
 
   <p>
     一个 70B 参数的模型以 BF16 存储需要约 140 GB 显存，加上优化器状态和梯度需要 <strong>~1 TB</strong> 显存。
     单张 GPU（80GB）远远不够，必须依赖分布式训练。
   </p>
 
-  <h3>5.1 三大并行策略</h3>
+  <h3>6.1 三大并行策略</h3>
 
   <div class="figure">
     <svg viewBox="0 0 820 360" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
@@ -1418,10 +2023,10 @@
       <text x="570" y="291" font-size="9" fill="#888">❌ 存在 Pipeline Bubble</text>
       <text x="570" y="309" font-size="9" fill="#888">1F1B / ZeroBubble 调度优化</text>
     </svg>
-    <div class="caption">图 12：三种并行策略对比。实际训练通常采用"3D 并行"——同时使用 DP + TP + PP 的组合。</div>
+    <div class="caption">图 15：三种并行策略对比。实际训练通常采用"3D 并行"——同时使用 DP + TP + PP 的组合。</div>
   </div>
 
-  <h3>5.2 混合精度训练</h3>
+  <h3>6.2 混合精度训练</h3>
   <p>
     现代 LLM 训练普遍采用<strong>混合精度</strong>（Mixed Precision）：前向和反向传播使用 BF16/FP16 计算（2 字节/参数），
     优化器状态保持 FP32（4 字节/参数），更新时在 FP32 空间完成后再转回低精度。
@@ -1466,7 +2071,7 @@
     显著降低了训练成本（14.8T tokens 仅用 2.788M H800 GPU 小时 ≈ $5.5M）。
   </div>
 
-  <h3>5.3 显存分析</h3>
+  <h3>6.3 显存分析</h3>
   <p>训练一个参数量为 Φ 的模型，显存消耗如下（以 BF16 混合精度 + AdamW 为例）：</p>
   <div class="formula">
     显存 ≈ 2Φ（模型参数 BF16）+ 2Φ（梯度 BF16）+ 4Φ（FP32 master weights）+ 8Φ（Adam 状态 m + v）= <strong>16Φ 字节</strong>
@@ -1475,16 +2080,16 @@
   </div>
 </div>
 
-<!-- ===== 六、训练稳定性 ===== -->
+<!-- ===== 七、训练稳定性 ===== -->
 <div class="section">
-  <h2>六、训练稳定性与异常处理</h2>
+  <h2>七、训练稳定性与异常处理</h2>
 
   <p>
     大模型预训练动辄耗时数月、花费数百万美元。<strong>训练中的不稳定</strong>（如 Loss Spike、NaN、发散）
     一旦未被及时发现和处理，就可能浪费大量计算资源。
   </p>
 
-  <h3>6.1 Loss Spike（损失尖刺）</h3>
+  <h3>7.1 Loss Spike（损失尖刺）</h3>
 
   <div class="figure">
     <svg viewBox="0 0 820 240" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
@@ -1516,10 +2121,10 @@
       <text x="560" y="136" font-size="10" fill="#555">· 梯度爆炸</text>
       <text x="560" y="154" font-size="10" fill="#555">· 数值精度溢出（FP16）</text>
     </svg>
-    <div class="caption">图 13：Loss Spike 现象。训练损失突然飙升后自行恢复（小 Spike），或持续上升导致发散（致命 Spike）。</div>
+    <div class="caption">图 16：Loss Spike 现象。训练损失突然飙升后自行恢复（小 Spike），或持续上升导致发散（致命 Spike）。</div>
   </div>
 
-  <h3>6.2 应对策略</h3>
+  <h3>7.2 应对策略</h3>
   <div class="card-grid">
     <div class="card">
       <span class="num">1</span><h4>梯度裁剪（Gradient Clipping）</h4>
@@ -1545,7 +2150,7 @@
     <span style="font-size:0.85em;">α = 1e-4；鼓励 logits 不要过大，减少 Softmax 数值不稳定</span>
   </div>
 
-  <h3>6.3 Checkpoint 策略</h3>
+  <h3>7.3 Checkpoint 策略</h3>
   <div class="warning">
     <strong>Checkpoint 是训练的"保险单"：</strong>
     大模型训练通常每 500~2000 步保存一次完整 Checkpoint（模型参数 + 优化器状态 + LR 调度器 + 数据进度）。
@@ -1553,11 +2158,11 @@
   </div>
 </div>
 
-<!-- ===== 七、Scaling Laws ===== -->
+<!-- ===== 八、Scaling Laws ===== -->
 <div class="section">
-  <h2>七、Scaling Laws —— 大模型训练的"路线图"</h2>
+  <h2>八、Scaling Laws —— 大模型训练的"路线图"</h2>
 
-  <h3>7.1 Kaplan Scaling Law (OpenAI, 2020)</h3>
+  <h3>8.1 Kaplan Scaling Law (OpenAI, 2020)</h3>
   <p>
     OpenAI 的 Kaplan 等人首先发现：模型的测试 Loss 与模型参数量 N、训练数据量 D、训练计算量 C
     之间存在<strong>幂律关系</strong>。
@@ -1568,7 +2173,7 @@
     <span style="font-size:0.85em;">在三者之间合理分配资源，可以最小化给定计算预算下的 Loss</span>
   </div>
 
-  <h3>7.2 Chinchilla Scaling Law (DeepMind, 2022)</h3>
+  <h3>8.2 Chinchilla Scaling Law (DeepMind, 2022)</h3>
   <p>
     Hoffmann 等人在 <em>Training Compute-Optimal Large Language Models</em> 中进一步发现：
     给定固定的计算预算 C，<strong>参数量和数据量应该等比例增长</strong>——
@@ -1600,7 +2205,7 @@
       <text x="460" y="170" font-size="11" fill="#2a9d8f" font-weight="600">→ 以更多训练换更小、更快的模型</text>
       <text x="460" y="198" font-size="10" fill="#888">训练更贵，但推理成本大幅降低</text>
     </svg>
-    <div class="caption">图 14：从 Chinchilla 最优到 Over-training。现代实践往往刻意过训练（200×+），用更多数据训练较小模型，因为推理成本 >> 训练成本。</div>
+    <div class="caption">图 17：从 Chinchilla 最优到 Over-training。现代实践往往刻意过训练（200×+），用更多数据训练较小模型，因为推理成本 >> 训练成本。</div>
   </div>
 
   <div class="highlight">
@@ -1611,11 +2216,11 @@
   </div>
 </div>
 
-<!-- ===== 八、SFT ===== -->
+<!-- ===== 九、SFT ===== -->
 <div class="section">
-  <h2>八、监督微调（SFT）</h2>
+  <h2>九、监督微调（SFT）</h2>
 
-  <h3>8.1 SFT 的目标与原理</h3>
+  <h3>9.1 SFT 的目标与原理</h3>
   <p>
     预训练后的 Base Model 是一个优秀的"文本续写器"，但不会遵循指令、不会以对话格式回复。
     <strong>SFT（Supervised Fine-Tuning）</strong>的目标是教模型"如何做一个好助手"——
@@ -1645,10 +2250,10 @@
       <text x="470" y="140" font-size="10" fill="#888">[Assistant] 部分</text>
       <text x="470" y="158" font-size="10" fill="#2a9d8f" font-weight="600">→ 只在这部分计算交叉熵损失 ✓</text>
     </svg>
-    <div class="caption">图 15：SFT 训练的核心：只在 Assistant 回复部分计算损失，System 和 User 部分被 mask 掉，防止模型"学会提问"而非"学会回答"。</div>
+    <div class="caption">图 18：SFT 训练的核心：只在 Assistant 回复部分计算损失，System 和 User 部分被 mask 掉，防止模型"学会提问"而非"学会回答"。</div>
   </div>
 
-  <h3>8.2 SFT 的关键实践</h3>
+  <h3>9.2 SFT 的关键实践</h3>
   <table>
     <tr>
       <th>维度</th>
@@ -1682,7 +2287,7 @@
     </tr>
   </table>
 
-  <h3>8.3 参数高效微调（PEFT）</h3>
+  <h3>9.3 参数高效微调（PEFT）</h3>
   <p>全参数 SFT 需要修改所有参数，对显存要求高。<strong>LoRA（Low-Rank Adaptation）</strong>是最流行的 PEFT 方法，只训练低秩增量矩阵：</p>
   <div class="formula">
     W' = W + ΔW = W + B &middot; A
@@ -1693,11 +2298,11 @@
   </div>
 </div>
 
-<!-- ===== 九、对齐训练 ===== -->
+<!-- ===== 十、对齐训练 ===== -->
 <div class="section">
-  <h2>九、对齐训练 —— 让模型安全、有用、诚实</h2>
+  <h2>十、对齐训练 —— 让模型安全、有用、诚实</h2>
 
-  <h3>9.1 RLHF（Reinforcement Learning from Human Feedback）</h3>
+  <h3>10.1 RLHF（Reinforcement Learning from Human Feedback）</h3>
   <p>
     SFT 模型能遵循指令，但输出质量参差不齐。RLHF 通过<strong>人类偏好反馈</strong>进一步优化模型——
     "告诉模型哪个回答更好"。完整的 RLHF 分三步：
@@ -1745,10 +2350,10 @@
       <text x="100" y="215" font-size="11" fill="#555">maximize  E<tspan font-size="9" dy="3">x~D</tspan><tspan dy="-3">[ R</tspan><tspan font-size="9" dy="3">RM</tspan><tspan dy="-3">(x, y) − β · KL(π</tspan><tspan font-size="9" dy="3">θ</tspan><tspan dy="-3"> ‖ π</tspan><tspan font-size="9" dy="3">SFT</tspan><tspan dy="-3">) ]</tspan></text>
       <text x="100" y="242" font-size="10" fill="#888">R_RM = 奖励模型的打分；KL 项约束模型不要偏离 SFT 太远（防止 reward hacking）</text>
     </svg>
-    <div class="caption">图 16：RLHF 完整流程。先训练奖励模型，再用 PPO 强化学习优化 SFT 模型，KL 惩罚防止过度优化。</div>
+    <div class="caption">图 19：RLHF 完整流程。先训练奖励模型，再用 PPO 强化学习优化 SFT 模型，KL 惩罚防止过度优化。</div>
   </div>
 
-  <h3>9.2 DPO（Direct Preference Optimization）</h3>
+  <h3>10.2 DPO（Direct Preference Optimization）</h3>
   <p>
     DPO（Rafailov et al., 2023）跳过了显式训练奖励模型的步骤，<strong>直接用偏好数据优化策略模型</strong>。
     它将 RLHF 的优化目标转化为一个简洁的二分类损失：
@@ -1759,13 +2364,13 @@
     <span style="font-size:0.85em;">y<sub>w</sub> = 人类偏好的好回答, y<sub>l</sub> = 人类不偏好的差回答, π<sub>ref</sub> = SFT 参考模型</span>
   </div>
 
-  <h3>9.3 GRPO（Group Relative Policy Optimization）</h3>
+  <h3>10.3 GRPO（Group Relative Policy Optimization）</h3>
   <p>
     DeepSeek 在 R1 模型中提出的 GRPO，核心创新是<strong>去掉了独立的奖励模型</strong>，
     而是在一组采样结果内部通过相对排序来计算优势函数。这大幅简化了训练流程。
   </p>
 
-  <h3>9.4 对齐方法对比</h3>
+  <h3>10.4 对齐方法对比</h3>
   <table>
     <tr>
       <th>方法</th>
@@ -1812,11 +2417,11 @@
   </table>
 </div>
 
-<!-- ===== 十、主流模型训练实践 ===== -->
+<!-- ===== 十一、主流模型训练实践 ===== -->
 <div class="section">
-  <h2>十、主流模型训练实践案例</h2>
+  <h2>十一、主流模型训练实践案例</h2>
 
-  <h3>10.1 LLaMA 系列（Meta）</h3>
+  <h3>11.1 LLaMA 系列（Meta）</h3>
 
   <div class="figure">
     <svg viewBox="0 0 820 260" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
@@ -1863,10 +2468,10 @@
       <text x="80" y="218" font-size="10" fill="#555">· <tspan font-weight="600">词表：</tspan>32K (SentencePiece) → 128K (Tiktoken)，多语言效率大幅提升</text>
       <text x="80" y="236" font-size="10" fill="#555">· <tspan font-weight="600">对齐：</tspan>无 → RLHF → DPO，对齐方法更简洁高效</text>
     </svg>
-    <div class="caption">图 17：LLaMA 系列的训练演进。核心趋势：数据量激增、词表扩大、对齐方法简化。</div>
+    <div class="caption">图 20：LLaMA 系列的训练演进。核心趋势：数据量激增、词表扩大、对齐方法简化。</div>
   </div>
 
-  <h3>10.2 DeepSeek 系列</h3>
+  <h3>11.2 DeepSeek 系列</h3>
   <div class="highlight">
     <strong>DeepSeek-V3 的训练亮点：</strong>
     <ul>
@@ -1878,7 +2483,7 @@
     </ul>
   </div>
 
-  <h3>10.3 主流模型训练配置对比</h3>
+  <h3>11.3 主流模型训练配置对比</h3>
   <table>
     <tr>
       <th>模型</th>
@@ -1939,11 +2544,11 @@
   </table>
 </div>
 
-<!-- ===== 十一、长上下文训练 ===== -->
+<!-- ===== 十二、长上下文训练 ===== -->
 <div class="section">
-  <h2>十一、长上下文与多阶段训练</h2>
+  <h2>十二、长上下文与多阶段训练</h2>
 
-  <h3>11.1 多阶段训练策略</h3>
+  <h3>12.1 多阶段训练策略</h3>
   <p>
     现代 LLM 通常不是"一次性训练到底"，而是采用<strong>多阶段训练</strong>策略，
     不同阶段使用不同的数据配比、学习率和上下文长度。
@@ -1981,10 +2586,10 @@
       <text x="410" y="160" text-anchor="middle" font-size="10" fill="#0f3460" font-weight="600">退火阶段（Annealing）是 LLaMA-3 的关键创新：用少量高质量数据在训练末期线性衰减 LR 至 0</text>
       <text x="410" y="178" text-anchor="middle" font-size="10" fill="#888">这个阶段虽然只用 ~10% 的训练量，但能在 MMLU 等 benchmark 上带来 2~5 分的提升</text>
     </svg>
-    <div class="caption">图 18：典型的多阶段训练流程。通用预训练奠定基础，长上下文阶段扩展窗口，退火阶段用高质量数据精细打磨。</div>
+    <div class="caption">图 21：典型的多阶段训练流程。通用预训练奠定基础，长上下文阶段扩展窗口，退火阶段用高质量数据精细打磨。</div>
   </div>
 
-  <h3>11.2 长上下文训练的关键技术</h3>
+  <h3>12.2 长上下文训练的关键技术</h3>
   <div class="card-grid">
     <div class="card">
       <span class="num">1</span><h4>RoPE 频率缩放</h4>
@@ -2005,11 +2610,11 @@
   </div>
 </div>
 
-<!-- ===== 十二、训练成本 ===== -->
+<!-- ===== 十三、训练成本 ===== -->
 <div class="section">
-  <h2>十二、训练成本与效率</h2>
+  <h2>十三、训练成本与效率</h2>
 
-  <h3>12.1 训练成本估算</h3>
+  <h3>13.1 训练成本估算</h3>
   <p>
     预训练的计算量可以用一个简单的公式估算：
   </p>
@@ -2068,7 +2673,7 @@
     成本仅为后者的 1/10~1/20。这得益于 MoE 架构（少激活参数）、FP8 训练、高效并行策略的三重优化。
   </div>
 
-  <h3>12.2 MFU（Model FLOPs Utilization）</h3>
+  <h3>13.2 MFU（Model FLOPs Utilization）</h3>
   <p>
     <strong>MFU</strong> 衡量训练过程中 GPU 的实际利用效率。理论峰值的百分比越高越好。
   </p>
@@ -2161,7 +2766,7 @@
       <text x="410" y="252" font-size="10" fill="#555">3. RL for Reasoning：用 GRPO/RLVR 训练推理链，提升数学和代码能力</text>
       <text x="410" y="270" font-size="10" fill="#555">4. 后训练愈加重要：对齐训练的投入和方法创新加速</text>
     </svg>
-    <div class="caption">图 19：大模型训练核心知识脉络与当前趋势。</div>
+    <div class="caption">图 22：大模型训练核心知识脉络与当前趋势。</div>
   </div>
 
   <div class="highlight">
